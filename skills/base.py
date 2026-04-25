@@ -161,9 +161,34 @@ class MarkdownSkill:
     instructions: str = ""
     file_path: str = ""
     scripts_dir: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)  # 从 frontmatter 解析
     
     def get_tool_definition(self) -> Dict[str, Any]:
-        """获取 OpenAI 格式的工具定义"""
+        """获取 OpenAI 格式的工具定义 - 从元数据动态生成"""
+        properties = {}
+        required = []
+        
+        if self.parameters:
+            # 从 frontmatter 中的 parameters 生成
+            for name, schema in self.parameters.items():
+                if isinstance(schema, dict):
+                    properties[name] = schema
+                    if schema.get("required", False):
+                        required.append(name)
+        else:
+            # 通用定义：operation + args
+            properties = {
+                "operation": {
+                    "type": "string",
+                    "description": f"要执行的操作（可用工具: {', '.join(self.tools)}）" if self.tools else "要执行的操作"
+                },
+                "args": {
+                    "type": "string",
+                    "description": "操作参数"
+                }
+            }
+            required = ["operation"]
+        
         return {
             "type": "function",
             "function": {
@@ -171,45 +196,20 @@ class MarkdownSkill:
                 "description": self.description,
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "operation": {
-                            "type": "string",
-                            "enum": ["list", "read", "write", "delete", "copy", "move", "info", "search"],
-                            "description": "要执行的文件操作类型"
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "目标文件或目录路径"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "写入内容（write/append 操作时使用）"
-                        },
-                        "destination": {
-                            "type": "string",
-                            "description": "目标路径（copy/move 操作时使用）"
-                        }
-                    },
-                    "required": ["operation"]
+                    "properties": properties,
+                    "required": required
                 }
             }
         }
     
     def get_anthropic_tool_definition(self) -> Dict[str, Any]:
         """获取 Anthropic 格式的工具定义"""
+        tool_def = self.get_tool_definition()
+        func = tool_def.get("function", {})
         return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "operation": {"type": "string"},
-                    "path": {"type": "string"},
-                    "content": {"type": "string"},
-                    "destination": {"type": "string"}
-                },
-                "required": ["operation"]
-            }
+            "name": func.get("name", self.name),
+            "description": func.get("description", self.description),
+            "input_schema": func.get("parameters", {"type": "object", "properties": {}})
         }
 
 
