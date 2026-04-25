@@ -1,0 +1,20 @@
+{
+  "api": {
+    "engines": {
+      "ollama": {
+        "api_key": "",
+        "base_url": "http://localhost:11434",
+        "model": "qwen2.5:latest"
+      },
+      "openai": {
+        "api_key": "your-api-key-here",
+        "base_url": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat"
+      }
+    }
+  },
+  "system": {
+    "default_engine": "ollama",
+    "max_history": 50
+  }
+}

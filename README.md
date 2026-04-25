@@ -14,7 +14,7 @@
 
 ## ✨ 特性
 
-- 🤖 **多 AI 引擎** — 支持 Ollama、MiMo、智谱 GLM、QwQ、MaaS 等，随时切换
+- 🤖 **多 AI 引擎** — 支持 Ollama 本地模型 + OpenAI 兼容格式（DeepSeek、Grok、硅基流动等），随时切换
 - 🔧 **精准代码编辑** — 搜索替换、批量编辑、diff 对比、行级操作
 - 🔍 **代码搜索理解** — 跨文件搜索、正则匹配、符号提取、依赖分析
 - 🔄 **Git 版本控制** — 完整 Git 操作支持
@@ -46,7 +46,7 @@ python -m xiaoli
 python -m xiaoli --cli
 
 # 指定引擎
-python -m xiaoli --engine mimo
+python -m xiaoli --engine openai
 
 # 查看版本
 python -m xiaoli --version
@@ -112,12 +112,7 @@ xiaoli-cli/
 │
 ├── ai_engines/                 # AI 引擎
 │   ├── ollama_engine.py        # Ollama 本地模型
-│   ├── mimo_engine.py          # 小米 MiMo
-│   ├── GLM_http_engine.py      # 智谱 GLM
-│   ├── qwq_engine.py           # QwQ 深度思考
-│   ├── xfyun_spark_engine.py   # 讯飞星火
-│   ├── SDK_openAI.py           # OpenAI 兼容 SDK
-│   └── ...
+│   └── openai_engine.py        # OpenAI 兼容格式（DeepSeek/Grok/硅基流动等）
 │
 ├── image_engine/               # 图像引擎
 ├── core/                       # 旧版核心模块（兼容）
@@ -196,12 +191,23 @@ def new():
 | 引擎 | 类型 | 说明 |
 |------|------|------|
 | `ollama` | 本地 | Ollama 本地模型，无需 API 密钥 |
-| `mimo` | 云端 | 小米 MiMo |
-| `glm_http` | 云端 | 智谱 GLM |
-| `qwq` | 云端 | QwQ 深度思考引擎 |
-| `maas_http` | 云端 | MaaS |
-| `spark` | 云端 | 讯飞星火 |
-| `iflow` | 云端 | iFlow API |
+| `openai` | 云端/本地 | OpenAI 兼容格式，支持 DeepSeek、Grok、硅基流动、本地 vLLM 等 |
+
+#### OpenAI 兼容引擎配置示例
+
+```json
+{
+  "api": {
+    "engines": {
+      "openai": {
+        "api_key": "你的API密钥",
+        "base_url": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat"
+      }
+    }
+  }
+}
+```
 
 ### 远程连接
 

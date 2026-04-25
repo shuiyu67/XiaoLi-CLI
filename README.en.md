@@ -14,7 +14,7 @@
 
 ## ✨ Features
 
-- 🤖 **Multi AI Engines** — Ollama, MiMo, GLM, QwQ, MaaS and more
+- 🤖 **Multi AI Engines** — Ollama local models + OpenAI compatible format (DeepSeek, Grok, SiliconFlow, etc.)
 - 🔧 **Precise Code Editing** — Search & replace, batch edits, diff comparison, line-level operations
 - 🔍 **Code Search & Understanding** — Cross-file search, regex matching, symbol extraction, dependency analysis
 - 🔄 **Git Integration** — Full Git workflow support
@@ -43,7 +43,7 @@ python -m xiaoli
 python -m xiaoli --cli
 
 # Specify engine
-python -m xiaoli --engine mimo
+python -m xiaoli --engine openai
 
 # Show version
 python -m xiaoli --version
