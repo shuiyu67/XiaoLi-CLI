@@ -1,13 +1,38 @@
 # 更新日志
 
+所有重要更改都记录在此文件中。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
+
+---
+
+## v5.0.0 (2026-04-25)
+
+### 🚀 新增功能
+- **TUI v2** — 全新 TUI 界面，对标 Claude Code / OpenCode，暗色主题 + 现代布局
+- **完整 MCP 协议支持** — 为所有插件添加 MCP (Model Context Protocol) 定义
+- **代码统计 Skill** (`code_stats`) — 新增 Skill 协议示例
+- **工程化自动化插件** — 新增 3 个工程化自动化插件（`auto_engineer`、`project_analyzer`、`git_workflow`）
+- **任务调度器** (`scheduler`) — 定时任务支持
+
+### 🏗️ 架构改进
+- **重写代码沙箱** — 全新的安全沙箱实现，支持超时控制和资源限制
+- **完整测试套件** — 192 个测试用例，覆盖核心功能
+- **Skill handler 修复** — 修复 Skill 协议参数解析问题
+- **MarkdownSkill MCP** — MCP 定义改为从元数据动态生成
+
+### 🐛 修复
+- 修复 MarkdownSkill MCP 定义硬编码问题
+- 修复 Skill handler 参数解析错误
+
+---
+
 ## v3.6.0-release (2026-04-25)
 
 ### 🚀 新增功能
-- **精准代码编辑器** (`code_editor`) - 搜索替换、批量编辑、diff 对比、行级操作
-- **代码搜索理解** (`code_search`) - 跨文件搜索、正则匹配、符号提取、依赖分析
-- **Git 版本控制** (`git_tools`) - 完整 Git 操作支持
-- **TUI 默认模式** - 图形化界面为默认启动方式
-- **彩蛋** - 运行 `python easter_egg.py` 发现惊喜
+- **精准代码编辑器** (`code_editor`) — 搜索替换、批量编辑、diff 对比、行级操作
+- **代码搜索理解** (`code_search`) — 跨文件搜索、正则匹配、符号提取、依赖分析
+- **Git 版本控制** (`git_tools`) — 完整 Git 操作支持
+- **TUI 默认模式** — 图形化界面为默认启动方式
+- **彩蛋** — 运行 `python easter_egg.py` 发现惊喜
 
 ### 🏗️ 架构重构
 - 拆分 `ai_cli.py`（3860行）为模块化 `xiaoli/` 包
