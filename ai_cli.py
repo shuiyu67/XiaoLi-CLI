@@ -90,187 +90,625 @@ except ImportError:
     print(f"{Fore.YELLOW}Textual 未安装，TUI 模式不可用。请运行: pip install textual{Style.RESET_ALL}")
 
 
-if TEXTUAL_AVAILABLE:
-    class TUIBridge:
-        """桥接类：让 TUI 能够调用同步的 AICLI 方法"""
+# ── 安全代码沙箱 v2（子进程隔离） ──
 
+import ast as _ast
+import textwrap as _textwrap
+import tempfile as _tempfile
+import resource as _resource_mod
+_HAS_RESOURCE = hasattr(_resource_mod, 'setrlimit')
+
+_BLOCKED_MODULES = frozenset({
+    'os', 'sys', 'subprocess', 'shutil', 'socket', 'pickle',
+    'marshal', 'ctypes', 'multiprocessing', 'threading',
+    'signal', 'resource', 'posix', 'nt', 'builtins',
+    'importlib', 'code', 'codeop', 'bdb', 'pdb',
+    'compileall', 'py_compile', 'zipimport', 'pkgutil',
+    'http', 'urllib', 'ftplib', 'smtplib', 'xmlrpc',
+    'asyncio', 'concurrent', '_thread',
+})
+_BLOCKED_NAMES = frozenset({
+    'exec', 'eval', 'compile', 'execfile', 'open',
+    'globals', 'locals', 'vars', 'getattr', 'setattr',
+    'delattr', '__import__', '__builtins__', '__subclasses__',
+    '__loader__', '__spec__', '__file__', '__name__',
+    'breakpoint', 'exit', 'quit', 'help',
+})
+_BLOCKED_AST_PATTERNS = [
+    r'__', r'\beval\b', r'\bexec\b', r'\bcompile\b',
+    r'\bglobals\b', r'\blocals\b', r'\bgetattr\b',
+    r'\bsetattr\b', r'\b__import__\b', r'\bbreakpoint\b',
+]
+_SAFE_WHITELIST = [
+    'json', 'math', 'datetime', 'random', 'collections',
+    'itertools', 'functools', 'operator', 'typing', 're',
+    'string', 'textwrap', 'copy', 'decimal', 'fractions',
+    'statistics', 'bisect', 'heapq', 'array', 'struct',
+    'hashlib', 'hmac', 'secrets', 'base64', 'binascii',
+    'uuid', 'pathlib', 'enum', 'dataclasses', 'contextlib',
+]
+
+class _SandboxASTChecker(_ast.NodeVisitor):
+    """AST 级安全分析"""
+    def __init__(self):
+        self.violations = []
+    def _check(self, name, node):
+        if name in _BLOCKED_NAMES:
+            self.violations.append(f"blocked name: {name} (line {getattr(node,'lineno',0)})")
+        if name.split('.')[0] in _BLOCKED_MODULES:
+            self.violations.append(f"blocked module: {name} (line {getattr(node,'lineno',0)})")
+    def visit_Import(self, node):
+        for alias in node.names:
+            self._check(alias.name, node)
+        self.generic_visit(node)
+    def visit_ImportFrom(self, node):
+        if node.module:
+            self._check(node.module, node)
+        self.generic_visit(node)
+    def visit_Call(self, node):
+        if isinstance(node.func, _ast.Name):
+            self._check(node.func.id, node)
+        elif isinstance(node.func, _ast.Attribute):
+            if isinstance(node.func.value, _ast.Name):
+                if node.func.value.id in _BLOCKED_NAMES:
+                    self.violations.append(f"blocked call: {node.func.value.id}.{node.func.attr} (line {getattr(node,'lineno',0)})")
+        self.generic_visit(node)
+    def visit_Name(self, node):
+        self._check(node.id, node)
+        self.generic_visit(node)
+    def visit_Attribute(self, node):
+        if node.attr.startswith('__') and node.attr.endswith('__'):
+            _SAFE_DUNDERS = ('__init__','__str__','__repr__','__len__','__contains__',
+                             '__iter__','__eq__','__ne__','__lt__','__gt__','__le__',
+                             '__ge__','__hash__','__bool__','__add__','__sub__',
+                             '__mul__','__truediv__','__floordiv__','__mod__','__pow__',
+                             '__enter__','__exit__')
+            if node.attr not in _SAFE_DUNDERS:
+                self.violations.append(f"blocked dunder: {node.attr} (line {getattr(node,'lineno',0)})")
+        self.generic_visit(node)
+    def visit_Delete(self, node):
+        self.violations.append(f"blocked del (line {getattr(node,'lineno',0)})")
+        self.generic_visit(node)
+    def visit_Global(self, node):
+        self.violations.append(f"blocked global (line {getattr(node,'lineno',0)})")
+        self.generic_visit(node)
+    def visit_Nonlocal(self, node):
+        self.violations.append(f"blocked nonlocal (line {getattr(node,'lineno',0)})")
+        self.generic_visit(node)
+    def check(self, code):
+        self.violations = []
+        for p in _BLOCKED_AST_PATTERNS:
+            if re.search(p, code, re.IGNORECASE):
+                self.violations.append(f"regex match: {p}")
+        try:
+            tree = _ast.parse(code)
+        except SyntaxError as e:
+            return False, [f"syntax error: {e}"]
+        self.visit(tree)
+        return len(self.violations) == 0, self.violations
+
+def _make_sandbox_worker(code, variables_json, whitelist_json, work_dir):
+    """生成子进程隔离脚本"""
+    return _textwrap.dedent(f'''\
+import sys, os, json, io, traceback
+from contextlib import redirect_stdout, redirect_stderr
+os.chdir({work_dir!r})
+
+class _FakeSocket:
+    def __getattr__(self, name):
+        raise OSError("network access blocked by sandbox")
+class _FakeSocketModule:
+    AF_INET = 0; SOCK_STREAM = 0
+    def __getattr__(self, name):
+        raise OSError("network access blocked by sandbox")
+    def socket(self, *a, **kw):
+        raise OSError("network access blocked by sandbox")
+import types
+_fake = _FakeSocketModule()
+sys.modules['socket'] = _fake
+sys.modules['_socket'] = _fake
+
+WHITELIST = json.loads({whitelist_json!r})
+safe_modules = {{}}
+for m in WHITELIST:
+    try: safe_modules[m] = __import__(m)
+    except ImportError: pass
+
+safe_builtins = {{
+    'print': print, 'len': len, 'str': str, 'int': int,
+    'float': float, 'list': list, 'dict': dict, 'tuple': tuple,
+    'set': set, 'frozenset': frozenset, 'range': range,
+    'enumerate': enumerate, 'zip': zip, 'sorted': sorted,
+    'reversed': reversed, 'sum': sum, 'max': max, 'min': min,
+    'abs': abs, 'round': round, 'pow': pow, 'divmod': divmod,
+    'type': type, 'isinstance': isinstance, 'issubclass': issubclass,
+    'hasattr': hasattr, 'callable': callable, 'id': id,
+    'chr': chr, 'ord': ord, 'hex': hex, 'oct': oct, 'bin': bin,
+    'bool': bool, 'bytes': bytes, 'bytearray': bytearray,
+    'map': map, 'filter': filter, 'any': any, 'all': all,
+    'True': True, 'False': False, 'None': None,
+}}
+user_vars = json.loads({variables_json!r})
+exec_vars = {{}}
+exec_vars.update(safe_builtins)
+exec_vars.update(safe_modules)
+exec_vars.update(user_vars)
+
+stdout_buf = io.StringIO()
+stderr_buf = io.StringIO()
+result_data = {{"success": True, "result": "", "stdout": "", "stderr": "", "error": ""}}
+try:
+    with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+        exec({code!r}, exec_vars)
+    val = exec_vars.get('result', None)
+    result_data["result"] = str(val) if val is not None else "executed ok"
+except Exception as e:
+    result_data["success"] = False
+    result_data["error"] = str(e)
+    result_data["stderr"] = traceback.format_exc()
+result_data["stdout"] = stdout_buf.getvalue()
+result_data["stderr"] = stderr_buf.getvalue() or result_data.get("stderr", "")
+max_out = 500000
+if len(result_data["stdout"]) > max_out:
+    result_data["stdout"] = result_data["stdout"][:max_out] + "\\n... (truncated)"
+if len(result_data["stderr"]) > max_out:
+    result_data["stderr"] = result_data["stderr"][:max_out] + "\\n... (truncated)"
+sys.stdout.write(json.dumps(result_data, ensure_ascii=False))
+''')
+
+_sandbox_work_dir = _tempfile.mkdtemp(prefix='xiaoli_sandbox_')
+_sandbox_checker = _SandboxASTChecker()
+
+
+if TEXTUAL_AVAILABLE:
+    from textual.containers import Horizontal, Vertical, VerticalScroll, Container
+    from textual.widgets import (
+        Header, Footer, Input, Static, Rule, Label,
+        DataTable, ProgressBar, TabbedContent, TabPane
+    )
+    from textual.reactive import reactive, var
+    from textual.message import Message
+    from textual import work, on
+    from rich.text import Text
+    from rich.markdown import Markdown as RichMarkdown
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.tree import Tree as RichTree
+    from rich.box import ROUNDED, HEAVY, DOUBLE
+
+    # ── TUI 主题色 ──
+    class _Theme:
+        BG = "#0d1117"
+        BG_LIGHT = "#161b22"
+        BG_INPUT = "#0d1117"
+        BORDER = "#30363d"
+        BORDER_FOCUS = "#58a6ff"
+        TEXT = "#c9d1d9"
+        TEXT_DIM = "#484f58"
+        TEXT_MUTED = "#8b949e"
+        ACCENT = "#58a6ff"
+        SUCCESS = "#3fb950"
+        WARNING = "#d29922"
+        ERROR = "#f85149"
+        USER = "#79c0ff"
+        AI = "#c9d1d9"
+        TOOL = "#56d364"
+        TOOL_ERR = "#f85149"
+        CODE_BG = "#161b22"
+
+    _TUI_CSS = f"""
+    Screen {{ background: {_Theme.BG}; }}
+    #app-container {{ height: 100%; width: 100%; }}
+    #main {{ width: 1fr; height: 1fr; }}
+    #chat-scroll {{
+        height: 1fr; background: {_Theme.BG};
+        scrollbar-color: {_Theme.BORDER};
+        scrollbar-color-hover: {_Theme.TEXT_MUTED};
+        padding: 0 1;
+    }}
+    #input-area {{
+        height: auto; min-height: 4; max-height: 10; padding: 1 1 0 1;
+    }}
+    #user-input {{
+        height: auto; min-height: 3;
+        background: {_Theme.BG_INPUT};
+        border: tall {_Theme.BORDER};
+        color: {_Theme.TEXT}; padding: 0 1;
+    }}
+    #user-input:focus {{ border: tall {_Theme.BORDER_FOCUS}; }}
+    #input-hint {{
+        height: 1; color: {_Theme.TEXT_DIM};
+        padding: 0 1; text-size: 80%;
+    }}
+    #sidebar {{
+        width: 32; min-width: 32; height: 1fr;
+        background: {_Theme.BG_LIGHT};
+        border-left: wide {_Theme.BORDER};
+        display: block;
+    }}
+    #sidebar.hidden {{ display: none; width: 0; min-width: 0; }}
+    .sidebar-header {{
+        width: 100%; text-align: center;
+        color: {_Theme.ACCENT}; text-style: bold;
+        padding: 1 0 0 0; text-size: 90%;
+    }}
+    .sidebar-section {{ height: auto; padding: 0 1; margin: 0 0 1 0; }}
+    .engine-item {{ padding: 0 1; color: {_Theme.TEXT_MUTED}; text-size: 85%; }}
+    .engine-item-active {{ padding: 0 1; color: {_Theme.SUCCESS}; text-style: bold; text-size: 85%; }}
+    .tool-item {{ padding: 0 0 0 1; color: {_Theme.TEXT_MUTED}; text-size: 80%; }}
+    .tool-item-name {{ color: {_Theme.TEXT}; text-style: bold; }}
+    #status-bar {{
+        height: 1; width: 100%; dock: bottom;
+        background: {_Theme.BG_LIGHT};
+        color: {_Theme.TEXT_MUTED}; padding: 0 1; text-size: 80%;
+    }}
+    .msg-user {{ color: {_Theme.USER}; padding: 1 0 0 1; text-style: bold; }}
+    .msg-ai {{ color: {_Theme.AI}; padding: 0 1; }}
+    .msg-system {{ color: {_Theme.ACCENT}; padding: 0 1; text-size: 85%; }}
+    .msg-tool-ok {{ color: {_Theme.TOOL}; padding: 0 1; text-size: 85%; }}
+    .msg-tool-err {{ color: {_Theme.TOOL_ERR}; padding: 0 1; text-size: 85%; }}
+    .msg-thinking {{ color: {_Theme.TEXT_DIM}; text-style: italic; padding: 0 1; }}
+    .msg-error {{ color: {_Theme.ERROR}; padding: 0 1; }}
+    .msg-dim {{ color: {_Theme.TEXT_DIM}; padding: 0 1; text-size: 85%; }}
+    .msg-welcome {{ color: {_Theme.ACCENT}; padding: 0 1; text-style: bold; }}
+    .code-block {{
+        background: {_Theme.CODE_BG};
+        border: wide {_Theme.BORDER};
+        padding: 0 1; margin: 0 2 0 2; text-size: 85%;
+    }}
+    Tab {{ background: {_Theme.BG}; }}
+    Tab.-active {{ background: {_Theme.BG_LIGHT}; }}
+    TabbedContent > Tabs {{ background: {_Theme.BG}; }}
+    """
+
+    class _TUIBridge:
+        """桥接 TUI ↔ AICLI"""
         def __init__(self, cli):
             self.cli = cli
-            self._executor = ThreadPoolExecutor(max_workers=4)
-
-        def get_engines(self) -> dict:
-            return self.cli.engines
-
-        def get_current_engine_name(self) -> str:
+        def engines(self) -> list:
+            return list(self.cli.engines.keys())
+        def current_engine(self) -> str:
             return self.cli.get_current_engine_name()
-
-        def get_tools(self) -> list:
+        def tools(self) -> list:
             return self.cli.liugin_manager.tools
-
-        def get_conversation_history(self) -> list:
+        def history(self) -> list:
             return self.cli.shared_conversation_history
-
-        def switch_engine(self, engine_name: str) -> bool:
-            if engine_name in self.cli.engines:
-                self.cli.switch_engine(engine_name)
+        def switch_engine(self, name: str) -> bool:
+            if name in self.cli.engines:
+                self.cli.switch_engine(name)
                 return True
             return False
 
-
-    class TUIMainApp(App):
-        """TUI 主应用"""
-
-        CSS = """
-    Screen { background: $surface; }
-    #chat-log { height: 1fr; }
-    #user-input { height: 3; }
-    #right-panel { width: 30; }
-    #status-bar { height: 1; dock: bottom; }
-    """
+    class XiaoliTUI(App):
+        """小狸 TUI v2 - GitHub 暗色主题"""
+        CSS = _TUI_CSS
+        TITLE = "🐱 小狸 Pro-CLI"
+        SUB_TITLE = "智能编程助手"
 
         BINDINGS = [
-            Binding("ctrl+c", "quit", "退出"),
-            Binding("ctrl+t", "switch_to_cli", "切换CLI"),
+            Binding("ctrl+c", "quit", "退出", show=True),
+            Binding("ctrl+l", "clear", "清屏", show=True),
+            Binding("ctrl+n", "new_chat", "新对话", show=True),
+            Binding("f1", "toggle_sidebar", "侧栏", show=True),
+            Binding("escape", "cancel", "取消", show=False),
         ]
+
+        sidebar_visible = var(True)
+        is_generating = var(False)
 
         def __init__(self, cli):
             super().__init__()
             self.cli = cli
-            self.bridge = TUIBridge(cli)
-            self.is_generating = False
+            self.bridge = _TUIBridge(cli)
 
         def compose(self) -> ComposeResult:
-            with Horizontal():
-                with Vertical(id="chat-area"):
-                    yield RichLog(id="chat-log", wrap=True, max_lines=10000)
-                    yield Input(placeholder="输入消息后按 Enter 发送...", id="user-input")
-                with Vertical(id="right-panel"):
-                    yield Static("[b]AI 引擎[/b]")
-                    yield Tree("引擎列表", id="engine-status")
-                    yield Static("[b]可用工具[/b]")
-                    yield RichLog(id="tools-log", wrap=True, max_lines=100)
-            yield Static("", id="status-bar")
+            yield Header(show_clock=True)
+            with Horizontal(id="app-container"):
+                with Vertical(id="main"):
+                    yield VerticalScroll(id="chat-scroll")
+                    with Vertical(id="input-area"):
+                        yield Input(
+                            placeholder="  输入消息... (Enter 发送, /help 帮助)",
+                            id="user-input"
+                        )
+                        yield Static(
+                            "  Tab 补全 | ↑↓ 历史 | Ctrl+L 清屏 | F1 侧栏",
+                            id="input-hint"
+                        )
+                with Vertical(id="sidebar"):
+                    yield Static("⚙️  引擎", classes="sidebar-header")
+                    yield Vertical(id="engine-list", classes="sidebar-section")
+                    yield Rule(line_style="heavy")
+                    yield Static("🔧 工具", classes="sidebar-header")
+                    yield Vertical(id="tool-list", classes="sidebar-section")
+                    yield Rule(line_style="heavy")
+                    yield Static("📊 状态", classes="sidebar-header")
+                    yield Vertical(id="status-info", classes="sidebar-section")
+            yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
-        def on_mount(self) -> None:
-            self.title = "小狸 CLI - TUI"
-            self._update_engine_tree()
-            self._update_tools_list()
-            chat_log = self.query_one("#chat-log", RichLog)
-            chat_log.write(f"[bold cyan]欢迎使用小狸 CLI TUI 模式![/bold cyan]")
-            chat_log.write(f"[dim]当前引擎: {self.bridge.get_current_engine_name()}[/dim]")
-            chat_log.write(f"[dim]输入 /cli 切换到 CLI 模式[/dim]")
-            chat_log.write("")
-            self.query_one("#user-input", Input).focus()
-            self.update_status()
+        def on_mount(self):
+            self._render_welcome()
+            self._update_sidebar()
+            self.query_one("#user-input").focus()
 
-        def _update_engine_tree(self) -> None:
-            tree = self.query_one("#engine-status", Tree)
-            tree.reset("引擎列表")
-            engines = self.bridge.get_engines()
-            current = self.bridge.get_current_engine_name()
+        def _render_welcome(self):
+            scroll = self.query_one("#chat-scroll")
+            lines = [
+                ("", "msg-dim"),
+                ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
+                ("  ║                                              ║", "msg-welcome"),
+                ("  ║   🐱 小狸 Pro-CLI v5.0                       ║", "msg-welcome"),
+                ("  ║   智能编程助手 · 对标 Claude Code              ║", "msg-welcome"),
+                ("  ║                                              ║", "msg-welcome"),
+                ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
+                ("", "msg-dim"),
+                ("  💡 代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
+                ("  📝 输入 /help 查看命令 | /model 切换引擎", "msg-system"),
+                (f"  🔧 当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
+                ("", "msg-dim"),
+            ]
+            for text, cls in lines:
+                scroll.mount(Static(text, classes=cls))
 
-            for name in engines:
-                node = tree.root.add(f"* {name}")
+        def _update_sidebar(self):
+            engine_container = self.query_one("#engine-list")
+            engine_container.remove_children()
+            current = self.bridge.current_engine()
+            for name in self.bridge.engines():
                 if name == current:
-                    node.add("(当前)")
-            tree.root.expand()
-
-        def _update_tools_list(self) -> None:
-            tools_log = self.query_one("#tools-log", RichLog)
-            tools_log.clear()
-            tools = self.bridge.get_tools()
-            if tools:
-                for tool in tools[:15]:
-                    name = tool.get('name', '未知')
-                    desc = tool.get('description', '')[:35]
-                    tools_log.write(f"- {name}: {desc}")
-            else:
-                tools_log.write("暂无工具")
-
-        def update_status(self) -> None:
-            status = self.query_one("#status-bar", Static)
-            engine = self.bridge.get_current_engine_name()
-            history_len = len(self.bridge.get_conversation_history())
-            status.update(f"引擎: {engine} | {history_len} 条对话 | Ctrl+T: CLI | /cli: 切换模式")
-
-        def on_input_submitted(self, event: Input.Submitted) -> None:
-            user_input = event.value.strip()
-            if not user_input:
-                return
-
-            if user_input == '/cli':
-                self.action_switch_to_cli()
-                return
-
-            if user_input.startswith('/engine switch '):
-                engine_name = user_input[14:].strip()
-                if self.bridge.switch_engine(engine_name):
-                    chat_log = self.query_one("#chat-log", RichLog)
-                    chat_log.write(f"[green]已切换到引擎: {engine_name}[/]")
-                    self._update_engine_tree()
-                    self.update_status()
+                    engine_container.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
                 else:
-                    chat_log = self.query_one("#chat-log", RichLog)
-                    chat_log.write(f"[red]切换失败，引擎 '{engine_name}' 不存在[/]")
+                    engine_container.mount(Static(f"    {name}", classes="engine-item"))
+
+            tool_container = self.query_one("#tool-list")
+            tool_container.remove_children()
+            for tool in self.bridge.tools():
+                name = tool.get('name', '?')
+                tool_container.mount(Static(f"  • {name}", classes="tool-item"))
+
+            status_container = self.query_one("#status-info")
+            status_container.remove_children()
+            status_container.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
+            status_container.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
+            status_container.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
+
+        def _update_status(self, text: str):
+            bar = self.query_one("#status-bar")
+            engine = self.bridge.current_engine()
+            bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话")
+
+        def _append(self, widget):
+            scroll = self.query_one("#chat-scroll")
+            scroll.mount(widget)
+            scroll.scroll_end(animate=False)
+
+        def _add(self, text, cls="msg-dim"):
+            self._append(Static(text, classes=cls))
+
+        def _user_msg(self, text):
+            self._add(f"  👤 {text}", "msg-user")
+
+        def _ai_msg(self, text):
+            if "```" in text:
+                self._render_with_code(text)
+            else:
+                self._add(f"  ✦ {text}", "msg-ai")
+
+        def _render_with_code(self, text):
+            import re
+            parts = re.split(r'```(\w*)\n(.*?)```', text, flags=re.DOTALL)
+            i = 0
+            while i < len(parts):
+                if i % 3 == 0:
+                    if parts[i].strip():
+                        for line in parts[i].strip().split('\n'):
+                            self._add(f"  ✦ {line}", "msg-ai")
+                elif i % 3 == 2:
+                    code = parts[i]
+                    lang = parts[i-1] if i > 1 else ""
+                    try:
+                        syntax = Syntax(code, lang or "python", theme="monokai",
+                                        line_numbers=True, word_wrap=True)
+                        self._append(Panel(syntax, border_style=f"dim {_Theme.BORDER}",
+                                           box=ROUNDED, padding=(0, 1)))
+                    except:
+                        for line in code.split('\n'):
+                            self._add(f"    {line}", "msg-dim")
+                i += 1
+
+        def _tool_ok(self, name, args):
+            self._add(f"  ✅ {name}: {args[:60]}", "msg-tool-ok")
+
+        def _tool_err(self, name, args):
+            self._add(f"  ❌ {name}: {args[:60]}", "msg-tool-err")
+
+        def _thinking(self):
+            self._add("  💭 思考中...", "msg-thinking")
+
+        def _system(self, text):
+            self._add(f"  ℹ️  {text}", "msg-system")
+
+        def _error(self, text):
+            self._add(f"  ⚠️  {text}", "msg-error")
+
+        @on(Input.Submitted, "#user-input")
+        def on_input(self, event):
+            text = event.value.strip()
+            if not text:
+                return
+            event.input.value = ""
+
+            if text.startswith('/'):
+                self._handle_command(text)
                 return
 
-            chat_log = self.query_one("#chat-log", RichLog)
-            chat_log.write(f"[cyan]你:[/] {user_input}")
-            chat_log.write("")
-            event.input.value = ""
-            chat_log.write("AI 正在思考...")
-            self.run_worker(self._generate_response_async(user_input))
+            self._user_msg(text)
+            self._thinking()
+            self.is_generating = True
+            self._update_status("🔄 思考中...")
+            self.run_worker(self._generate(text), exclusive=True)
 
-        async def _generate_response_async(self, user_input: str) -> None:
-            """异步生成响应 - 通过回调输出到 TUI"""
+        def _handle_command(self, cmd):
+            parts = cmd[1:].split(maxsplit=1)
+            name = parts[0].lower()
+            args = parts[1] if len(parts) > 1 else ""
+
+            cmds = {
+                'help': lambda: self._show_help(),
+                'quit': lambda: self.exit(),
+                'q': lambda: self.exit(),
+                'exit': lambda: self.exit(),
+                'cli': lambda: self._switch_cli(),
+                'clear': lambda: self.action_clear(),
+                'cls': lambda: self.action_clear(),
+                'model': lambda: self._switch_model(args),
+                'engine': lambda: self._switch_model(args),
+                'about': lambda: self._system("🐱 小狸 Pro-CLI v5.0 - 智能编程助手"),
+                'status': lambda: self._show_status(),
+                'tools': lambda: self._show_tools(),
+                'engines': lambda: self._show_engines(),
+                'tui': lambda: self._system("已在 TUI 模式中"),
+            }
+
+            handler = cmds.get(name)
+            if handler:
+                handler()
+            else:
+                # 尝试插件命令
+                if name in self.cli.liugin_commands:
+                    try:
+                        result = self.cli.liugin_commands[name](args)
+                        if result:
+                            self._system(result[:500])
+                    except Exception as e:
+                        self._error(f"插件命令失败: {e}")
+                else:
+                    self._error(f"未知命令: /{name}，输入 /help 查看帮助")
+
+        def _show_help(self):
+            help_text = """  📖 命令:
+  /help          帮助信息
+  /quit          退出
+  /cli           切换命令行模式
+  /model <引擎>  切换 AI 引擎
+  /engines       列出引擎
+  /tools         列出工具
+  /status        系统状态
+  /clear         清屏
+
+  ⌨️  快捷键:
+  Ctrl+C   退出    Ctrl+L   清屏
+  Ctrl+N   新对话  F1       侧栏
+  Escape   取消生成"""
+            self._system(help_text)
+
+        def _switch_cli(self):
+            self._system("切换到命令行模式...")
+            self.cli.tui_output_callback = None
+            self.exit()
+
+        def _switch_model(self, name):
+            name = name.strip()
+            if not name:
+                self._show_engines()
+                return
+            if self.bridge.switch_engine(name):
+                self._system(f"已切换到: {name}")
+                self._update_sidebar()
+            else:
+                self._error(f"未找到引擎: {name}")
+
+        def _show_engines(self):
+            current = self.bridge.current_engine()
+            lines = ["  可用引擎:"]
+            for name in self.bridge.engines():
+                marker = "▸" if name == current else " "
+                lines.append(f"  {marker} {name}")
+            self._system('\n'.join(lines))
+
+        def _show_tools(self):
+            tools = self.bridge.tools()
+            lines = [f"  可用工具 ({len(tools)} 个):"]
+            for t in tools:
+                name = t.get('name', '?')
+                desc = t.get('description', '')[:40]
+                lines.append(f"  • {name}: {desc}")
+            self._system('\n'.join(lines))
+
+        def _show_status(self):
+            self._system(f"""  系统状态:
+  引擎: {self.bridge.current_engine()}
+  引擎数: {len(self.bridge.engines())}
+  工具数: {len(self.bridge.tools())}
+  对话数: {len(self.bridge.history())}""")
+
+        async def _generate(self, user_input):
             try:
-                self.call_after_refresh(self._clear_thinking)
+                self.call_after_refresh(self._remove_thinking)
 
-                def safe_output(message):
-                    self.call_after_refresh(self._write_chat, message)
+                def tui_output(msg):
+                    self.call_after_refresh(self._write_raw, msg)
 
-                original_callback = self.cli.tui_output_callback
-                self.cli.tui_output_callback = safe_output
+                original = self.cli.tui_output_callback
+                self.cli.tui_output_callback = tui_output
 
                 try:
                     loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, self.cli.process_conversation, user_input)
+                    await loop.run_in_executor(
+                        None, self.cli.process_conversation, user_input
+                    )
                 finally:
-                    self.cli.tui_output_callback = original_callback
+                    self.cli.tui_output_callback = original
 
-                self.call_after_refresh(self.update_status)
             except Exception as e:
-                import traceback
-                self.call_after_refresh(self._write_chat, f"[red]错误: {str(e)}[/]")
-                self.call_after_refresh(self._write_chat, f"[dim]{traceback.format_exc()}[/]")
+                self.call_after_refresh(self._error, str(e))
             finally:
                 self.is_generating = False
+                self.call_after_refresh(lambda: self._update_status("就绪"))
+                self.call_after_refresh(self._update_sidebar)
 
-        def _write_chat(self, message: str) -> None:
-            try:
-                chat_log = self.query_one("#chat-log", RichLog)
-                chat_log.write(message)
-            except Exception as e:
-                print(f"写入聊天失败: {e}")
+        def _remove_thinking(self):
+            scroll = self.query_one("#chat-scroll")
+            for child in reversed(list(scroll.children)):
+                if '思考中' in str(getattr(child, 'renderable', '')):
+                    child.remove()
+                    break
 
-        def _clear_thinking(self) -> None:
-            try:
-                chat_log = self.query_one("#chat-log", RichLog)
-                children = list(chat_log.children)
-                if children and "正在思考" in str(children[-1]):
-                    chat_log.remove_child(children[-1])
-            except:
-                pass
+        def _write_raw(self, msg):
+            if '✅' in msg or 'OK 工具' in msg:
+                self._add(f"  {msg}", "msg-tool-ok")
+            elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
+                self._add(f"  {msg}", "msg-tool-err")
+            elif '✦' in msg:
+                self._add(f"  {msg}", "msg-ai")
+            elif '工具' in msg and ('调用' in msg or '执行' in msg):
+                self._add(f"  {msg}", "msg-tool-ok")
+            else:
+                self._add(f"  {msg}", "msg-dim")
 
-        def action_switch_to_cli(self) -> None:
-            import subprocess
-            import sys
-            self.exit()
-            subprocess.Popen([sys.executable, __file__])
-            os._exit(0)
+        def action_clear(self):
+            scroll = self.query_one("#chat-scroll")
+            scroll.remove_children()
+            self._render_welcome()
+
+        def action_new_chat(self):
+            self.cli.shared_conversation_history.clear()
+            self.action_clear()
+            self._system("已开始新对话")
+
+        def action_toggle_sidebar(self):
+            sidebar = self.query_one("#sidebar")
+            sidebar.visible = not sidebar.visible
+
+        def action_cancel(self):
+            if self.is_generating:
+                self._system("已取消")
+                self.is_generating = False
+
 else:
     # Textual 不可用时的占位类
-    class TUIMainApp:
+    class XiaoliTUI:
         pass
 
 
@@ -1615,274 +2053,104 @@ class AICLI:
             }
     
     def _is_code_safe(self, code):
-        """
-        检查代码是否安全（使用 AST 语法分析）
-        
-        Args:
-            code: 要检查的Python代码
-            
-        Returns:
-            bool: 代码是否安全
-        """
-        import ast
-        import re
-        
-        # 危险模块黑名单
-        DANGEROUS_MODULES = {
-            'os', 'sys', 'subprocess', 'shutil', 'socket', 'pickle',
-            'marshal', 'ctypes', 'multiprocessing', 'threading',
-            'signal', 'resource', 'posix', 'nt', 'builtins',
-            'importlib', 'code', 'codeop', 'commands', 'popen2',
-        }
-        
-        # 危险函数/属性黑名单
-        DANGEROUS_FUNCTIONS = {
-            'exec', 'eval', 'compile', 'execfile', 'open',
-            'input', 'raw_input', 'globals', 'locals', 'vars',
-            'dir', 'getattr', 'setattr', 'delattr', 'hasattr',
-            '__import__', '__builtins__', '__class__', '__bases__',
-            '__subclasses__', '__mro__', '__dict__', '__getattribute__',
-        }
-        
-        # 危险属性名称模式
-        DANGEROUS_ATTRS = {
-            '__builtins__', '__class__', '__bases__', '__subclasses__',
-            '__mro__', '__dict__', '__globals__', '__code__', '__closure__',
-            '__name__', '__file__', '__package__', '__loader__',
-        }
-        
-        # 首先进行快速字符串检查
-        dangerous_string_patterns = [
-            r'__',           # 双下划线属性访问
-            r'\beval\b',
-            r'\bexec\b',
-            r'\bcompile\b',
-            r'\bglobals\b',
-            r'\blocals\b',
-            r'\bgetattr\b',
-            r'\bsetattr\b',
-            r'\b__import__\b',
-        ]
-        
-        for pattern in dangerous_string_patterns:
-            if re.search(pattern, code, re.IGNORECASE):
-                return False
-        
-        # 使用 AST 进行更精确的分析
-        try:
-            tree = ast.parse(code)
-        except SyntaxError:
-            # 语法错误，拒绝执行
-            return False
-        
-        class SafetyVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.is_safe = True
-                self.violations = []
-            
-            def check_name(self, name, context=""):
-                if name in DANGEROUS_FUNCTIONS or name in DANGEROUS_ATTRS:
-                    self.is_safe = False
-                    self.violations.append(f"危险名称: {name} ({context})")
-            
-            def visit_Import(self, node):
-                for alias in node.names:
-                    module_name = alias.name.split('.')[0]
-                    if module_name in DANGEROUS_MODULES:
-                        self.is_safe = False
-                        self.violations.append(f"危险导入: {alias.name}")
-                self.generic_visit(node)
-            
-            def visit_ImportFrom(self, node):
-                if node.module:
-                    module_name = node.module.split('.')[0]
-                    if module_name in DANGEROUS_MODULES:
-                        self.is_safe = False
-                        self.violations.append(f"危险导入: from {node.module}")
-                self.generic_visit(node)
-            
-            def visit_Call(self, node):
-                if isinstance(node.func, ast.Name):
-                    self.check_name(node.func.id, "函数调用")
-                elif isinstance(node.func, ast.Attribute):
-                    self.check_name(node.func.attr, "属性调用")
-                self.generic_visit(node)
-            
-            def visit_Attribute(self, node):
-                self.check_name(node.attr, "属性访问")
-                self.generic_visit(node)
-            
-            def visit_Name(self, node):
-                self.check_name(node.id, "名称引用")
-                self.generic_visit(node)
-        
-        visitor = SafetyVisitor()
-        visitor.visit(tree)
-        
-        if not visitor.is_safe:
-            logger.warning(f"代码安全检查失败: {visitor.violations}")
-        
-        return visitor.is_safe
+        """检查代码是否安全（使用 v2 AST+正则 沙箱检查器）"""
+        safe, violations = _sandbox_checker.check(code)
+        if not safe:
+            logger.warning(f"代码安全检查失败: {violations}")
+        return safe
     
     def _execute_code_safely(self, code, timeout, variables=None):
         """
-        在安全沙箱中执行代码
-        
-        Args:
-            code: 要执行的Python代码
-            timeout: 超时时间（秒）
-            variables: 要传递的变量字典
-            
-        Returns:
-            执行结果字典
+        在安全沙箱中执行代码（v2 子进程隔离）
+        6层安全: AST分析 → 子进程隔离 → 文件系统限制 → 网络阻断 → 模块白名单 → 输出截断
         """
-        import io
-        import traceback
-        from contextlib import redirect_stdout, redirect_stderr
-        
-        # 准备变量
-        exec_vars = {}
-        if variables:
-            exec_vars.update(variables)
-        
-        # 添加安全的内置函数和模块
-        safe_builtins = {
-            'print': print,
-            'len': len,
-            'str': str,
-            'int': int,
-            'float': float,
-            'list': list,
-            'dict': dict,
-            'tuple': tuple,
-            'set': set,
-            'range': range,
-            'enumerate': enumerate,
-            'zip': zip,
-            'sorted': sorted,
-            'sum': sum,
-            'max': max,
-            'min': min,
-            'abs': abs,
-            'round': round,
-            'bool': bool,
-            'type': type,
-            'isinstance': isinstance,
-            'hasattr': hasattr,
+        import subprocess
+        import json as _json
+
+        # 安全检查
+        safe, violations = _sandbox_checker.check(code)
+        if not safe:
+            return {
+                'success': False,
+                'result': '代码包含潜在危险操作，已阻止执行',
+                'stdout': '', 'stderr': '; '.join(violations[:5]),
+                'execution_time': 0, 'memory_usage': 0
+            }
+
+        vars_json = _json.dumps(variables or {}, ensure_ascii=False, default=str)
+        whitelist_json = _json.dumps(self.code_execution_whitelist or _SAFE_WHITELIST)
+        script = _make_sandbox_worker(code, vars_json, whitelist_json, _sandbox_work_dir)
+
+        safe_env = {
+            'PATH': '/usr/bin:/bin',
+            'LANG': 'en_US.UTF-8', 'LC_ALL': 'en_US.UTF-8',
+            'HOME': _sandbox_work_dir,
+            'TMPDIR': _sandbox_work_dir, 'TEMP': _sandbox_work_dir, 'TMP': _sandbox_work_dir,
+            'PYTHONNOUSERSITE': '1', 'PYTHONDONTWRITEBYTECODE': '1',
         }
-        
-        # 添加用户输入确认函数（仅在安全沙箱中允许）
-        def ask_user_confirmation(prompt, operation_id):
-            """
-            在代码执行中请求用户确认
-            
-            参数:
-                prompt: 提示信息
-                operation_id: 操作ID
-                
-            返回:
-                用户输入的确认信息
-            """
-            print(f"\n{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}⚠️  需要用户确认{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}\n")
-            print(f"{Fore.CYAN}{prompt}{Style.RESET_ALL}\n")
-            print(f"{Fore.GREEN}操作ID: {operation_id}{Style.RESET_ALL}\n")
-            print(f"{Fore.YELLOW}请输入您的选择（y/yes 允许，其他拒绝）：{Style.RESET_ALL} ", end='', flush=True)
-            
-            # 获取用户输入
-            user_input = input().strip().lower()
-            
-            # 存储用户决定
-            self.user_input_queue[operation_id] = user_input
-            
-            print(f"\n{Fore.YELLOW}{'='*60}{Style.RESET_ALL}\n")
-            
-            return user_input
-        
-        safe_builtins['ask_user_confirmation'] = ask_user_confirmation
-        
-        # 添加白名单模块
-        for module_name in self.code_execution_whitelist:
-            try:
-                safe_builtins[module_name] = __import__(module_name)
-            except ImportError:
-                pass
-        
-        exec_vars.update(safe_builtins)
-        
-        # 创建输出捕获器
-        stdout_capture = io.StringIO()
-        stderr_capture = io.StringIO()
-        
-        # 执行代码
+        for key in ('TERM', 'COLUMNS', 'LINES', 'SHELL'):
+            val = os.environ.get(key)
+            if val:
+                safe_env[key] = val
+
         start_time = time.time()
         try:
-            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                # 使用超时执行
-                result = {'success': True, 'error': None}
-                
-                def execute_with_timeout():
-                    try:
-                        exec(code, exec_vars)
-                    except Exception as e:
-                        result['success'] = False
-                        result['error'] = str(e)
-                        result['traceback'] = traceback.format_exc()
-                
-                # 创建超时线程
-                import threading
-                exec_thread = threading.Thread(target=execute_with_timeout)
-                exec_thread.daemon = True
-                exec_thread.start()
-                exec_thread.join(timeout=timeout)
-                
-                if exec_thread.is_alive():
-                    return {
-                        'success': False,
-                        'result': f'代码执行超时（超过{timeout}秒）',
-                        'stdout': stdout_capture.getvalue(),
-                        'stderr': stderr_capture.getvalue(),
-                        'execution_time': timeout,
-                        'memory_usage': 0
-                    }
-                
-                # 获取执行结果
-                if result['success']:
-                    # 尝试获取代码中的 'result' 变量
-                    exec_result = exec_vars.get('result', None)
-                    if exec_result is not None:
-                        result_str = str(exec_result)
-                    else:
-                        result_str = '代码执行成功（无返回值）'
-                    
-                    return {
-                        'success': True,
-                        'result': result_str,
-                        'stdout': stdout_capture.getvalue(),
-                        'stderr': stderr_capture.getvalue(),
-                        'execution_time': time.time() - start_time,
-                        'memory_usage': 0  # 简化版暂不跟踪内存
-                    }
-                else:
-                    return {
-                        'success': False,
-                        'result': f"代码执行错误: {result['error']}",
-                        'stdout': stdout_capture.getvalue(),
-                        'stderr': stderr_capture.getvalue() + '\n' + result['traceback'],
-                        'execution_time': time.time() - start_time,
-                        'memory_usage': 0
-                    }
-                    
+            proc = subprocess.run(
+                [sys.executable, '-c', script],
+                capture_output=True, timeout=timeout,
+                cwd=_sandbox_work_dir, env=safe_env,
+                preexec_fn=self._sandbox_set_limits if _HAS_RESOURCE else None,
+            )
+            elapsed = time.time() - start_time
+            stdout = proc.stdout.decode('utf-8', errors='replace')[:1000000]
+            stderr = proc.stderr.decode('utf-8', errors='replace')[:1000000]
+
+            try:
+                data = _json.loads(stdout)
+                return {
+                    'success': data.get('success', False),
+                    'result': data.get('result', ''),
+                    'stdout': data.get('stdout', ''),
+                    'stderr': data.get('stderr', ''),
+                    'execution_time': elapsed,
+                    'memory_usage': 0
+                }
+            except _json.JSONDecodeError:
+                return {
+                    'success': proc.returncode == 0,
+                    'result': stdout[:2000] if stdout else 'no output',
+                    'stdout': stdout, 'stderr': stderr,
+                    'execution_time': elapsed, 'memory_usage': 0
+                }
+
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'result': f'代码执行超时（超过{timeout}秒）',
+                'stdout': '', 'stderr': '',
+                'execution_time': timeout, 'memory_usage': 0
+            }
         except Exception as e:
             return {
                 'success': False,
-                'result': f"代码执行异常: {str(e)}",
-                'stdout': stdout_capture.getvalue(),
-                'stderr': stderr_capture.getvalue() + '\n' + traceback.format_exc(),
-                'execution_time': time.time() - start_time,
-                'memory_usage': 0
+                'result': f'代码执行异常: {str(e)}',
+                'stdout': '', 'stderr': traceback.format_exc(),
+                'execution_time': time.time() - start_time, 'memory_usage': 0
             }
+
+    @staticmethod
+    def _sandbox_set_limits():
+        """子进程资源限制"""
+        if not _HAS_RESOURCE:
+            return
+        try:
+            mem = 256 * 1024 * 1024  # 256MB
+            _resource_mod.setrlimit(_resource_mod.RLIMIT_AS, (mem, mem))
+            _resource_mod.setrlimit(_resource_mod.RLIMIT_CPU, (30, 35))
+            _resource_mod.setrlimit(_resource_mod.RLIMIT_NPROC, (0, 0))
+            _resource_mod.setrlimit(_resource_mod.RLIMIT_FSIZE, (50*1024*1024, 50*1024*1024))
+        except (ValueError, OSError):
+            pass
     
     def get_code_execution_history(self, limit=10):
         """
@@ -2358,9 +2626,9 @@ class AICLI:
         """运行 TUI 模式"""
         if not TEXTUAL_AVAILABLE:
             print(f"{Fore.RED}TUI 模式不可用：Textual 库未安装{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}请运行: pip install textual{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}请运行: pip install textual rich{Style.RESET_ALL}")
             return
-        app = TUIMainApp(self)
+        app = XiaoliTUI(self)
         app.run()
 
     def run(self):
