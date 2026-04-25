@@ -88,13 +88,25 @@ class Plugin:
 
     def handle(self, args: str) -> str:
         try:
-            parts = args.strip().split(maxsplit=2)
-            if not parts:
-                return "错误：请提供操作类型"
+            # 先提取操作名
+            first_space = args.strip().find(' ')
+            if first_space == -1:
+                operation = args.strip().lower()
+                arg1, arg2 = "", ""
+            else:
+                operation = args.strip()[:first_space].lower()
+                rest = args.strip()[first_space + 1:]
 
-            operation = parts[0].lower()
-            arg1 = parts[1] if len(parts) > 1 else ""
-            arg2 = parts[2] if len(parts) > 2 else ""
+                # diff_text 特殊处理：用 <<<>>> 分割
+                if operation == "diff_text" and " <<<>>> " in rest:
+                    arg1, arg2 = rest.split(" <<<>>> ", 1)
+                else:
+                    parts = rest.split(maxsplit=1)
+                    arg1 = parts[0] if parts else ""
+                    arg2 = parts[1] if len(parts) > 1 else ""
+
+            if not operation:
+                return "错误：请提供操作类型"
 
             handlers = {
                 # 编辑
@@ -384,11 +396,9 @@ class Plugin:
         diff = '\n'.join(difflib.unified_diff(l1, l2, fromfile=f1, tofile=f2, lineterm=''))
         return diff or "两个文件完全相同"
 
-    def _op_diff_text(self, path: str, rest: str) -> str:
-        sep = " <<<>>> "
-        if sep not in rest:
+    def _op_diff_text(self, old: str, new: str) -> str:
+        if not old and not new:
             return "错误：格式: diff_text <old> <<<>>> <new>"
-        old, new = rest.split(sep, 1)
         return self._make_diff(old.strip(), new.strip())
 
     def _op_ast_info(self, path: str, rest: str) -> str:

@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint:
+    name: 代码检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: pip install ruff
+
+      - name: 语法检查 (py_compile)
+        run: |
+          python -c "
+          import py_compile, os, sys
+          errors = 0
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'node_modules', 'embedded_python'}]
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          py_compile.compile(path, doraise=True)
+                      except py_compile.PyCompileError as e:
+                          print(f'ERROR: {e}')
+                          errors += 1
+          if errors:
+              print(f'\n{errors} 个文件有语法错误')
+              sys.exit(1)
+          print('所有文件语法正确')
+          "
+
+      - name: Ruff lint
+        run: ruff check . --select E,F,W --ignore E501,E402,W503 --exclude .git,__pycache__,embedded_python
+
+  test:
+    name: 插件测试
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 安装测试依赖
+        run: pip install pytest colorama
+
+      - name: 运行测试
+        run: pytest tests/ -v --tb=short
+
+  structure:
+    name: 项目结构检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 检查必要文件
+        run: |
+          echo "检查项目结构..."
+          files=(
+            "ai_cli.py"
+            "launcher.py"
+            "xcli_core/cli_core.py"
+            "xcli_core/cli_base.py"
+            "xcli_core/config.py"
+            "xcli_core/constants.py"
+            "ai_engines/ollama_engine.py"
+            "ai_engines/openai_engine.py"
+            "plugins/code_editor.py"
+            "plugins/git_tools.py"
+            "plugins/cmd_executor.py"
+            "plugins/file_manager.py"
+            "plugins/auto_engineer.py"
+          )
+          missing=0
+          for f in "${files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f (缺失!)"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "\n${missing} 个文件缺失"
+            exit 1
+          fi
+          echo "\n项目结构完整"
+
+      - name: 检查旧文件已清理
+        run: |
+          old_files=(
+            "ai_engines/mimo_engine.py"
+            "ai_engines/GLM_http_engine.py"
+            "ai_engines/qwq_engine.py"
+            "ai_engines/xfyun_spark_engine.py"
+            "ai_engines/iflow_api_engine.py"
+            "ai_engines/maas_http_engine.py"
+            "ai_engines/SDK_openAI.py"
+            "plugins/git_workflow.py"
+            "plugins/code_search.py"
+            "plugins/project_analyzer.py"
+            "plugins/scheduler.py"
+          )
+          found=0
+          for f in "${old_files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ⚠️ 旧文件未清理: $f"
+              found=$((found + 1))
+            fi
+          done
+          if [ $found -gt 0 ]; then
+            echo "\n${found} 个旧文件未清理"
+            exit 1
+          fi
+          echo "旧文件已全部清理"
+
+      - name: 检查无重复引擎
+        run: |
+          engines=$(ls ai_engines/*_engine.py 2>/dev/null | wc -l)
+          echo "AI 引擎数量: $engines"
+          if [ "$engines" -gt 2 ]; then
+            echo "警告: 引擎数量超过 2 个 (ollama + openai)"
+            exit 1
+          fi
+          echo "引擎数量正常"
