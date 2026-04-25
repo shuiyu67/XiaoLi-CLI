@@ -357,6 +357,65 @@ class TestBrowserAuto:
 #  引擎加载测试
 # ══════════════════════════════════════
 
+class TestSubAgent:
+    """sub_agent 功能测试"""
+
+    @pytest.fixture
+    def sa(self):
+        mod = load_module("sub_agent", os.path.join(PLUGINS_DIR, "sub_agent.py"))
+        return mod.Plugin()
+
+    def test_list_empty(self, sa):
+        result = sa.handle("list")
+        assert "没有" in result
+
+    def test_stats_empty(self, sa):
+        result = sa.handle("stats")
+        assert "总数: 0" in result
+
+    def test_spawn(self, sa):
+        result = sa.handle("spawn tester 测试任务")
+        assert "已创建" in result
+        assert "agent_tester" in result
+
+    def test_spawn_and_list(self, sa):
+        sa.handle("spawn a 任务A")
+        sa.handle("spawn b 任务B")
+        import time; time.sleep(0.1)
+        result = sa.handle("list")
+        assert "agent_a" in result
+        assert "agent_b" in result
+
+    def test_status(self, sa):
+        sa.handle("spawn x 某任务")
+        import time; time.sleep(0.1)
+        # 获取 agent ID
+        agent_id = list(sa.agents.keys())[0]
+        result = sa.handle(f"status {agent_id}")
+        assert "名称" in result
+
+    def test_kill(self, sa):
+        sa.handle("spawn y 要终止的任务")
+        import time; time.sleep(0.1)
+        agent_id = list(sa.agents.keys())[0]
+        result = sa.handle(f"kill {agent_id}")
+        assert "已终止" in result
+
+    def test_clean(self, sa):
+        sa.handle("spawn z 清理测试")
+        import time; time.sleep(0.1)
+        result = sa.handle("clean")
+        assert "已清理" in result
+
+    def test_invalid_agent(self, sa):
+        result = sa.handle("status nonexistent")
+        assert "未找到" in result
+
+
+# ══════════════════════════════════════
+#  引擎加载测试
+# ══════════════════════════════════════
+
 class TestEngines:
     """AI 引擎加载测试"""
 
