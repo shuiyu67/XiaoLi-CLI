@@ -184,7 +184,7 @@ if TEXTUAL_AVAILABLE:
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║   🐱 小狸 Pro-CLI v5.0                       ║", "msg-welcome"),
+                ("  ║   🐱 小狸 Pro-CLI v5.1                       ║", "msg-welcome"),
                 ("  ║   智能编程助手 · 对标 Claude Code              ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
@@ -257,7 +257,7 @@ if TEXTUAL_AVAILABLE:
                                         line_numbers=True, word_wrap=True)
                         self._append(Panel(syntax, border_style=f"dim {_Theme.BORDER}",
                                            box=ROUNDED, padding=(0, 1)))
-                    except:
+                    except Exception:
                         for line in code.split('\n'):
                             self._add(f"    {line}", "msg-dim")
                 i += 1
@@ -309,7 +309,7 @@ if TEXTUAL_AVAILABLE:
                 'cls': lambda: self.action_clear(),
                 'model': lambda: self._switch_model(args),
                 'engine': lambda: self._switch_model(args),
-                'about': lambda: self._system("🐱 小狸 Pro-CLI v5.0 - 智能编程助手"),
+                'about': lambda: self._system("🐱 小狸 Pro-CLI v5.1 - 智能编程助手"),
                 'status': lambda: self._show_status(),
                 'tools': lambda: self._show_tools(),
                 'engines': lambda: self._show_engines(),
@@ -398,7 +398,7 @@ if TEXTUAL_AVAILABLE:
                 self.cli.tui_output_callback = tui_output
 
                 try:
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     await loop.run_in_executor(
                         None, self.cli.process_conversation, user_input
                     )
@@ -413,11 +413,16 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(self._update_sidebar)
 
         def _remove_thinking(self):
-            scroll = self.query_one("#chat-scroll")
-            for child in reversed(list(scroll.children)):
-                if '思考中' in str(getattr(child, 'renderable', '')):
-                    child.remove()
-                    break
+            try:
+                scroll = self.query_one("#chat-scroll")
+                for child in reversed(list(scroll.children)):
+                    renderable = getattr(child, 'renderable', None)
+                    text = str(renderable) if renderable is not None else ""
+                    if '思考中' in text:
+                        child.remove()
+                        break
+            except Exception:
+                pass
 
         def _write_raw(self, msg):
             if '✅' in msg or 'OK 工具' in msg:
@@ -453,4 +458,9 @@ if TEXTUAL_AVAILABLE:
 else:
     # Textual 不可用时的占位类
     class XiaoliTUI:
-        pass
+        """Textual 未安装时的占位类"""
+        def __init__(self, *args, **kwargs):
+            pass
+        def run(self, *args, **kwargs):
+            print("TUI 模式不可用：Textual 库未安装")
+            print("请运行: pip install textual rich")

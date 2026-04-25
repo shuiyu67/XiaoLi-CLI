@@ -11,13 +11,43 @@ import sys
 import importlib.util
 import json
 import re
-import requests
 import shutil
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from openai import OpenAI
 from colorama import init, Fore, Style
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+import socket
+import webbrowser
+from datetime import datetime
+import logging
+import asyncio
+from typing import Optional
+from io import StringIO
+
+# ── 第三方依赖（全部 try/except 保护） ──
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    requests = None
+    REQUESTS_AVAILABLE = False
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None
+    OPENAI_AVAILABLE = False
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    np = None
+    NUMPY_AVAILABLE = False
 
 # tkinter 仅在视频播放功能中使用，服务器环境可能不可用
 try:
@@ -33,14 +63,6 @@ try:
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
-
-import numpy as np
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-import socket
-import webbrowser
-from datetime import datetime
-import logging
 
 # 图像显示相关（可选）
 try:
@@ -77,10 +99,6 @@ except ImportError:
     UNIFIED_TOOL_MANAGER_AVAILABLE = False
 
 # Textual TUI 支持
-import asyncio
-from typing import Optional
-from io import StringIO
-
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal, Vertical, VerticalScroll
