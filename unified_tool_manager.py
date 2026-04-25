@@ -206,11 +206,20 @@ class UnifiedToolManager:
             kwargs = {}
             
             # 解析参数
-            if args.strip().startswith('{'):
+            args = args.strip()
+            if args.startswith('{'):
                 try:
                     kwargs = json.loads(args)
                 except json.JSONDecodeError:
                     kwargs = {'operation': args}
+            elif '=' in args:
+                # key=value 格式: "directory=. file_pattern=*.py"
+                for part in args.split():
+                    if '=' in part:
+                        k, v = part.split('=', 1)
+                        kwargs[k.strip()] = v.strip()
+                    else:
+                        kwargs.setdefault('operation', part)
             else:
                 kwargs = {'operation': args}
             
