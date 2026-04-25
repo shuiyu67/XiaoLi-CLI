@@ -17,9 +17,21 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 from colorama import init, Fore, Style
-import tkinter as tk
-from tkinter import ttk
-import cv2
+# tkinter 仅在视频播放功能中使用，服务器环境可能不可用
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    TKINTER_AVAILABLE = True
+except ImportError:
+    TKINTER_AVAILABLE = False
+
+# cv2 仅在视频播放功能中使用
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+
 import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -27,8 +39,18 @@ import socket
 import webbrowser
 from datetime import datetime
 import logging
-from PIL import Image
-from ascii_magic import AsciiArt
+# 图像显示相关（可选）
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    from ascii_magic import AsciiArt
+    ASCII_MAGIC_AVAILABLE = True
+except ImportError:
+    ASCII_MAGIC_AVAILABLE = False
 # WebSocket 服务端
 try:
     import websocket_server
@@ -68,36 +90,37 @@ except ImportError:
     print(f"{Fore.YELLOW}Textual 未安装，TUI 模式不可用。请运行: pip install textual{Style.RESET_ALL}")
 
 
-class TUIBridge:
-    """桥接类：让 TUI 能够调用同步的 AICLI 方法"""
+if TEXTUAL_AVAILABLE:
+    class TUIBridge:
+        """桥接类：让 TUI 能够调用同步的 AICLI 方法"""
 
-    def __init__(self, cli):
-        self.cli = cli
-        self._executor = ThreadPoolExecutor(max_workers=4)
+        def __init__(self, cli):
+            self.cli = cli
+            self._executor = ThreadPoolExecutor(max_workers=4)
 
-    def get_engines(self) -> dict:
-        return self.cli.engines
+        def get_engines(self) -> dict:
+            return self.cli.engines
 
-    def get_current_engine_name(self) -> str:
-        return self.cli.get_current_engine_name()
+        def get_current_engine_name(self) -> str:
+            return self.cli.get_current_engine_name()
 
-    def get_tools(self) -> list:
-        return self.cli.liugin_manager.tools
+        def get_tools(self) -> list:
+            return self.cli.liugin_manager.tools
 
-    def get_conversation_history(self) -> list:
-        return self.cli.shared_conversation_history
+        def get_conversation_history(self) -> list:
+            return self.cli.shared_conversation_history
 
-    def switch_engine(self, engine_name: str) -> bool:
-        if engine_name in self.cli.engines:
-            self.cli.switch_engine(engine_name)
-            return True
-        return False
+        def switch_engine(self, engine_name: str) -> bool:
+            if engine_name in self.cli.engines:
+                self.cli.switch_engine(engine_name)
+                return True
+            return False
 
 
-class TUIMainApp(App):
-    """TUI 主应用"""
+    class TUIMainApp(App):
+        """TUI 主应用"""
 
-    CSS = """
+        CSS = """
     Screen { background: $surface; }
     #chat-log { height: 1fr; }
     #user-input { height: 3; }
@@ -105,157 +128,150 @@ class TUIMainApp(App):
     #status-bar { height: 1; dock: bottom; }
     """
 
-    BINDINGS = [
-        Binding("ctrl+c", "quit", "退出"),
-        Binding("ctrl+t", "switch_to_cli", "切换CLI"),
-    ]
+        BINDINGS = [
+            Binding("ctrl+c", "quit", "退出"),
+            Binding("ctrl+t", "switch_to_cli", "切换CLI"),
+        ]
 
-    def __init__(self, cli):
-        super().__init__()
-        self.cli = cli
-        self.bridge = TUIBridge(cli)
-        self.is_generating = False
-
-    def compose(self) -> ComposeResult:
-        with Horizontal():
-            with Vertical(id="chat-area"):
-                yield RichLog(id="chat-log", wrap=True, max_lines=10000)
-                yield Input(placeholder="输入消息后按 Enter 发送...", id="user-input")
-            with Vertical(id="right-panel"):
-                yield Static("[b]AI 引擎[/b]")
-                yield Tree("引擎列表", id="engine-status")
-                yield Static("[b]可用工具[/b]")
-                yield RichLog(id="tools-log", wrap=True, max_lines=100)
-        yield Static("", id="status-bar")
-
-    def on_mount(self) -> None:
-        self.title = "小狸 CLI - TUI"
-        self._update_engine_tree()
-        self._update_tools_list()
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[bold cyan]欢迎使用小狸 CLI TUI 模式![/bold cyan]")
-        chat_log.write(f"[dim]当前引擎: {self.bridge.get_current_engine_name()}[/dim]")
-        chat_log.write(f"[dim]输入 /cli 切换到 CLI 模式[/dim]")
-        chat_log.write("")
-        self.query_one("#user-input", Input).focus()
-        self.update_status()
-
-    def _update_engine_tree(self) -> None:
-        tree = self.query_one("#engine-status", Tree)
-        tree.reset("引擎列表")
-        engines = self.bridge.get_engines()
-        current = self.bridge.get_current_engine_name()
-
-        for name in engines:
-            node = tree.root.add(f"* {name}")
-            if name == current:
-                node.add("(当前)")
-        tree.root.expand()
-
-    def _update_tools_list(self) -> None:
-        tools_log = self.query_one("#tools-log", RichLog)
-        tools_log.clear()
-        tools = self.bridge.get_tools()
-        if tools:
-            for tool in tools[:15]:
-                name = tool.get('name', '未知')
-                desc = tool.get('description', '')[:35]
-                tools_log.write(f"- {name}: {desc}")
-        else:
-            tools_log.write("暂无工具")
-
-    def update_status(self) -> None:
-        status = self.query_one("#status-bar", Static)
-        engine = self.bridge.get_current_engine_name()
-        history_len = len(self.bridge.get_conversation_history())
-        status.update(f"引擎: {engine} | {history_len} 条对话 | Ctrl+T: CLI | /cli: 切换模式")
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        user_input = event.value.strip()
-        if not user_input:
-            return
-
-        if user_input == '/cli':
-            self.action_switch_to_cli()
-            return
-
-        if user_input.startswith('/engine switch '):
-            engine_name = user_input[14:].strip()
-            if self.bridge.switch_engine(engine_name):
-                chat_log = self.query_one("#chat-log", RichLog)
-                chat_log.write(f"[green]已切换到引擎: {engine_name}[/]")
-                self._update_engine_tree()
-                self.update_status()
-            else:
-                chat_log = self.query_one("#chat-log", RichLog)
-                chat_log.write(f"[red]切换失败，引擎 '{engine_name}' 不存在[/]")
-            return
-
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[cyan]你:[/] {user_input}")
-        chat_log.write("")
-        event.input.value = ""
-        chat_log.write("AI 正在思考...")
-        self.run_worker(self._generate_response_async(user_input))
-
-    async def _generate_response_async(self, user_input: str) -> None:
-        """异步生成响应 - 通过回调输出到 TUI"""
-        try:
-            # 清除"正在思考"消息
-            self.call_after_refresh(self._clear_thinking)
-
-            # 包装回调以在主线程执行
-            def safe_output(message):
-                self.call_after_refresh(self._write_chat, message)
-
-            # 临时设置 CLI 的输出回调
-            original_callback = self.cli.tui_output_callback
-            self.cli.tui_output_callback = safe_output
-
-            try:
-                # 在线程池中运行 CLI
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self.cli.process_conversation, user_input)
-            finally:
-                # 恢复原始回调
-                self.cli.tui_output_callback = original_callback
-
-            self.call_after_refresh(self.update_status)
-        except Exception as e:
-            import traceback
-            self.call_after_refresh(self._write_chat, f"[red]错误: {str(e)}[/]")
-            self.call_after_refresh(self._write_chat, f"[dim]{traceback.format_exc()}[/]")
-        finally:
+        def __init__(self, cli):
+            super().__init__()
+            self.cli = cli
+            self.bridge = TUIBridge(cli)
             self.is_generating = False
 
-    def _write_chat(self, message: str) -> None:
-        """在主线程写入聊天日志"""
-        try:
-            chat_log = self.query_one("#chat-log", RichLog)
-            # RichLog 支持 ANSI 颜色代码，直接写入
-            chat_log.write(message)
-        except Exception as e:
-            print(f"写入聊天失败: {e}")
+        def compose(self) -> ComposeResult:
+            with Horizontal():
+                with Vertical(id="chat-area"):
+                    yield RichLog(id="chat-log", wrap=True, max_lines=10000)
+                    yield Input(placeholder="输入消息后按 Enter 发送...", id="user-input")
+                with Vertical(id="right-panel"):
+                    yield Static("[b]AI 引擎[/b]")
+                    yield Tree("引擎列表", id="engine-status")
+                    yield Static("[b]可用工具[/b]")
+                    yield RichLog(id="tools-log", wrap=True, max_lines=100)
+            yield Static("", id="status-bar")
 
-    def _clear_thinking(self) -> None:
-        """清除'正在思考'消息"""
-        try:
+        def on_mount(self) -> None:
+            self.title = "小狸 CLI - TUI"
+            self._update_engine_tree()
+            self._update_tools_list()
             chat_log = self.query_one("#chat-log", RichLog)
-            # 移除最后一条"正在思考"消息
-            children = list(chat_log.children)
-            if children and "正在思考" in str(children[-1]):
-                chat_log.remove_child(children[-1])
-        except:
-            pass
+            chat_log.write(f"[bold cyan]欢迎使用小狸 CLI TUI 模式![/bold cyan]")
+            chat_log.write(f"[dim]当前引擎: {self.bridge.get_current_engine_name()}[/dim]")
+            chat_log.write(f"[dim]输入 /cli 切换到 CLI 模式[/dim]")
+            chat_log.write("")
+            self.query_one("#user-input", Input).focus()
+            self.update_status()
 
-    def action_switch_to_cli(self) -> None:
-        import subprocess
-        import sys
-        self.exit()
-        # 启动新的 CLI 进程
-        subprocess.Popen([sys.executable, __file__])
-        # 退出当前进程
-        os._exit(0)
+        def _update_engine_tree(self) -> None:
+            tree = self.query_one("#engine-status", Tree)
+            tree.reset("引擎列表")
+            engines = self.bridge.get_engines()
+            current = self.bridge.get_current_engine_name()
+
+            for name in engines:
+                node = tree.root.add(f"* {name}")
+                if name == current:
+                    node.add("(当前)")
+            tree.root.expand()
+
+        def _update_tools_list(self) -> None:
+            tools_log = self.query_one("#tools-log", RichLog)
+            tools_log.clear()
+            tools = self.bridge.get_tools()
+            if tools:
+                for tool in tools[:15]:
+                    name = tool.get('name', '未知')
+                    desc = tool.get('description', '')[:35]
+                    tools_log.write(f"- {name}: {desc}")
+            else:
+                tools_log.write("暂无工具")
+
+        def update_status(self) -> None:
+            status = self.query_one("#status-bar", Static)
+            engine = self.bridge.get_current_engine_name()
+            history_len = len(self.bridge.get_conversation_history())
+            status.update(f"引擎: {engine} | {history_len} 条对话 | Ctrl+T: CLI | /cli: 切换模式")
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            user_input = event.value.strip()
+            if not user_input:
+                return
+
+            if user_input == '/cli':
+                self.action_switch_to_cli()
+                return
+
+            if user_input.startswith('/engine switch '):
+                engine_name = user_input[14:].strip()
+                if self.bridge.switch_engine(engine_name):
+                    chat_log = self.query_one("#chat-log", RichLog)
+                    chat_log.write(f"[green]已切换到引擎: {engine_name}[/]")
+                    self._update_engine_tree()
+                    self.update_status()
+                else:
+                    chat_log = self.query_one("#chat-log", RichLog)
+                    chat_log.write(f"[red]切换失败，引擎 '{engine_name}' 不存在[/]")
+                return
+
+            chat_log = self.query_one("#chat-log", RichLog)
+            chat_log.write(f"[cyan]你:[/] {user_input}")
+            chat_log.write("")
+            event.input.value = ""
+            chat_log.write("AI 正在思考...")
+            self.run_worker(self._generate_response_async(user_input))
+
+        async def _generate_response_async(self, user_input: str) -> None:
+            """异步生成响应 - 通过回调输出到 TUI"""
+            try:
+                self.call_after_refresh(self._clear_thinking)
+
+                def safe_output(message):
+                    self.call_after_refresh(self._write_chat, message)
+
+                original_callback = self.cli.tui_output_callback
+                self.cli.tui_output_callback = safe_output
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self.cli.process_conversation, user_input)
+                finally:
+                    self.cli.tui_output_callback = original_callback
+
+                self.call_after_refresh(self.update_status)
+            except Exception as e:
+                import traceback
+                self.call_after_refresh(self._write_chat, f"[red]错误: {str(e)}[/]")
+                self.call_after_refresh(self._write_chat, f"[dim]{traceback.format_exc()}[/]")
+            finally:
+                self.is_generating = False
+
+        def _write_chat(self, message: str) -> None:
+            try:
+                chat_log = self.query_one("#chat-log", RichLog)
+                chat_log.write(message)
+            except Exception as e:
+                print(f"写入聊天失败: {e}")
+
+        def _clear_thinking(self) -> None:
+            try:
+                chat_log = self.query_one("#chat-log", RichLog)
+                children = list(chat_log.children)
+                if children and "正在思考" in str(children[-1]):
+                    chat_log.remove_child(children[-1])
+            except:
+                pass
+
+        def action_switch_to_cli(self) -> None:
+            import subprocess
+            import sys
+            self.exit()
+            subprocess.Popen([sys.executable, __file__])
+            os._exit(0)
+else:
+    # Textual 不可用时的占位类
+    class TUIMainApp:
+        pass
 
 
 # 配置文件路径
