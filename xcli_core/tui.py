@@ -65,7 +65,7 @@ if TEXTUAL_AVAILABLE:
     #user-input:focus {{ border: tall {_Theme.BORDER_FOCUS}; }}
     #input-hint {{
         height: 1; color: {_Theme.TEXT_DIM};
-        padding: 0 1; text-size: 80%;
+        padding: 0 1;
     }}
     #sidebar {{
         width: 32; min-width: 32; height: 1fr;
@@ -77,31 +77,31 @@ if TEXTUAL_AVAILABLE:
     .sidebar-header {{
         width: 100%; text-align: center;
         color: {_Theme.ACCENT}; text-style: bold;
-        padding: 1 0 0 0; text-size: 90%;
+        padding: 1 0 0 0;
     }}
     .sidebar-section {{ height: auto; padding: 0 1; margin: 0 0 1 0; }}
-    .engine-item {{ padding: 0 1; color: {_Theme.TEXT_MUTED}; text-size: 85%; }}
-    .engine-item-active {{ padding: 0 1; color: {_Theme.SUCCESS}; text-style: bold; text-size: 85%; }}
-    .tool-item {{ padding: 0 0 0 1; color: {_Theme.TEXT_MUTED}; text-size: 80%; }}
+    .engine-item {{ padding: 0 1; color: {_Theme.TEXT_MUTED}; }}
+    .engine-item-active {{ padding: 0 1; color: {_Theme.SUCCESS}; text-style: bold; }}
+    .tool-item {{ padding: 0 0 0 1; color: {_Theme.TEXT_MUTED}; }}
     .tool-item-name {{ color: {_Theme.TEXT}; text-style: bold; }}
     #status-bar {{
         height: 1; width: 100%; dock: bottom;
         background: {_Theme.BG_LIGHT};
-        color: {_Theme.TEXT_MUTED}; padding: 0 1; text-size: 80%;
+        color: {_Theme.TEXT_MUTED}; padding: 0 1;
     }}
     .msg-user {{ color: {_Theme.USER}; padding: 1 0 0 1; text-style: bold; }}
     .msg-ai {{ color: {_Theme.AI}; padding: 0 1; }}
-    .msg-system {{ color: {_Theme.ACCENT}; padding: 0 1; text-size: 85%; }}
-    .msg-tool-ok {{ color: {_Theme.TOOL}; padding: 0 1; text-size: 85%; }}
-    .msg-tool-err {{ color: {_Theme.TOOL_ERR}; padding: 0 1; text-size: 85%; }}
+    .msg-system {{ color: {_Theme.ACCENT}; padding: 0 1; }}
+    .msg-tool-ok {{ color: {_Theme.TOOL}; padding: 0 1; }}
+    .msg-tool-err {{ color: {_Theme.TOOL_ERR}; padding: 0 1; }}
     .msg-thinking {{ color: {_Theme.TEXT_DIM}; text-style: italic; padding: 0 1; }}
     .msg-error {{ color: {_Theme.ERROR}; padding: 0 1; }}
-    .msg-dim {{ color: {_Theme.TEXT_DIM}; padding: 0 1; text-size: 85%; }}
+    .msg-dim {{ color: {_Theme.TEXT_DIM}; padding: 0 1; }}
     .msg-welcome {{ color: {_Theme.ACCENT}; padding: 0 1; text-style: bold; }}
     .code-block {{
         background: {_Theme.CODE_BG};
         border: wide {_Theme.BORDER};
-        padding: 0 1; margin: 0 2 0 2; text-size: 85%;
+        padding: 0 1; margin: 0 2 0 2;
     }}
     Tab {{ background: {_Theme.BG}; }}
     Tab.-active {{ background: {_Theme.BG_LIGHT}; }}
