@@ -1,396 +1,589 @@
 """
-小狸 Pro-CLI TUI - 现代化终端界面
+小狸 Pro-CLI TUI v2 - 对标 Claude Code / OpenCode
+现代化终端界面，支持代码高亮、工具时间线、文件浏览
 """
 import asyncio
 import os
 import sys
+import time
 from datetime import datetime
+from typing import Optional
 
-# 确保项目根目录在 path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from textual.app import App, ComposeResult
-    from textual.containers import Horizontal, Vertical, VerticalScroll
-    from textual.widgets import Header, Footer, Input, Static, Rule, Label
+    from textual.containers import Horizontal, Vertical, VerticalScroll, Container
+    from textual.widgets import (
+        Header, Footer, Input, Static, Rule, Label,
+        DataTable, ProgressBar, TabbedContent, TabPane
+    )
     from textual.binding import Binding
-    from textual.reactive import reactive
+    from textual.reactive import reactive, var
+    from textual.message import Message
+    from textual import work, on
     from rich.text import Text
-    from rich.markdown import Markdown
+    from rich.markdown import Markdown as RichMarkdown
     from rich.syntax import Syntax
     from rich.panel import Panel
-    from rich.console import Group
+    from rich.table import Table
+    from rich.tree import Tree as RichTree
+    from rich.columns import Columns
+    from rich.align import Align
+    from rich.box import ROUNDED, HEAVY, DOUBLE
     TEXTUAL_AVAILABLE = True
 except ImportError:
     TEXTUAL_AVAILABLE = False
 
 
 # ──────────────────────────────────────────────
-# 样式常量
+# 主题色
 # ──────────────────────────────────────────────
 
-CSS = """
-Screen {
-    background: #0a0e14;
-    layers: base overlay;
-}
+class Theme:
+    BG = "#0d1117"
+    BG_LIGHT = "#161b22"
+    BG_INPUT = "#0d1117"
+    BORDER = "#30363d"
+    BORDER_FOCUS = "#58a6ff"
+    TEXT = "#c9d1d9"
+    TEXT_DIM = "#484f58"
+    TEXT_MUTED = "#8b949e"
+    ACCENT = "#58a6ff"
+    SUCCESS = "#3fb950"
+    WARNING = "#d29922"
+    ERROR = "#f85149"
+    USER = "#79c0ff"
+    AI = "#c9d1d9"
+    TOOL = "#56d364"
+    TOOL_ERR = "#f85149"
+    CODE_BG = "#161b22"
+    LINK = "#58a6ff"
 
-#main-container {
+
+# ──────────────────────────────────────────────
+# CSS
+# ──────────────────────────────────────────────
+
+CSS = f"""
+Screen {{
+    background: {Theme.BG};
+}}
+
+#app-container {{
     height: 100%;
     width: 100%;
-}
+}}
 
-#chat-area {
+/* ── 主聊天区 ── */
+#main {{
     width: 1fr;
     height: 1fr;
-    padding: 0 1;
-}
+}}
 
-#chat-log {
+#chat-scroll {{
     height: 1fr;
-    background: #0a0e14;
-    border: none;
-    scrollbar-color: #3d5a80;
-    scrollbar-color-hover: #5a8ab5;
-}
+    background: {Theme.BG};
+    scrollbar-color: {Theme.BORDER};
+    scrollbar-color-hover: {Theme.TEXT_MUTED};
+    padding: 0 1;
+}}
 
-#input-container {
+#input-area {{
+    height: auto;
+    min-height: 4;
+    max-height: 10;
+    padding: 1 1 0 1;
+}}
+
+#user-input {{
     height: auto;
     min-height: 3;
-    max-height: 8;
-    padding: 0 0 1 0;
-}
-
-#user-input {
-    height: auto;
-    min-height: 3;
-    background: #1a1e24;
-    border: tall #3d5a80;
-    color: #e0e0e0;
+    background: {Theme.BG_INPUT};
+    border: tall {Theme.BORDER};
+    color: {Theme.TEXT};
     padding: 0 1;
-}
+}}
 
-#user-input:focus {
-    border: tall #5a8ab5;
-}
+#user-input:focus {{
+    border: tall {Theme.BORDER_FOCUS};
+}}
 
-#sidebar {
-    width: 28;
-    min-width: 28;
+#input-hint {{
+    height: 1;
+    color: {Theme.TEXT_DIM};
+    padding: 0 1;
+    text-size: 80%;
+}}
+
+/* ── 侧边栏 ── */
+#sidebar {{
+    width: 32;
+    min-width: 32;
     height: 1fr;
-    background: #0d1117;
-    border-left: wide #1a2332;
-    padding: 1 0;
-}
+    background: {Theme.BG_LIGHT};
+    border-left: wide {Theme.BORDER};
+    display: block;
+}}
 
-#sidebar-title {
+#sidebar.hidden {{
+    display: none;
+    width: 0;
+    min-width: 0;
+}}
+
+.sidebar-header {{
     width: 100%;
     text-align: center;
-    color: #5a8ab5;
+    color: {Theme.ACCENT};
     text-style: bold;
-    padding: 0 0 1 0;
-}
+    padding: 1 0 0 0;
+    text-size: 90%;
+}}
 
-#engine-list {
+.sidebar-section {{
     height: auto;
-    max-height: 12;
-    background: #0d1117;
     padding: 0 1;
     margin: 0 0 1 0;
-}
+}}
 
-#engine-item {
+.engine-item {{
     padding: 0 1;
-    color: #8899aa;
-}
+    color: {Theme.TEXT_MUTED};
+    text-size: 85%;
+}}
 
-#engine-item-active {
+.engine-item-active {{
     padding: 0 1;
-    color: #58d68d;
+    color: {Theme.SUCCESS};
     text-style: bold;
-}
+    text-size: 85%;
+}}
 
-#tool-list {
-    height: 1fr;
-    background: #0d1117;
-    padding: 0 1;
-    overflow-y: auto;
-}
+.tool-item {{
+    padding: 0 0 0 1;
+    color: {Theme.TEXT_MUTED};
+    text-size: 80%;
+}}
 
-#tool-item {
-    padding: 0 1;
-    color: #6688aa;
-    text-size: 90%;
-}
+.tool-item-name {{
+    color: {Theme.TEXT};
+    text-style: bold;
+}}
 
-#status-bar {
+/* ── 状态栏 ── */
+#status-bar {{
     height: 1;
     width: 100%;
     dock: bottom;
-    background: #1a2332;
-    color: #5a8ab5;
+    background: {Theme.BG_LIGHT};
+    color: {Theme.TEXT_MUTED};
     padding: 0 1;
-}
+    text-size: 80%;
+}}
 
-#welcome {
-    width: 100%;
-    text-align: center;
-    color: #5a8ab5;
-    padding: 2 0;
-}
+/* ── 消息样式 ── */
+.msg-user {{
+    color: {Theme.USER};
+    padding: 1 0 0 1;
+    text-style: bold;
+}}
 
-#version-info {
-    width: 100%;
-    text-align: center;
-    color: #445566;
-    padding: 0 0 2 0;
-}
+.msg-ai {{
+    color: {Theme.AI};
+    padding: 0 1;
+}}
 
-.user-msg {
-    color: #e0e0e0;
-    padding: 0 0 0 1;
-    margin: 0 0 0 0;
-}
+.msg-system {{
+    color: {Theme.ACCENT};
+    padding: 0 1;
+    text-size: 85%;
+}}
 
-.ai-msg {
-    color: #c0d0e0;
-    padding: 0 0 0 0;
-}
+.msg-tool-ok {{
+    color: {Theme.TOOL};
+    padding: 0 1;
+    text-size: 85%;
+}}
 
-.tool-msg-ok {
-    color: #58d68d;
-    padding: 0 0 0 1;
-}
+.msg-tool-err {{
+    color: {Theme.TOOL_ERR};
+    padding: 0 1;
+    text-size: 85%;
+}}
 
-.tool-msg-err {
-    color: #e74c3c;
-    padding: 0 0 0 1;
-}
-
-.thinking-msg {
-    color: #7f8c8d;
+.msg-thinking {{
+    color: {Theme.TEXT_DIM};
     text-style: italic;
-}
+    padding: 0 1;
+}}
 
-.system-msg {
-    color: #5a8ab5;
-    padding: 0 0 0 1;
-}
+.msg-error {{
+    color: {Theme.ERROR};
+    padding: 0 1;
+}}
 
-.error-msg {
-    color: #e74c3c;
-    padding: 0 0 0 1;
-}
+.msg-dim {{
+    color: {Theme.TEXT_DIM};
+    padding: 0 1;
+    text-size: 85%;
+}}
 
-.dim {
-    color: #556677;
-}
+.msg-welcome {{
+    color: {Theme.ACCENT};
+    padding: 0 1;
+    text-style: bold;
+}}
+
+/* ── 代码块 ── */
+.code-block {{
+    background: {Theme.CODE_BG};
+    border: wide {Theme.BORDER};
+    padding: 0 1;
+    margin: 0 2 0 2;
+    text-size: 85%;
+}}
+
+/* ── Tab ── */
+Tab {{
+    background: {Theme.BG};
+}}
+
+Tab.-active {{
+    background: {Theme.BG_LIGHT};
+}}
+
+TabbedContent > Tabs {{
+    background: {Theme.BG};
+}}
 """
 
 
-class ChatLog(VerticalScroll):
-    """聊天日志区域"""
-    pass
+# ──────────────────────────────────────────────
+# 消息组件
+# ──────────────────────────────────────────────
+
+class ChatMessage(Static):
+    """单条聊天消息"""
+    def __init__(self, content, msg_type="ai", **kwargs):
+        self.msg_type = msg_type
+        super().__init__(content, **kwargs)
 
 
-class Sidebar(Vertical):
-    """侧边栏"""
-    pass
+# ──────────────────────────────────────────────
+# 桥接
+# ──────────────────────────────────────────────
 
+class TUIBridge:
+    def __init__(self, app_instance):
+        self.app = app_instance
+
+    def engines(self) -> list:
+        return self.app.engine_mgr.names()
+
+    def current_engine(self) -> str:
+        return self.app.engine_mgr.current_name()
+
+    def tools(self) -> list:
+        if self.app.tool_mgr and hasattr(self.app.tool_mgr, '_tools'):
+            return list(self.app.tool_mgr._tools.values())
+        return []
+
+    def history(self) -> list:
+        return self.app.history.get()
+
+    def switch_engine(self, name: str) -> bool:
+        return self.app._switch_model(name)
+
+
+# ──────────────────────────────────────────────
+# 主应用
+# ──────────────────────────────────────────────
 
 class XiaoliTUI(App):
-    """小狸 TUI 主应用"""
+    """小狸 TUI v2"""
 
     CSS = CSS
-    TITLE = "小狸 Pro-CLI"
-    SUB_TITLE = "智能编程助手"
+    TITLE = "🐱 小狸 Pro-CLI"
+    SUB_TITLE = "智能编程助手 v3.6"
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "退出", show=True),
-        Binding("ctrl+l", "clear_chat", "清屏", show=True),
+        Binding("ctrl+l", "clear", "清屏", show=True),
         Binding("ctrl+n", "new_chat", "新对话", show=True),
         Binding("f1", "toggle_sidebar", "侧栏", show=True),
+        Binding("f2", "toggle_tools", "工具", show=True),
+        Binding("escape", "cancel", "取消", show=False),
     ]
 
-    is_generating = reactive(False)
+    sidebar_visible = var(True)
+    is_generating = var(False)
 
     def __init__(self, app_instance):
         super().__init__()
         self.app_inst = app_instance
         self.bridge = TUIBridge(app_instance)
+        self._tool_calls = []  # 工具调用历史
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Horizontal(id="main-container"):
-            with Vertical(id="chat-area"):
-                yield ChatLog(id="chat-log")
-                with Vertical(id="input-container"):
+        with Horizontal(id="app-container"):
+            # 主聊天区
+            with Vertical(id="main"):
+                yield VerticalScroll(id="chat-scroll")
+                with Vertical(id="input-area"):
                     yield Input(
                         placeholder="  输入消息... (Enter 发送, /help 帮助)",
                         id="user-input"
                     )
+                    yield Static(
+                        "  Tab 补全 | ↑↓ 历史 | Ctrl+L 清屏 | F1 侧栏",
+                        id="input-hint"
+                    )
+            # 侧边栏
             with Vertical(id="sidebar"):
-                yield Static("⚙️ AI 引擎", id="sidebar-title")
-                yield Vertical(id="engine-list")
-                yield Rule(line_style="ascii")
-                yield Static("🔧 可用工具", id="sidebar-title")
-                yield Vertical(id="tool-list")
-        yield Static(" 就绪", id="status-bar")
+                yield Static("⚙️  引擎", classes="sidebar-header")
+                yield Vertical(id="engine-list", classes="sidebar-section")
+                yield Rule(line_style="heavy")
+                yield Static("🔧 工具", classes="sidebar-header")
+                yield Vertical(id="tool-list", classes="sidebar-section")
+                yield Rule(line_style="heavy")
+                yield Static("📊 状态", classes="sidebar-header")
+                yield Vertical(id="status-info", classes="sidebar-section")
+        yield Static(" 就绪 | ollama | Ctrl+C 退出", id="status-bar")
 
-    def on_mount(self) -> None:
+    def on_mount(self):
         self._render_welcome()
-        self._update_engines()
-        self._update_tools()
+        self._update_sidebar()
         self.query_one("#user-input").focus()
 
+    # ── 渲染 ──
+
     def _render_welcome(self):
-        chat = self.query_one("#chat-log")
-        chat.mount(Static("", classes="dim"))
-        chat.mount(Static("  ╔══════════════════════════════════════╗", classes="system-msg"))
-        chat.mount(Static("  ║                                      ║", classes="system-msg"))
-        chat.mount(Static("  ║   🐱 小狸 Pro-CLI v3.6               ║", classes="system-msg"))
-        chat.mount(Static("  ║   智能编程助手                        ║", classes="system-msg"))
-        chat.mount(Static("  ║                                      ║", classes="system-msg"))
-        chat.mount(Static("  ╚══════════════════════════════════════╝", classes="system-msg"))
-        chat.mount(Static("", classes="dim"))
-        chat.mount(Static("  💡 快捷键: Ctrl+L 清屏 | Ctrl+N 新对话 | F1 侧栏", classes="dim"))
-        chat.mount(Static("  📝 输入 /help 查看所有命令", classes="dim"))
-        chat.mount(Static(f"  🔧 当前引擎: {self.bridge.get_current_engine_name()}", classes="dim"))
-        chat.mount(Static("", classes="dim"))
+        scroll = self.query_one("#chat-scroll")
+        lines = [
+            ("", "msg-dim"),
+            ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
+            ("  ║                                              ║", "msg-welcome"),
+            ("  ║   🐱 小狸 Pro-CLI v3.6                       ║", "msg-welcome"),
+            ("  ║   智能编程助手 · 对标 Claude Code              ║", "msg-welcome"),
+            ("  ║                                              ║", "msg-welcome"),
+            ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
+            ("", "msg-dim"),
+            ("  💡 代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
+            ("  📝 输入 /help 查看命令 | /model 切换引擎", "msg-system"),
+            (f"  🔧 当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
+            ("", "msg-dim"),
+        ]
+        for text, cls in lines:
+            scroll.mount(Static(text, classes=cls))
 
-    def _update_engines(self):
-        container = self.query_one("#engine-list")
-        container.remove_children()
-        current = self.bridge.get_current_engine_name()
-        for name in self.bridge.get_engines():
-            cls = "engine-item-active" if name == current else "engine-item"
-            prefix = "▸ " if name == current else "  "
-            container.mount(Static(f"{prefix}{name}", id=f"engine-{name}", classes=cls))
+    def _update_sidebar(self):
+        # 引擎列表
+        engine_container = self.query_one("#engine-list")
+        engine_container.remove_children()
+        current = self.bridge.current_engine()
+        for name in self.bridge.engines():
+            if name == current:
+                engine_container.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
+            else:
+                engine_container.mount(Static(f"    {name}", classes="engine-item"))
 
-    def _update_tools(self):
-        container = self.query_one("#tool-list")
-        container.remove_children()
-        tools = self.bridge.get_tools()
-        for tool in tools:
+        # 工具列表
+        tool_container = self.query_one("#tool-list")
+        tool_container.remove_children()
+        for tool in self.bridge.tools():
             name = tool.get('name', '?')
-            container.mount(Static(f"  • {name}", classes="tool-item"))
+            tool_container.mount(Static(f"  • {name}", classes="tool-item"))
+
+        # 状态信息
+        status_container = self.query_one("#status-info")
+        status_container.remove_children()
+        status_container.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
+        status_container.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
+        status_container.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
 
     def _update_status(self, text: str):
-        status = self.query_one("#status-bar")
-        status.update(f" {text}")
+        bar = self.query_one("#status-bar")
+        engine = self.bridge.current_engine()
+        bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话")
 
-    def _append_chat(self, widget):
-        chat = self.query_one("#chat-log")
-        chat.mount(widget)
-        chat.scroll_end(animate=False)
+    def _append(self, widget):
+        scroll = self.query_one("#chat-scroll")
+        scroll.mount(widget)
+        scroll.scroll_end(animate=False)
 
-    def _add_user_msg(self, text: str):
-        self._append_chat(Static(f"  你: {text}", classes="user-msg"))
+    def _add(self, text, cls="msg-dim"):
+        self._append(Static(text, classes=cls))
 
-    def _add_ai_msg(self, text: str):
-        # 尝试渲染 Markdown
-        try:
-            from rich.markdown import Markdown
-            md = Markdown(text)
-            self._append_chat(Static(md, classes="ai-msg"))
-        except:
-            self._append_chat(Static(f"  ✦ {text}", classes="ai-msg"))
+    # ── 消息类型 ──
 
-    def _add_tool_ok(self, name: str, args: str):
-        self._append_chat(Static(f"  ✅ {name}: {args[:50]}", classes="tool-msg-ok"))
+    def _user_msg(self, text):
+        self._add(f"  👤 {text}", "msg-user")
 
-    def _add_tool_err(self, name: str, args: str):
-        self._append_chat(Static(f"  ❌ {name}: {args[:50]}", classes="tool-msg-err"))
+    def _ai_msg(self, text):
+        # 检测代码块并高亮
+        if "```" in text:
+            self._render_with_code(text)
+        else:
+            self._add(f"  ✦ {text}", "msg-ai")
 
-    def _add_system(self, text: str):
-        self._append_chat(Static(f"  ℹ️  {text}", classes="system-msg"))
+    def _render_with_code(self, text):
+        """渲染包含代码块的消息"""
+        import re
+        parts = re.split(r'```(\w*)\n(.*?)```', text, flags=re.DOTALL)
+        i = 0
+        while i < len(parts):
+            if i % 3 == 0:
+                # 普通文本
+                if parts[i].strip():
+                    for line in parts[i].strip().split('\n'):
+                        self._add(f"  ✦ {line}", "msg-ai")
+            elif i % 3 == 1:
+                # 语言标识
+                pass
+            elif i % 3 == 2:
+                # 代码块
+                code = parts[i]
+                lang = parts[i-1] if i > 1 else ""
+                try:
+                    syntax = Syntax(code, lang or "python", theme="monokai",
+                                    line_numbers=True, word_wrap=True)
+                    self._append(Panel(syntax, border_style=f"dim {Theme.BORDER}",
+                                       box=ROUNDED, padding=(0, 1)))
+                except:
+                    for line in code.split('\n'):
+                        self._add(f"    {line}", "msg-dim")
+            i += 1
 
-    def _add_error(self, text: str):
-        self._append_chat(Static(f"  ⚠️  {text}", classes="error-msg"))
+    def _tool_ok(self, name, args):
+        self._add(f"  ✅ {name}: {args[:60]}", "msg-tool-ok")
 
-    def _add_thinking(self):
-        self._append_chat(Static("  💭 AI 正在思考...", classes="thinking-msg"))
+    def _tool_err(self, name, args):
+        self._add(f"  ❌ {name}: {args[:60]}", "msg-tool-err")
 
-    def on_input_submitted(self, event: Input.Submitted):
-        user_input = event.value.strip()
-        if not user_input:
+    def _thinking(self):
+        self._add("  💭 思考中...", "msg-thinking")
+
+    def _system(self, text):
+        self._add(f"  ℹ️  {text}", "msg-system")
+
+    def _error(self, text):
+        self._add(f"  ⚠️  {text}", "msg-error")
+
+    # ── 命令处理 ──
+
+    @on(Input.Submitted, "#user-input")
+    def on_input(self, event):
+        text = event.value.strip()
+        if not text:
             return
-
         event.input.value = ""
 
-        # 命令处理
-        if user_input.startswith('/'):
-            self._handle_command(user_input)
+        if text.startswith('/'):
+            self._handle_command(text)
             return
 
-        # 显示用户消息
-        self._add_user_msg(user_input)
-
-        # 思考提示
-        self._add_thinking()
-
-        # 异步生成
+        self._user_msg(text)
+        self._thinking()
         self.is_generating = True
-        self._update_status("🔄 AI 思考中...")
-        self.run_worker(self._generate(user_input), exclusive=True)
+        self._update_status("🔄 思考中...")
+        self.run_worker(self._generate(text), exclusive=True)
 
-    def _handle_command(self, cmd: str):
+    def _handle_command(self, cmd):
         parts = cmd[1:].split(maxsplit=1)
-        name = parts[0]
+        name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
-        if name == 'help':
-            self._show_help()
-        elif name == 'quit':
-            self.exit()
-        elif name == 'cli':
-            self._add_system("切换到 CLI 模式...")
-            self.app_inst.tui_callback = None
-            self.exit()
-            self.app_inst.run()
-        elif name == 'model' or name == 'engine':
-            if args.startswith('switch '):
-                args = args[7:]
-            if self.bridge.switch_engine(args):
-                self._add_system(f"已切换到引擎: {args}")
-                self._update_engines()
-            else:
-                self._add_error(f"未找到引擎: {args}")
-        elif name == 'clear':
-            self.action_clear_chat()
-        elif name == 'about':
-            self._add_system("小狸 Pro-CLI v3.6 - 智能编程助手")
-        elif name == 'chat':
-            self._add_system("聊天记录功能请使用 CLI 模式")
+        cmds = {
+            'help': lambda: self._show_help(),
+            'quit': lambda: self.exit(),
+            'q': lambda: self.exit(),
+            'exit': lambda: self.exit(),
+            'cli': lambda: self._switch_cli(),
+            'clear': lambda: self.action_clear(),
+            'cls': lambda: self.action_clear(),
+            'model': lambda: self._switch_model(args),
+            'engine': lambda: self._switch_model(args),
+            'about': lambda: self._system("小狸 Pro-CLI v3.6 - 智能编程助手"),
+            'status': lambda: self._show_status(),
+            'tools': lambda: self._show_tools(),
+            'engines': lambda: self._show_engines(),
+        }
+
+        handler = cmds.get(name)
+        if handler:
+            handler()
         else:
-            self._add_error(f"未知命令: /{name}，输入 /help 查看帮助")
+            self._error(f"未知命令: /{name}，输入 /help 查看帮助")
 
     def _show_help(self):
-        help_text = """  📖 命令列表:
-  /help          - 帮助信息
-  /quit          - 退出
-  /cli           - 切换到命令行模式
-  /model <引擎>  - 切换 AI 引擎
-  /clear         - 清屏
-  /about         - 关于
+        help_text = """  📖 命令:
+  /help          帮助信息
+  /quit          退出
+  /cli           切换命令行模式
+  /model <引擎>  切换 AI 引擎
+  /engines       列出引擎
+  /tools         列出工具
+  /status        系统状态
+  /clear         清屏
 
   ⌨️  快捷键:
-  Ctrl+C  退出
-  Ctrl+L  清屏
-  Ctrl+N  新对话
-  F1      切换侧栏"""
-        self._add_system(help_text)
+  Ctrl+C   退出    Ctrl+L   清屏
+  Ctrl+N   新对话  F1       侧栏
+  Escape   取消生成"""
+        self._system(help_text)
 
-    async def _generate(self, user_input: str):
+    def _switch_cli(self):
+        self._system("切换到命令行模式...")
+        self.app_inst.tui_callback = None
+        self.exit()
+
+    def _switch_model(self, name):
+        name = name.strip()
+        if not name:
+            self._show_engines()
+            return
+        if self.bridge.switch_engine(name):
+            self._system(f"已切换到: {name}")
+            self._update_sidebar()
+        else:
+            self._error(f"未找到引擎: {name}")
+
+    def _show_engines(self):
+        current = self.bridge.current_engine()
+        lines = ["  可用引擎:"]
+        for name in self.bridge.engines():
+            marker = "▸" if name == current else " "
+            lines.append(f"  {marker} {name}")
+        self._system('\n'.join(lines))
+
+    def _show_tools(self):
+        tools = self.bridge.tools()
+        lines = [f"  可用工具 ({len(tools)} 个):"]
+        for t in tools:
+            name = t.get('name', '?')
+            desc = t.get('description', '')[:40]
+            lines.append(f"  • {name}: {desc}")
+        self._system('\n'.join(lines))
+
+    def _show_status(self):
+        self._system(f"""  系统状态:
+  引擎: {self.bridge.current_engine()}
+  引擎数: {len(self.bridge.engines())}
+  工具数: {len(self.bridge.tools())}
+  对话数: {len(self.bridge.history())}""")
+
+    # ── 生成 ──
+
+    async def _generate(self, user_input):
         try:
-            # 清除思考提示
-            self.call_after_refresh(self._remove_last_thinking)
+            self.call_after_refresh(self._remove_thinking)
 
-            # 回调输出到 TUI
             def tui_output(msg):
                 self.call_after_refresh(self._write_raw, msg)
 
-            original_cb = self.app_inst.tui_callback
+            original = self.app_inst.tui_callback
             self.app_inst.tui_callback = tui_output
 
             try:
@@ -399,78 +592,66 @@ class XiaoliTUI(App):
                     None, self.app_inst.process_conversation, user_input
                 )
             finally:
-                self.app_inst.tui_callback = original_cb
+                self.app_inst.tui_callback = original
 
         except Exception as e:
-            self.call_after_refresh(self._add_error, str(e))
+            self.call_after_refresh(self._error, str(e))
         finally:
             self.is_generating = False
-            self.call_after_refresh(self._update_status, "就绪")
+            self.call_after_refresh(lambda: self._update_status("就绪"))
+            self.call_after_refresh(self._update_sidebar)
 
-    def _remove_last_thinking(self):
-        """移除最后一条思考消息"""
-        chat = self.query_one("#chat-log")
-        children = list(chat.children)
-        for child in reversed(children):
-            if hasattr(child, 'renderable') and '思考' in str(getattr(child, 'renderable', '')):
+    def _remove_thinking(self):
+        scroll = self.query_one("#chat-scroll")
+        for child in reversed(list(scroll.children)):
+            if '思考中' in str(getattr(child, 'renderable', '')):
                 child.remove()
                 break
 
-    def _write_raw(self, message: str):
-        """直接写入消息（来自回调）"""
-        if '✅' in message or 'OK 工具' in message:
-            self._append_chat(Static(f"  {message}", classes="tool-msg-ok"))
-        elif '❌' in message or 'X 工具' in message or '错误' in message:
-            self._append_chat(Static(f"  {message}", classes="tool-msg-err"))
-        elif '✦' in message:
-            self._append_chat(Static(f"  {message}", classes="ai-msg"))
+    def _write_raw(self, msg):
+        if '✅' in msg or 'OK 工具' in msg:
+            self._add(f"  {msg}", "msg-tool-ok")
+        elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
+            self._add(f"  {msg}", "msg-tool-err")
+        elif '✦' in msg:
+            self._add(f"  {msg}", "msg-ai")
+        elif '工具' in msg and ('调用' in msg or '执行' in msg):
+            self._add(f"  {msg}", "msg-tool-ok")
         else:
-            self._append_chat(Static(f"  {message}", classes="dim"))
+            self._add(f"  {msg}", "msg-dim")
 
-    def action_clear_chat(self):
-        chat = self.query_one("#chat-log")
-        chat.remove_children()
+    # ── 动作 ──
+
+    def action_clear(self):
+        scroll = self.query_one("#chat-scroll")
+        scroll.remove_children()
         self._render_welcome()
 
     def action_new_chat(self):
         self.app_inst.history.clear()
-        self.action_clear_chat()
-        self._add_system("已开始新对话")
+        self.action_clear()
+        self._system("已开始新对话")
 
     def action_toggle_sidebar(self):
         sidebar = self.query_one("#sidebar")
         sidebar.visible = not sidebar.visible
 
+    def action_toggle_tools(self):
+        self.action_toggle_sidebar()
 
-class TUIBridge:
-    """桥接 TUI 和 App"""
+    def action_cancel(self):
+        if self.is_generating:
+            self._system("已取消")
+            self.is_generating = False
 
-    def __init__(self, app_instance):
-        self.app = app_instance
 
-    def get_engines(self) -> list:
-        return self.app.engine_mgr.names()
-
-    def get_current_engine_name(self) -> str:
-        return self.app.engine_mgr.current_name()
-
-    def get_tools(self) -> list:
-        if self.app.tool_mgr and hasattr(self.app.tool_mgr, '_tools'):
-            return list(self.app.tool_mgr._tools.values())
-        return []
-
-    def get_conversation_history(self) -> list:
-        return self.app.history.get()
-
-    def switch_engine(self, name: str) -> bool:
-        return self.app._switch_model(name) or False
-
+# ──────────────────────────────────────────────
+# 启动
+# ──────────────────────────────────────────────
 
 def run_tui(app_instance):
-    """启动 TUI"""
     if not TEXTUAL_AVAILABLE:
-        print("⚠️  Textual 未安装，无法启动 TUI")
-        print("   安装: pip install textual rich")
+        print("⚠️  Textual 未安装")
+        print("   pip install textual rich")
         return
-    tui = XiaoliTUI(app_instance)
-    tui.run()
+    XiaoliTUI(app_instance).run()
