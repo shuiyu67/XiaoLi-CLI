@@ -1,215 +1,144 @@
-import subprocess
+"""
+命令执行器插件 - 跨平台 Shell 命令执行
+"""
 import os
-import sys
-import time
-from colorama import Fore, Style
+import re
+import subprocess
+import platform
 
 
-class Liugin:
-    """CMD命令执行插件 - 仅限Windows环境"""
-    
+class Plugin:
+    """Shell 命令执行器 - 跨平台命令行工具"""
+
     def __init__(self):
-        self.usage = """CMD命令执行工具使用方法：
-cmd_executor <操作> <参数>
-例如:
-- cmd_executor run dir - 执行dir命令查看当前目录内容
-- cmd_executor run "ipconfig /all" - 执行ipconfig命令查看网络配置
-- cmd_executor run "tasklist | findstr python" - 查找Python相关进程
+        self.usage = """Shell 命令执行器
 
-详细说明:
-- run操作: cmd_executor run <命令> - 执行指定的CMD命令
+操作:
+  run <命令> [--timeout 秒]   - 执行 Shell 命令 (默认超时 30s)
 
-使用工具的JSON格式示例:
-{"action": "use_tool", "tool": "cmd_executor", "args": "run dir"} - 执行dir命令
-{"action": "use_tool", "tool": "cmd_executor", "args": "run ipconfig /all"} - 执行ipconfig命令
+示例:
+  run ls -la                  - 列出当前目录
+  run python3 --version       - 查看 Python 版本
+  run git status              - 查看 Git 状态
+  run make build --timeout 60 - 执行构建 (60秒超时)
 
-重要说明:
-- 此工具仅在Windows环境下可用
-- 为安全起见，某些系统命令可能被限制执行
-- 命令执行结果会返回给AI进行分析"""
-        self.cli = None  # CLI实例引用
-        
+注意:
+  - 跨平台兼容 (Linux/macOS/Windows)
+  - 输出限制 5000 字符
+  - 某些危险命令会被拦截
+"""
+        self.cli = None
+
     def set_cli(self, cli):
-        """设置CLI实例引用"""
         self.cli = cli
-        # 注册插件命令
-        self.cli.register_liugin_command('cmd', self.command_handler)
-    
-    def command_handler(self, args):
-        """处理 /cmd 命令"""
-        # 解析参数
-        parts = args.strip().split(maxsplit=1)
-        if len(parts) < 1:
-            return "请提供操作类型: run <命令>"
-        
-        operation = parts[0].lower()
-        remaining_args = parts[1] if len(parts) > 1 else ""
-        
-        # 调用实际的CMD执行功能
-        return self.handle(f"{operation} {remaining_args}")
-    
+
     def get_tool_info(self):
-            return {
-                "name": "cmd_executor",
-                "description": "CMD命令执行工具，用于执行Windows命令行指令",
-                "keywords": ["命令", "执行", "CMD", "cmd", "executor", "Windows", "指令", "操作"],
-                "usage": """cmd_executor 工具使用说明：
-    JSON格式示例：
-    {"action": "use_tool", "tool": "cmd_executor", "args": "run dir"} - 执行dir命令
-    {"action": "use_tool", "tool": "cmd_executor", "args": "run ipconfig /all"} - 执行ipconfig命令
-    {"action": "use_tool", "tool": "cmd_executor", "args": "run tasklist"} - 列出所有进程
-    注意：仅限Windows环境使用"""
-            }    
+        return {
+            "name": "cmd_executor",
+            "description": "Shell 命令执行器 - 跨平台执行系统命令，支持超时控制",
+            "keywords": ["命令", "执行", "shell", "cmd", "终端", "命令行", "subprocess"],
+            "usage": self.usage
+        }
 
     def get_mcp_definition(self):
         return {
             "name": "cmd_executor",
-            "description": "CMD命令执行工具，用于执行系统命令行指令",
+            "description": "Shell 命令执行器",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["run"],
-                        "description": "操作类型，固定为 run"
-                    },
-                    "command": {
-                        "type": "string",
-                        "description": "要执行的命令（如 dir, ipconfig, ls -la）"
-                    }
+                    "command": {"type": "string", "description": "要执行的命令"},
+                    "timeout": {"type": "integer", "description": "超时秒数", "default": 30}
                 },
-                "required": ["operation", "command"]
+                "required": ["command"]
             }
         }
 
     def convert_mcp_args(self, arguments):
-        op = arguments.get("operation", "run")
         cmd = arguments.get("command", "")
-        return f"{op} {cmd}"
+        timeout = arguments.get("timeout", "")
+        result = f"run {cmd}"
+        if timeout:
+            result += f" --timeout {timeout}"
+        return result
 
-    def handle(self, args):
-        """处理CMD命令执行请求"""
+    # 危险命令黑名单
+    BLOCKED = {
+        'rm -rf /', 'rm -rf ~', 'mkfs', 'dd if=', 'wipefs', 'shred',
+        ':(){ :|:& };:', 'chmod -R 777 /', 'mv / ', 'wget http',
+    }
+
+    def handle(self, args: str) -> str:
         try:
-            # 解析参数
             parts = args.strip().split(maxsplit=1)
-            if len(parts) < 1:
-                return "错误：参数不足。请提供操作类型。\n可用操作: run"
-            
+            if not parts:
+                return "错误：请提供操作。可用: run <命令>"
+
             operation = parts[0].lower()
-            
-            if operation == "run":
-                # 检查是否为Windows系统
-                if os.name != 'nt':
-                    return "错误：CMD命令执行工具仅支持Windows系统。"
-                
-                if len(parts) < 2:
-                    return "错误：请提供要执行的命令。格式: run <命令>"
-                
-                command = parts[1]
-                return self._execute_command(command)
-            
-            else:
-                return f"错误：不支持的操作 '{operation}'。支持的操作有: run。"
-        
-        except Exception as e:
-            return f"CMD命令执行错误: {str(e)}"
-    
-    def _execute_command(self, command):
-        """执行CMD命令"""
-        try:
-            # 解析命令和可能的超时参数
-            # 允许格式如 "command --timeout 10" 或 "command -t 10"
-            timeout = 30  # 默认超时时间
-            import re
-            
-            # 检查是否在命令中指定超时
-            timeout_pattern = r'(?:--timeout|-t)\s+(\d+)'
-            timeout_match = re.search(timeout_pattern, command, re.IGNORECASE)
-            
+            if operation != "run":
+                return f"错误：不支持的操作 '{operation}'。可用: run"
+
+            if len(parts) < 2:
+                return "错误：请提供要执行的命令"
+
+            rest = parts[1]
+
+            # 解析 --timeout
+            timeout = 30
+            timeout_match = re.search(r'--timeout\s+(\d+)', rest)
             if timeout_match:
                 timeout = int(timeout_match.group(1))
-                # 移除超时参数，只保留实际命令
-                command = re.sub(timeout_pattern, '', command).strip()
-            
-            # 检查是否有CLI实例可用，请求用户确认
-            if self.cli is not None:
-                # 检查是否是 Clawli 远程模式
-                if not getattr(self.cli, 'is_clawli_mode', False):
-                    # 非远程模式，请求用户确认
-                    try:
-                        from ai_cli import ask_user_confirmation
-                        # 生成唯一的请求ID
-                        import uuid
-                        request_id = str(uuid.uuid4())
-                        
-                        # 存储请求信息
-                        self.cli.user_input_queue[request_id] = {
-                            'type': 'cmd_confirm',
-                            'command': command,
-                            'timeout': timeout,
-                            'status': 'pending'
-                        }
-                        
-                        # 发送确认请求给用户
-                        confirmed = ask_user_confirmation(
-                            f"即将执行CMD命令: {command}\n超时时间: {timeout}秒\n是否确认执行?",
-                            request_id
-                        )
-                        
-                        if not confirmed:
-                            return f"命令执行已取消: {command}"
-                    except Exception as e:
-                        # 如果无法请求确认，直接执行
-                        pass
-            
-            # 执行命令
+                rest = re.sub(r'--timeout\s+\d+', '', rest).strip()
+
+            if not rest:
+                return "错误：请提供要执行的命令"
+
+            # 安全检查
+            for blocked in self.BLOCKED:
+                if blocked in rest:
+                    return f"🚫 安全拦截: 检测到危险命令模式 '{blocked}'"
+
+            return self._execute(rest, timeout)
+
+        except Exception as e:
+            return f"命令执行错误: {str(e)}"
+
+    def _execute(self, command: str, timeout: int) -> str:
+        try:
+            # Windows 下用 shell=True，Unix 下直接执行
+            use_shell = platform.system() == 'Windows'
+
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=timeout,  # 使用自定义超时时间
-                encoding='utf-8',  # 指定编码
-                errors='replace'   # 处理编码错误
+                timeout=timeout,
+                encoding='utf-8',
+                errors='replace'
             )
-            
-            # 获取输出
+
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
-            return_code = result.returncode
-            
+            rc = result.returncode
+
             output = ""
             if stdout:
-                output += f"命令输出:\n{stdout}\n"
+                output += stdout + "\n"
             if stderr:
-                output += f"错误信息:\n{stderr}\n"
-            if return_code != 0:
-                output += f"命令退出码: {return_code}\n"
+                output += f"[stderr]\n{stderr}\n"
+            if rc != 0:
+                output += f"[exit code: {rc}]\n"
 
             if not output:
-                output = f"命令执行完成，无输出。(超时设置: {timeout}秒)"
+                output = f"命令执行完成，无输出 (超时: {timeout}s)"
 
-            # 限制输出长度为5000字符
             if len(output) > 5000:
-                output = output[:5000] + f"\n... (输出已截断，超时设置: {timeout}秒)"
+                output = output[:5000] + f"\n... (截断，超时: {timeout}s)"
 
-            return output            
+            return output.strip()
+
         except subprocess.TimeoutExpired:
-            return f"错误：命令执行超时（超过{timeout}秒），已取消执行。"
-        except ValueError:
-            return f"错误：超时值无效，已使用默认30秒超时。命令: {command}"
+            return f"⏱️ 命令超时 ({timeout}s): {command}"
         except Exception as e:
-            return f"命令执行失败: {str(e)}"
-
-
-# 测试函数
-def test_plugin():
-    """测试插件功能"""
-    plugin = Plugin()
-    print("CMD执行器插件测试:")
-    print("工具信息:", plugin.get_tool_info())
-    print("使用说明:", plugin.usage)
-
-
-if __name__ == "__main__":
-    test_plugin()
+            return f"执行失败: {str(e)}"
