@@ -11,6 +11,7 @@ from colorama import Fore, Style
 from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY
 from .config import get_system_config, logger
 from .cli_base import BaseAICLI
+from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
 from .cli_clawli import ClawliMixin
 from .cli_tools import ToolMixin
 from .cli_code_exec import CodeExecMixin
@@ -721,6 +722,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/tui' 切换到 TUI 模式{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/engine list' 查看可用AI引擎{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/engine switch <引擎名>' 切换AI引擎{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/file.read <文件名> [行数]' 直接读取文件内容{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@文件路径' 自动读取文件内容并发送给AI{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@图片路径' 自动分析图片并发送描述给AI{Style.RESET_ALL}")
@@ -831,6 +833,29 @@ multi 操作支持一次修改多处：
                     print(f"{Fore.CYAN}正在切换到 TUI 模式...{Style.RESET_ALL}")
                     self.run_tui()
                     print(f"{Fore.CYAN}已从 TUI 模式返回 CLI 模式{Style.RESET_ALL}")
+                    continue
+
+                if user_input.startswith('/safe'):
+                    parts = user_input.split()
+                    safety = get_safety()
+                    if len(parts) > 1:
+                        mode_arg = parts[1].lower()
+                        if mode_arg in ('off', 'unrestricted', '无限制'):
+                            safety.set_mode(MODE_UNRESTRICTED)
+                        elif mode_arg in ('on', 'normal', '普通'):
+                            safety.set_mode(MODE_NORMAL)
+                        elif mode_arg in ('manual', '人工', 'all'):
+                            safety.set_mode(MODE_MANUAL)
+                        else:
+                            print(f"{Fore.RED}用法: /safe [off|on|manual]{Style.RESET_ALL}")
+                            continue
+                    else:
+                        # 无参数：循环切换
+                        safety.cycle_mode()
+                    mode_name = safety.get_mode_name()
+                    icons = {"无限制": "🔴", "普通": "🟢", "人工确认": "🟡"}
+                    icon = icons.get(mode_name, "⚪")
+                    print(f"{icon} 安全模式: {mode_name}")
                     continue
 
                 if user_input.startswith('/'):

@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from colorama import Fore, Style
 
 from .constants import UNIFIED_TOOL_MANAGER_AVAILABLE
+from .safety import get_safety
 
 
 class ToolMixin:
@@ -92,6 +93,12 @@ class ToolMixin:
             tool_name = tool_call_data.get('tool')
             args = tool_call_data.get('args', '')
             arguments = tool_call_data.get('arguments')
+
+            # ── 安全检查 ──
+            safety = get_safety()
+            allowed, msg = safety.check(tool_name, str(args))
+            if not allowed:
+                return {"result": f"🚫 已取消: {msg}"}
 
             if UNIFIED_TOOL_MANAGER_AVAILABLE and hasattr(self.liugin_manager, 'execute'):
                 if arguments and isinstance(arguments, dict):

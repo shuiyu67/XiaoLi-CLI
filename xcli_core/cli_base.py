@@ -72,6 +72,10 @@ class BaseAICLI:
         if self.current_engine:
             self.current_engine.cli = self  # 设置引用以便访问插件
 
+        # 初始化安全层
+        from .safety import get_safety
+        get_safety().set_cli(self)
+
         # 创建聊天记录目录
         self.chat_history_dir = os.path.join(project_dir, "chat_history")
         if not os.path.exists(self.chat_history_dir):
