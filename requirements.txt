@@ -1,0 +1,30 @@
+# 小狸 Pro-CLI 依赖库
+# 修复后的包名（使用 pip 安装名）
+
+# 核心依赖
+colorama>=0.4.6
+openai>=1.0.0
+requests>=2.28.0
+ollama>=0.1.0
+
+# 图像处理
+Pillow>=9.0.0
+opencv-python>=4.5.0
+numpy>=1.21.0
+ascii-magic>=2.0.0
+
+# 数据处理
+pandas>=1.3.0
+scipy>=1.7.0
+
+# 音频
+pygame>=2.0.0
+
+# TUI 模式
+textual>=0.40.0
+
+# WebSocket 远程
+websockets>=11.0
+
+# 类型提示
+typing-extensions>=4.0.0
