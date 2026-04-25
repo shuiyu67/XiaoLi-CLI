@@ -150,7 +150,7 @@ class App:
             'quit': lambda a: sys.exit(0),
             'help': lambda a: self._show_help(a),
             'about': lambda a: self._show_about(),
-            'tui': lambda a: self._run_tui(),
+            'cli': lambda a: self.run(),
             'model': lambda a: self._switch_model(a),
             'engine': lambda a: self._engine_cmd(a),
             'chat': lambda a: self._chat_cmd(a),
@@ -263,6 +263,7 @@ class App:
 {Fore.WHITE}基本命令:{Style.RESET_ALL}
   /help              帮助信息
   /quit              退出
+  /cli               切换到命令行模式
   /model <引擎>      切换引擎
   /engine list       列出引擎
   /chat save/list/open  聊天记录

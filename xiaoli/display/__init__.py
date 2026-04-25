@@ -94,7 +94,7 @@ class Display:
         """启动横幅"""
         self.ok(f"小狸 Pro-CLI v3.6 已启动!")
         self.ok(f"用户ID: {user_id}")
-        print(f"{Fore.GREEN}输入 '/help' 查看帮助 | '/quit' 退出{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}TUI 模式 | '/help' 帮助 | '/cli' 命令行 | '/quit' 退出{Style.RESET_ALL}")
         print(f"{Fore.GREEN}当前引擎: {engine_name}{Style.RESET_ALL}")
         if len(engines) > 1:
             print(f"{Fore.GREEN}已加载: {', '.join(engines)}{Style.RESET_ALL}")

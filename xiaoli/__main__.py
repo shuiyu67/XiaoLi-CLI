@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def main():
     parser = argparse.ArgumentParser(description="小狸 Pro-CLI - 智能编程助手")
-    parser.add_argument('--tui', action='store_true', help='启动 TUI 模式')
+    parser.add_argument('--cli', action='store_true', help='使用传统 CLI 模式（默认 TUI）')
     parser.add_argument('--engine', type=str, help='指定 AI 引擎')
     parser.add_argument('--version', action='store_true', help='显示版本')
     args = parser.parse_args()
@@ -32,10 +32,10 @@ def main():
     if args.engine:
         app._switch_model(args.engine)
 
-    if args.tui:
-        app._run_tui()
-    else:
+    if args.cli:
         app.run()
+    else:
+        app._run_tui()
 
 
 def _show_art():
