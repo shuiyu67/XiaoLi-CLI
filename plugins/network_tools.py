@@ -79,6 +79,32 @@ JSON格式示例：
 {"action": "use_tool", "tool": "network_tools", "args": "ip www.example.com"} - 获取网站IP地址"""
         }
     
+    def get_mcp_definition(self):
+        return {
+            "name": "network_tools",
+            "description": "网络工具，用于测试连通性、获取网页内容、解析IP等",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["ping", "website", "headers", "ip"],
+                        "description": "操作类型"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "目标网址或IP"
+                    }
+                },
+                "required": ["operation", "target"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        op = arguments.get("operation", "")
+        target = arguments.get("target", "")
+        return f"{op} {target}"
+
     def handle(self, args):
         """处理网络工具请求"""
         try:

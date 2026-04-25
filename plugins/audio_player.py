@@ -41,6 +41,25 @@ audio_player play - 播放音频文件
     {"action": "use_tool", "tool": "audio_player", "args": "play"} - 播放音频文件
     直接命令：/ciallo - 播放音频文件"""
             }    
+
+    def get_mcp_definition(self):
+        return {
+            "name": "audio_player",
+            "description": "音频播放工具",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "音频文件路径（可选）"
+                    }
+                }
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        return arguments.get("file", "")
+
     def handle(self, args):
         """处理音频播放请求"""
         try:

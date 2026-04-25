@@ -56,6 +56,32 @@ JSON格式示例：
             "usage": self.usage
         }
 
+    def get_mcp_definition(self):
+        return {
+            "name": "frontend_tester",
+            "description": "前端测试验证工具，支持HTML/CSS/JS自动化测试",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["validate", "lint", "test"],
+                        "description": "操作类型"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "目标文件路径"
+                    }
+                },
+                "required": ["operation", "target"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        op = arguments.get("operation", "")
+        target = arguments.get("target", "")
+        return f"{op} {target}"
+
     def handle(self, args):
         """处理前端测试请求"""
         try:

@@ -42,6 +42,25 @@ JSON格式示例：
 - 帮助 AI 快速找到合适的工具而不需要预加载所有工具"""
         }
 
+    def get_mcp_definition(self):
+        return {
+            "name": "tool_search",
+            "description": "工具搜索插件，搜索可用工具的用法和信息",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词或工具名"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        return arguments.get("query", "")
+
     def handle(self, args):
         """处理工具搜索请求"""
         try:

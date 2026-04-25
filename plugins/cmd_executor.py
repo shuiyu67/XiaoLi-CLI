@@ -60,6 +60,33 @@ cmd_executor <操作> <参数>
     {"action": "use_tool", "tool": "cmd_executor", "args": "run tasklist"} - 列出所有进程
     注意：仅限Windows环境使用"""
             }    
+
+    def get_mcp_definition(self):
+        return {
+            "name": "cmd_executor",
+            "description": "CMD命令执行工具，用于执行系统命令行指令",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["run"],
+                        "description": "操作类型，固定为 run"
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的命令（如 dir, ipconfig, ls -la）"
+                    }
+                },
+                "required": ["operation", "command"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        op = arguments.get("operation", "run")
+        cmd = arguments.get("command", "")
+        return f"{op} {cmd}"
+
     def handle(self, args):
         """处理CMD命令执行请求"""
         try:

@@ -77,6 +77,32 @@ JSON格式示例：
             return f"保存任务失败: {e}"
         return None
 
+    def get_mcp_definition(self):
+        return {
+            "name": "task_manager",
+            "description": "任务管理工具，支持添加、完成、删除任务",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["add", "done", "delete", "list", "clear"],
+                        "description": "操作类型"
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "任务内容（add/done/delete 时使用）"
+                    }
+                },
+                "required": ["operation"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        op = arguments.get("operation", "")
+        task = arguments.get("task", "")
+        return f"{op} {task}".strip()
+
     def handle(self, args):
         """处理任务管理请求"""
         try:

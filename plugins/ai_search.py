@@ -69,6 +69,32 @@ JSON格式示例：
 {\"action\": \"use_tool\", \"tool\": \"ai_search\", \"args\": \"web 什么是人工智能\"} - 搜索网络内容"""
         }
 
+    def get_mcp_definition(self):
+        return {
+            "name": "ai_search",
+            "description": "AI搜索工具，支持网址内容提取和网络搜索",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["search", "url", "web"],
+                        "description": "操作类型: search(搜索), url(提取网址内容), web(网络搜索)"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "搜索词或网址"
+                    }
+                },
+                "required": ["operation", "query"]
+            }
+        }
+
+    def convert_mcp_args(self, arguments):
+        op = arguments.get("operation", "")
+        query = arguments.get("query", "")
+        return f"{op} {query}"
+
     def handle(self, args):
         """处理AI搜索请求"""
         try:
