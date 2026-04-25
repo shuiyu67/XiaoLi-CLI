@@ -10,13 +10,8 @@ from colorama import Fore, Style
 from .config import logger
 from .sandbox import (
     _sandbox_checker, _make_sandbox_worker, _sandbox_work_dir,
-    _HAS_RESOURCE, _SAFE_WHITELIST,
+    _HAS_RESOURCE, _SAFE_WHITELIST, _resource_mod,
 )
-
-try:
-    import resource as _resource_mod
-except ImportError:
-    _resource_mod = None
 
 
 class CodeExecMixin:

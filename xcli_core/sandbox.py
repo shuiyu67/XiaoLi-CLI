@@ -4,9 +4,13 @@ import ast as _ast
 import re
 import textwrap as _textwrap
 import tempfile as _tempfile
-import resource as _resource_mod
 
-_HAS_RESOURCE = hasattr(_resource_mod, 'setrlimit')
+try:
+    import resource as _resource_mod
+    _HAS_RESOURCE = hasattr(_resource_mod, 'setrlimit')
+except ImportError:
+    _resource_mod = None
+    _HAS_RESOURCE = False
 
 _BLOCKED_MODULES = frozenset({
     'os', 'sys', 'subprocess', 'shutil', 'socket', 'pickle',
