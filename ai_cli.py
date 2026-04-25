@@ -2066,6 +2066,7 @@ class AICLI:
         """
         import subprocess
         import json as _json
+        import traceback as _traceback
 
         # 安全检查
         safe, violations = _sandbox_checker.check(code)
@@ -2078,7 +2079,8 @@ class AICLI:
             }
 
         vars_json = _json.dumps(variables or {}, ensure_ascii=False, default=str)
-        whitelist_json = _json.dumps(self.code_execution_whitelist or _SAFE_WHITELIST)
+        wl = getattr(self, 'code_execution_whitelist', None) or _SAFE_WHITELIST
+        whitelist_json = _json.dumps(wl)
         script = _make_sandbox_worker(code, vars_json, whitelist_json, _sandbox_work_dir)
 
         safe_env = {
@@ -2099,7 +2101,7 @@ class AICLI:
                 [sys.executable, '-c', script],
                 capture_output=True, timeout=timeout,
                 cwd=_sandbox_work_dir, env=safe_env,
-                preexec_fn=self._sandbox_set_limits if _HAS_RESOURCE else None,
+                preexec_fn=AICLI._sandbox_set_limits if _HAS_RESOURCE else None,
             )
             elapsed = time.time() - start_time
             stdout = proc.stdout.decode('utf-8', errors='replace')[:1000000]
@@ -2134,7 +2136,7 @@ class AICLI:
             return {
                 'success': False,
                 'result': f'代码执行异常: {str(e)}',
-                'stdout': '', 'stderr': traceback.format_exc(),
+                'stdout': '', 'stderr': _traceback.format_exc(),
                 'execution_time': time.time() - start_time, 'memory_usage': 0
             }
 
