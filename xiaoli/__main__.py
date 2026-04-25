@@ -29,12 +29,13 @@ def main():
     # 检查 Textual 可用性
     if not args.cli:
         try:
-            from textual.app import App
+            from xiaoli.tui import TEXTUAL_AVAILABLE
+            if not TEXTUAL_AVAILABLE:
+                raise ImportError
         except ImportError:
-            if not args.cli:
-                print("⚠️  Textual 未安装，自动切换到命令行模式")
-                print("   安装 TUI: pip install textual")
-                args.cli = True
+            print("⚠️  Textual 未安装，自动切换到命令行模式")
+            print("   安装 TUI: pip install textual rich")
+            args.cli = True
 
     from xiaoli.app import App
     app = App()
