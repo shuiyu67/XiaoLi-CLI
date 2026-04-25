@@ -326,6 +326,37 @@ class TestTaskManager:
 #  引擎加载测试
 # ══════════════════════════════════════
 
+class TestBrowserAuto:
+    """browser_auto 功能测试"""
+
+    @pytest.fixture
+    def browser(self):
+        mod = load_module("browser_auto", os.path.join(PLUGINS_DIR, "browser_auto.py"))
+        return mod.Plugin()
+
+    def test_status_stopped(self, browser):
+        result = browser.handle("status")
+        assert "未运行" in result
+
+    def test_invalid_operation(self, browser):
+        result = browser.handle("nonexistent")
+        assert "错误" in result
+
+    def test_empty_args(self, browser):
+        result = browser.handle("")
+        assert "错误" in result
+
+    def test_tool_info(self, browser):
+        info = browser.get_tool_info()
+        assert info["name"] == "browser_auto"
+        assert "浏览器" in info["description"]
+        assert len(info["keywords"]) > 0
+
+
+# ══════════════════════════════════════
+#  引擎加载测试
+# ══════════════════════════════════════
+
 class TestEngines:
     """AI 引擎加载测试"""
 
