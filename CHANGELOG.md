@@ -7,7 +7,7 @@
 ## v5.0.0 (2026-04-25)
 
 ### 🚀 新增功能
-- **TUI v2** — 全新 TUI 界面，对标 Claude Code / OpenCode，暗色主题 + 现代布局
+- **TUI v2** — 全新 TUI 界面，暗色主题 + 现代布局
 - **完整 MCP 协议支持** — 为所有插件添加 MCP (Model Context Protocol) 定义
 - **代码统计 Skill** (`code_stats`) — 新增 Skill 协议示例
 - **工程化自动化插件** — 新增 3 个工程化自动化插件（`auto_engineer`、`project_analyzer`、`git_workflow`）
