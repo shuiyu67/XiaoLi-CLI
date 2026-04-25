@@ -113,8 +113,8 @@ class Plugin:
 
 ### 插件检查清单
 
-- [ ] 类名是 `Plugin`
-- [ ] 实现了 `get_tool_info()` 和 `handle()`
+- [ ] 类名是 `Plugin`（或 `Liugin`，加载器两者都支持）
+- [ ] 实现了 `get_tool_info()`、`handle()`、`set_cli()`
 - [ ] 返回值是字符串
 - [ ] 所有异常被捕获
 - [ ] 包含 `usage` 属性
@@ -132,10 +132,7 @@ class Plugin:
 ## 测试
 
 ```bash
-# 运行全部测试
-python -m pytest tests/
-
-# 运行并显示覆盖率
+# 运行全部测试 (113 用例)
 python -m pytest tests/ -v --tb=short
 ```
 
