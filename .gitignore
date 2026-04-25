@@ -3,72 +3,39 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
+.eggs/
 
-# Virtual Environment
-venv/
-ENV/
-env/
+# 虚拟环境
 .venv/
+venv/
+env/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Logs
-logs/
-*.log
-xiaoli_cli.log
-
-# Temporary files
-nul
-temp/
-tmp/
-*.tmp
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Chat history
-chat_history/
-
-# Config with secrets
+# 配置（含敏感信息）
 config.json
 
-# Executables
-*.exe
-*.dll
-*.so
-*.appx
+# 日志
+*.log
+logs/
 
-# Development files
-love.txt
-bug.txt
+# 聊天记录
+chat_history/
 
-# Screenshots
-clawli_files/
+# 系统文件
+.DS_Store
+Thumbs.db
 
-# 大型第三方插件 (NapCat QQ / GLaDOS TTS)
-plugins/napcat/
-plugins/glados_tts/
-plugins/glados_tts_plugin.py
+# 嵌入式 Python
+embedded_python/
+
+# 临时文件
+*.tmp
+*.bak
