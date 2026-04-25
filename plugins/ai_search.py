@@ -60,7 +60,7 @@ ai_search <操作> <参数>/r
     def get_tool_info(self):
         return {
             "name": "ai_search",
-            "description": "AI搜索工具，使用jina.ai服务进行智能搜索，支持网址内容提取和网络搜索。当用户询问天气、新闻、汇率、股票、航班、实时信息、网络内容搜索等问题时，应该直接使用此工具。使用格式：ai_search search <搜索词> 或 ai_search url <网址>",
+            "description": "AI搜索工具，使用jina.ai服务进行智能搜索，支持网址内容提取和实时网络搜索。当用户询问天气、新闻、汇率、股票、航班、实时信息、网络内容搜索等问题时，应该直接使用此工具。使用格式：ai_search search <搜索词> 或 ai_search url <网址>",
             "keywords": ["搜索", "search", "网址", "url", "web", "AI搜索", "网络搜索", "内容提取", "天气", "新闻", "实时信息"],
             "usage": """ai_search 工具使用说明：
 JSON格式示例：
@@ -144,17 +144,12 @@ JSON格式示例：
             return f"网址搜索错误: {str(e)}"
 
     def _search_web(self, query):
-        """普通搜索（使用jina.ai + 必应搜索）"""
+        """普通搜索（使用 jina.ai 搜索端点 s.jina.ai，返回实时结果）"""
         try:
-            # 对搜索词进行URL编码，确保中文等特殊字符正确编码
-            # 使用safe=''确保所有非字母数字字符都被编码
             encoded_query = quote(query, safe='')
-
-            # 构建必应搜索URL
-            bing_url = f"https://cn.bing.com/search?q={encoded_query}"
-
-            # 构建jina.ai的URL - 直接使用必应URL，不需要二次编码
-            jina_url = f"https://r.jina.ai/{bing_url}"
+            # s.jina.ai 是 jina.ai 的搜索端点，直接返回实时搜索结果
+            # 不再嵌套必应URL，避免返回旧时间戳的缓存内容
+            jina_url = f"https://s.jina.ai/{encoded_query}"
 
             result = self._execute_curl(jina_url)
 
