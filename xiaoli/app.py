@@ -303,12 +303,22 @@ class App:
             print()
 
     def _run_tui(self):
+        """启动 TUI 模式，不可用时降级到 CLI"""
         try:
+            from textual.app import App
             from ai_cli import TUIMainApp
+            self.display.info("正在启动 TUI 模式...")
             app = TUIMainApp(self)
             app.run()
+        except ImportError:
+            self.display.warn("Textual 未安装，TUI 不可用")
+            self.display.info("安装命令: pip install textual")
+            self.display.info("已切换到命令行模式")
+            self.run()
         except Exception as e:
-            self.err(f"TUI 不可用: {e}")
+            self.err(f"TUI 启动失败: {e}")
+            self.display.info("已切换到命令行模式")
+            self.run()
 
     def _remote_cmd(self, args: str):
         try:
