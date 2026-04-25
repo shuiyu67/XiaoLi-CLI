@@ -305,7 +305,7 @@ class XiaoliTUI(App):
 
     CSS = CSS
     TITLE = "🐱 小狸 Pro-CLI"
-    SUB_TITLE = "智能编程助手 v3.6"
+    SUB_TITLE = "智能编程助手 v5.0"
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "退出", show=True),
@@ -365,7 +365,7 @@ class XiaoliTUI(App):
             ("", "msg-dim"),
             ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
             ("  ║                                              ║", "msg-welcome"),
-            ("  ║   🐱 小狸 Pro-CLI v3.6                       ║", "msg-welcome"),
+            ("  ║   🐱 小狸 Pro-CLI v5.0                       ║", "msg-welcome"),
             ("  ║   智能编程助手 · 对标 Claude Code              ║", "msg-welcome"),
             ("  ║                                              ║", "msg-welcome"),
             ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
@@ -505,7 +505,7 @@ class XiaoliTUI(App):
             'cls': lambda: self.action_clear(),
             'model': lambda: self._switch_model(args),
             'engine': lambda: self._switch_model(args),
-            'about': lambda: self._system("小狸 Pro-CLI v3.6 - 智能编程助手"),
+            'about': lambda: self._system("🐱 小狸 Pro-CLI v5.0 - 智能编程助手"),
             'status': lambda: self._show_status(),
             'tools': lambda: self._show_tools(),
             'engines': lambda: self._show_engines(),

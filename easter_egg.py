@@ -120,7 +120,7 @@ def main():
     print()
     time.sleep(0.5)
 
-    slow_print("  小狸 Pro-CLI v3.6", 0.04)
+    slow_print("  小狸 Pro-CLI v5.0", 0.04)
     slow_print("  Built with ❤️ by 水鱼PyLab & mimo", 0.04)
     print()
     slow_print("  「工具只是手段，创造才是目的。」", 0.08)
