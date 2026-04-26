@@ -13,18 +13,18 @@
 
 ---
 
-## ✨ Features
+##  Features
 
-- 🤖 **Dual AI Engines** — Ollama local + OpenAI compatible (DeepSeek, Grok, SiliconFlow, etc.)
-- 🔧 **Code Editing & Search** — Precise replace, batch edit, symbol extraction, regex search
-- 🔄 **Git Integration** — Full Git operations + workflow automation
-- 🌐 **Browser Automation** — Playwright-driven, navigate/interact/screenshot/JS execution
-- 🤖 **Sub-Agent System** — Multi-agent parallel collaboration with task delegation
-- 🛡️ **Unified Safety** — AI risk analysis + 3-mode switching (Normal/Manual/Unrestricted)
-- 🧩 **15 Plugins, 141 Operations** — Code, Git, browser, engineering, file management, etc.
-- 🧪 **113 Automated Tests** — pytest coverage for all plugins and core modules
+-  **Dual AI Engines** — Ollama local + OpenAI compatible (DeepSeek, Grok, SiliconFlow, etc.)
+-  **Code Editing & Search** — Precise replace, batch edit, symbol extraction, regex search
+-  **Git Integration** — Full Git operations + workflow automation
+-  **Browser Automation** — Playwright-driven, navigate/interact/screenshot/JS execution
+-  **Sub-Agent System** — Multi-agent parallel collaboration with task delegation
+-  **Unified Safety** — AI risk analysis + 3-mode switching (Normal/Manual/Unrestricted)
+-  **15 Plugins, 141 Operations** — Code, Git, browser, engineering, file management, etc.
+-  **113 Automated Tests** — pytest coverage for all plugins and core modules
 
-## 📦 Quick Start
+##  Quick Start
 
 ```bash
 git clone https://gitee.com/shuiyu1123/xiaoli-cli.git
@@ -33,14 +33,14 @@ pip install -r requirements.txt
 python ai_cli.py
 ```
 
-## 🤖 AI Engines
+##  AI Engines
 
 | Engine | Type | Description |
 |--------|------|-------------|
 | `ollama` | Local | Ollama local models, no API key needed |
 | `openai` | Cloud/Local | OpenAI compatible: DeepSeek, Grok, SiliconFlow, local vLLM |
 
-## 🔌 Plugins (15)
+##  Plugins (15)
 
 ### Core Productivity
 
@@ -72,22 +72,22 @@ python ai_cli.py
 | `audio_player` | Audio playback |
 | `send_image` | Send images to phone (Clawli mode) |
 
-## 🛡️ Safety
+##  Safety
 
 Three modes (`/safe` to switch):
 
 | Mode | Icon | Behavior |
 |------|------|----------|
-| **Normal** (default) | 🟢 | AI analyzes risk, confirms only when risk detected |
-| **Manual** | 🟡 | All commands require user confirmation |
-| **Unrestricted** | 🔴 | Execute directly, no checking |
+| **Normal** (default) |  | AI analyzes risk, confirms only when risk detected |
+| **Manual** |  | All commands require user confirmation |
+| **Unrestricted** |  | Execute directly, no checking |
 
-## 🧪 Testing
+##  Testing
 
 ```bash
 python -m pytest tests/ -v   # 113 tests
 ```
 
-## 📄 License
+##  License
 
 [MIT License](LICENSE)

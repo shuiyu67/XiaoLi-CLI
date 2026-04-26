@@ -106,7 +106,7 @@ class CodeStatsSkill(Skill):
         comment_rate = (total_comment / max(total_code, 1)) * 100
 
         report_lines = [
-            f"📊 代码统计 ({directory})",
+            f" 代码统计 ({directory})",
             f"{'─' * 40}",
             f"  文件数: {total_files}",
             f"  总行数: {total_lines}",
@@ -117,7 +117,7 @@ class CodeStatsSkill(Skill):
         ]
 
         if file_details:
-            report_lines.append(f"\n📄 文件明细 (按代码行数排序):")
+            report_lines.append(f"\n 文件明细 (按代码行数排序):")
             for fd in file_details[:20]:
                 report_lines.append(
                     f"  {fd['file']:40} {fd['code']:5} 行代码"

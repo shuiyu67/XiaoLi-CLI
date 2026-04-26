@@ -62,10 +62,10 @@ def warn(msg):
     print(f"  {c('!', S.YELLOW)} {msg}")
 
 def error(msg):
-    print(f"  {c('✗', S.RED)} {msg}")
+    print(f"  {c('', S.RED)} {msg}")
 
 def ok(msg):
-    print(f"  {c('✓', S.GREEN)} {msg}")
+    print(f"  {c('', S.GREEN)} {msg}")
 
 def prompt(msg, default=''):
     suffix = f" [{default}]" if default else ''
@@ -153,7 +153,7 @@ class Launcher:
     # ══════════════════════════════════════════════════
 
     def detect_python(self):
-        section('检测 Python 环境', '🐍')
+        section('检测 Python 环境', '')
 
         # 系统 Python
         for cmd in ('python3', 'python'):
@@ -196,7 +196,7 @@ class Launcher:
     # ── 下载安装嵌入式 Python ──
 
     def install_embedded_python(self):
-        section('安装嵌入式 Python', '📦')
+        section('安装嵌入式 Python', '')
 
         print()
         for key, (name, url) in self.DOWNLOAD_SOURCES.items():
@@ -326,7 +326,7 @@ class Launcher:
     # ══════════════════════════════════════════════════
 
     def scan_imports(self):
-        section('扫描项目依赖', '🔍')
+        section('扫描项目依赖', '')
 
         exclude = {'__pycache__', '.git', 'venv', '.venv', 'env', '.env', 'build', 'dist'}
         py_files = [
@@ -368,14 +368,14 @@ class Launcher:
         if not packages:
             return True
 
-        section('安装依赖', '📦')
+        section('安装依赖', '')
         missing = []
         for pkg in sorted(packages):
             try:
                 r = subprocess.run([self.python_exe, '-c', f'import {pkg}'],
                                    capture_output=True, text=True)
                 if r.returncode == 0:
-                    ok(f'{pkg}  ✓')
+                    ok(f'{pkg}  ')
                 else:
                     warn(f'{pkg}  缺失')
                     missing.append(pkg)
@@ -418,7 +418,7 @@ class Launcher:
     # ══════════════════════════════════════════════════
 
     def scan_engines(self):
-        section('扫描 AI 引擎', '🤖')
+        section('扫描 AI 引擎', '')
 
         if not self.engines_dir.exists():
             warn('ai_engines 目录不存在')
@@ -436,7 +436,7 @@ class Launcher:
             except Exception:
                 pass
             engines[name] = needs_key
-            icon = '🔓' if not needs_key else '🔑'
+            icon = '' if not needs_key else ''
             label = '本地' if not needs_key else '云端'
             print(f"  {icon} {c(name, S.CYAN)} ({label})")
 
@@ -477,7 +477,7 @@ class Launcher:
 
     def configure_engines(self, engines):
         """交互式配置引擎"""
-        section('配置 API', '⚙')
+        section('配置 API', '')
 
         config = {}
         if self.config_file.exists():
@@ -534,7 +534,7 @@ class Launcher:
         ])
 
     def configure_plugins(self):
-        section('插件配置', '🧩')
+        section('插件配置', '')
         plugins = self.discover_plugins()
 
         if not plugins:
@@ -579,7 +579,7 @@ class Launcher:
     # ══════════════════════════════════════════════════
 
     def launch(self):
-        section('启动主程序', '🚀')
+        section('启动主程序', '')
 
         env = os.environ.copy()
         if self.enabled_plugins is not None:
@@ -633,11 +633,11 @@ class Launcher:
             self.launch()
 
     def _show_report(self, deps_ok):
-        section('环境报告', '📋')
+        section('环境报告', '')
         py_ok = self.python_exe is not None
-        print(f"  {'✓' if py_ok else '✗'} Python 环境: {'就绪' if py_ok else '未就绪'}")
-        print(f"  {'✓' if deps_ok else '✗'} 依赖安装: {'完成' if deps_ok else '部分缺失'}")
-        print(f"  {'✓' if self.enabled_plugins is not None else '?'} 插件: {len(self.enabled_plugins) if self.enabled_plugins else 0} 个已启用")
+        print(f"  {'' if py_ok else ''} Python 环境: {'就绪' if py_ok else '未就绪'}")
+        print(f"  {'' if deps_ok else ''} 依赖安装: {'完成' if deps_ok else '部分缺失'}")
+        print(f"  {'' if self.enabled_plugins is not None else '?'} 插件: {len(self.enabled_plugins) if self.enabled_plugins else 0} 个已启用")
 
         if self.errors:
             print(f"\n  {c('错误日志:', S.RED)}")

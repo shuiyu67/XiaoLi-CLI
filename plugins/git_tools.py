@@ -164,7 +164,7 @@ class Plugin:
         if not output:
             # 获取分支
             _, branch = self._run_git(["branch", "--show-current"], cwd)
-            return f"✅ 工作区干净 (分支: {branch})"
+            return f" 工作区干净 (分支: {branch})"
 
         lines = output.split('\n')
         staged, unstaged, untracked = [], [], []
@@ -174,14 +174,14 @@ class Plugin:
                 continue
             s, filename = line[:2], line[3:]
             if s[0] in 'MADRC':
-                staged.append(f"  ✓ {s[0]} {filename}")
+                staged.append(f"   {s[0]} {filename}")
             if s[1] in 'MD':
                 unstaged.append(f"  ! {s[1]} {filename}")
             if s == '??':
                 untracked.append(f"  ? {filename}")
 
         _, branch = self._run_git(["branch", "--show-current"], cwd)
-        result = [f"📊 Git 状态 (分支: {branch})"]
+        result = [f" Git 状态 (分支: {branch})"]
 
         if staged:
             result.append(f"\n已暂存 ({len(staged)}):")
@@ -237,22 +237,22 @@ class Plugin:
         if not target:
             return "错误：请提供文件路径（使用 . 暂存所有）"
         ok, output = self._run_git(["add", target], cwd)
-        return f"✅ 已暂存: {target}" if ok else f"Git add 失败: {output}"
+        return f" 已暂存: {target}" if ok else f"Git add 失败: {output}"
 
     def _commit(self, args: str, cwd=None) -> str:
         message = args.strip()
         if not message:
             return "错误：请提供提交信息"
         ok, output = self._run_git(["commit", "-m", message], cwd)
-        return f"✅ 提交成功:\n{output}" if ok else f"Git commit 失败: {output}"
+        return f" 提交成功:\n{output}" if ok else f"Git commit 失败: {output}"
 
     def _branch(self, args: str, cwd=None) -> str:
         if not args.strip():
             ok, output = self._run_git(["branch", "-a"], cwd)
-            return f"🌿 分支列表:\n{output}" if ok else f"Git 错误: {output}"
+            return f" 分支列表:\n{output}" if ok else f"Git 错误: {output}"
         else:
             ok, output = self._run_git(["branch", args.strip()], cwd)
-            return f"✅ 已创建分支: {args.strip()}" if ok else f"创建分支失败: {output}"
+            return f" 已创建分支: {args.strip()}" if ok else f"创建分支失败: {output}"
 
     def _checkout(self, args: str, cwd=None) -> str:
         args = args.strip()
@@ -262,14 +262,14 @@ class Plugin:
         else:
             branch = args
             ok, output = self._run_git(["checkout", branch], cwd)
-        return f"✅ 已切换到: {branch}" if ok else f"切换失败: {output}"
+        return f" 已切换到: {branch}" if ok else f"切换失败: {output}"
 
     def _stash(self, args: str, cwd=None) -> str:
         if args.strip() == "pop":
             ok, output = self._run_git(["stash", "pop"], cwd)
         else:
             ok, output = self._run_git(["stash"], cwd)
-        return f"✅ {output}" if ok else f"Git stash 失败: {output}"
+        return f" {output}" if ok else f"Git stash 失败: {output}"
 
     def _show(self, args: str, cwd=None) -> str:
         commit = args.strip() or "HEAD"
@@ -301,7 +301,7 @@ class Plugin:
             result = result[:100]
             result.append(f"  ... (共 {len(result)} 行)")
 
-        return f"📝 {path} 修改记录:\n" + '\n'.join(result)
+        return f" {path} 修改记录:\n" + '\n'.join(result)
 
     def _remote(self, cwd=None) -> str:
         ok, output = self._run_git(["remote", "-v"], cwd)
@@ -312,7 +312,7 @@ class Plugin:
     def _init(self, args: str, cwd=None) -> str:
         path = args.strip() or "."
         ok, output = self._run_git(["init", path], cwd)
-        return f"✅ {output}" if ok else f"Git init 失败: {output}"
+        return f" {output}" if ok else f"Git init 失败: {output}"
 
     def _clone(self, args: str, cwd=None) -> str:
         parts = args.split()
@@ -322,7 +322,7 @@ class Plugin:
         if len(parts) > 1:
             cmd.append(parts[1])
         ok, output = self._run_git(cmd, cwd)
-        return f"✅ 克隆成功:\n{output}" if ok else f"Git clone 失败: {output}"
+        return f" 克隆成功:\n{output}" if ok else f"Git clone 失败: {output}"
 
     # ── 工作流 ──
 
@@ -330,7 +330,7 @@ class Plugin:
         """智能提交：自动 add + 规范化消息"""
         ok, status = self._run_git(["status", "--porcelain"], cwd)
         if not status:
-            return "✅ 工作区干净，没有需要提交的变更"
+            return " 工作区干净，没有需要提交的变更"
 
         self._run_git(["add", "-A"], cwd)
 
@@ -349,8 +349,8 @@ class Plugin:
         ok, output = self._run_git(["commit", "-m", message], cwd)
         if ok:
             _, hash_out = self._run_git(["log", "--oneline", "-1"], cwd)
-            return f"✅ 已提交: {message}\n   {hash_out}"
-        return f"❌ 提交失败: {output}"
+            return f" 已提交: {message}\n   {hash_out}"
+        return f" 提交失败: {output}"
 
     def _auto_commit_message(self, status: str) -> str:
         lines = status.strip().split('\n')
@@ -371,7 +371,7 @@ class Plugin:
         ok, output = self._run_shell(
             'git log --oneline --format="%s" | head -50', cwd)
         if not ok:
-            return f"❌ {output}"
+            return f" {output}"
 
         commits = output.strip().split('\n')
         categories = {
@@ -390,9 +390,9 @@ class Plugin:
                 categories['other'].append(commit)
 
         labels = {
-            'feat': '🚀 新增', 'fix': '🐛 修复', 'docs': '📝 文档',
-            'refactor': '♻️ 重构', 'test': '🧪 测试', 'chore': '🔧 杂项',
-            'other': '📦 其他'
+            'feat': ' 新增', 'fix': ' 修复', 'docs': ' 文档',
+            'refactor': ' 重构', 'test': ' 测试', 'chore': ' 杂项',
+            'other': ' 其他'
         }
 
         ver = version or "未发布"
@@ -409,16 +409,16 @@ class Plugin:
     def _summary(self, cwd=None) -> str:
         ok, output = self._run_git(["diff", "--stat"], cwd)
         if not output:
-            return "✅ 没有未提交的变更"
+            return " 没有未提交的变更"
         _, short = self._run_git(["diff", "--shortstat"], cwd)
-        return f"📊 变更摘要:\n\n{short}\n\n{output[:2000]}"
+        return f" 变更摘要:\n\n{short}\n\n{output[:2000]}"
 
     def _contributors(self, cwd=None) -> str:
         ok, output = self._run_git(["shortlog", "-sn", "--all", "--no-merges"], cwd)
         if not ok:
-            return f"❌ {output}"
+            return f" {output}"
         lines = output.strip().split('\n')
-        result = [f"👥 贡献者 ({len(lines)} 人):\n"]
+        result = [f" 贡献者 ({len(lines)} 人):\n"]
         for line in lines[:20]:
             result.append(f"  {line.strip()}")
         return '\n'.join(result)
@@ -427,4 +427,4 @@ class Plugin:
         days = int(args) if args.strip().isdigit() else 90
         ok, output = self._run_shell(
             f"git log --diff-filter=A --format='%aI %n' --since='{days} days ago' | head -20", cwd)
-        return f"📁 最近 {days} 天新增的文件:\n{output[:2000]}" if ok else f"❌ {output}"
+        return f" 最近 {days} 天新增的文件:\n{output[:2000]}" if ok else f" {output}"

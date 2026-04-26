@@ -175,7 +175,7 @@ class Plugin:
             old.splitlines(keepends=True), new.splitlines(keepends=True),
             fromfile="原始", tofile="修改后", lineterm='')
         text = '\n'.join(diff)
-        return f"📝 变更预览:\n{text}" if text else "内容无变化"
+        return f" 变更预览:\n{text}" if text else "内容无变化"
 
     # ══════════════════════════════════════
     #  编辑操作
@@ -225,7 +225,7 @@ class Plugin:
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(new_content)
 
-        return f"✅ 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
+        return f" 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
 
     def _op_multi_edit(self, path: str, rest: str) -> str:
         import json
@@ -250,16 +250,16 @@ class Plugin:
             old = op.get("old", "").strip()
             new = op.get("new", "").strip()
             if not old:
-                results.append(f"  ✗ 操作 {i+1}: old 为空")
+                results.append(f"   操作 {i+1}: old 为空")
             elif old not in content:
-                results.append(f"  ✗ 操作 {i+1}: 未找到匹配")
+                results.append(f"   操作 {i+1}: 未找到匹配")
             else:
                 content = content.replace(old, new, 1)
-                results.append(f"  ✓ 操作 {i+1}: 已替换")
+                results.append(f"   操作 {i+1}: 已替换")
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f"✅ 批量编辑: {fp}\n" + "\n".join(results)
+        return f" 批量编辑: {fp}\n" + "\n".join(results)
 
     def _op_insert(self, path: str, rest: str) -> str:
         if not path:
@@ -287,7 +287,7 @@ class Plugin:
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        return f"✅ 已在第 {line_num} 行插入 {len(insert_lines)} 行"
+        return f" 已在第 {line_num} 行插入 {len(insert_lines)} 行"
 
     def _op_delete_lines(self, path: str, rest: str) -> str:
         if not path:
@@ -315,7 +315,7 @@ class Plugin:
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        return f"✅ 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
+        return f" 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
 
     def _op_create(self, path: str, rest: str) -> str:
         if not path:
@@ -328,7 +328,7 @@ class Plugin:
             os.makedirs(dir_path, exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(rest or "")
-        return f"✅ 已创建: {fp} ({len(rest or '')} 字符)"
+        return f" 已创建: {fp} ({len(rest or '')} 字符)"
 
     def _op_write(self, path: str, rest: str) -> str:
         if not path:
@@ -339,7 +339,7 @@ class Plugin:
             os.makedirs(dir_path, exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(rest)
-        return f"✅ 已写入: {fp} ({len(rest)} 字符)"
+        return f" 已写入: {fp} ({len(rest)} 字符)"
 
     def _op_append(self, path: str, rest: str) -> str:
         if not path:
@@ -349,7 +349,7 @@ class Plugin:
             return f"错误：文件不存在: {fp}"
         with open(fp, 'a', encoding='utf-8') as f:
             f.write(rest)
-        return f"✅ 已追加: {fp} ({len(rest)} 字符)"
+        return f" 已追加: {fp} ({len(rest)} 字符)"
 
     # ══════════════════════════════════════
     #  查看操作
@@ -376,7 +376,7 @@ class Plugin:
 
         selected = lines[start-1:end]
         numbered = [f"{start+i:4d} | {line.rstrip()}" for i, line in enumerate(selected)]
-        return f"📄 {fp} (第 {start}-{end} 行，共 {total} 行)\n{'─'*60}\n" + '\n'.join(numbered)
+        return f" {fp} (第 {start}-{end} 行，共 {total} 行)\n{'─'*60}\n" + '\n'.join(numbered)
 
     def _op_diff(self, path: str, rest: str) -> str:
         if not path:
@@ -415,7 +415,7 @@ class Plugin:
         except SyntaxError as e:
             return f"错误：语法错误 - {e}"
 
-        info = [f"📄 {fp} AST 摘要:"]
+        info = [f" {fp} AST 摘要:"]
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.ClassDef):
                 methods = [n.name for n in ast.iter_child_nodes(node)
@@ -430,7 +430,7 @@ class Plugin:
             elif isinstance(node, ast.ImportFrom):
                 info.append(f"  from {node.module} import {', '.join(a.name for a in node.names)}")
 
-        return '\n'.join(info) if len(info) > 1 else f"📄 {fp}: 文件为空"
+        return '\n'.join(info) if len(info) > 1 else f" {fp}: 文件为空"
 
     # ══════════════════════════════════════
     #  搜索操作
@@ -466,7 +466,7 @@ class Plugin:
 
         if not results:
             return f"未找到 '{keyword}' 的匹配"
-        return f"🔍 搜索 '{keyword}' ({len(results)}{'+' if len(results) >= 80 else ''} 匹配):\n" + '\n'.join(results)
+        return f" 搜索 '{keyword}' ({len(results)}{'+' if len(results) >= 80 else ''} 匹配):\n" + '\n'.join(results)
 
     def _op_regex(self, directory: str, rest: str) -> str:
         if not directory:
@@ -500,7 +500,7 @@ class Plugin:
 
         if not results:
             return f"未找到匹配 '{pattern}'"
-        return f"🔍 正则搜索 ({len(results)}{'+' if len(results) >= 50 else ''} 匹配):\n" + '\n'.join(results)
+        return f" 正则搜索 ({len(results)}{'+' if len(results) >= 50 else ''} 匹配):\n" + '\n'.join(results)
 
     def _op_symbols(self, directory: str, rest: str) -> str:
         if not directory:
@@ -528,12 +528,12 @@ class Plugin:
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         symbols.append(f"  def {node.name}() (行 {node.lineno})")
                 if symbols:
-                    all_symbols.append(f"\n📄 {rel}:")
+                    all_symbols.append(f"\n {rel}:")
                     all_symbols.extend(symbols)
             except (SyntaxError, UnicodeDecodeError):
                 continue
 
-        return "📋 代码符号:\n" + '\n'.join(all_symbols) if all_symbols else "未找到 Python 符号"
+        return " 代码符号:\n" + '\n'.join(all_symbols) if all_symbols else "未找到 Python 符号"
 
     def _op_imports(self, file_path: str, rest: str) -> str:
         if not file_path:
@@ -553,7 +553,7 @@ class Plugin:
                 names = ', '.join(a.name for a in node.names)
                 imports.append(f"  from {node.module} import {names} (行 {node.lineno})")
 
-        return f"📦 {file_path} 导入:\n" + '\n'.join(imports) if imports else f"📄 {file_path}: 没有导入"
+        return f" {file_path} 导入:\n" + '\n'.join(imports) if imports else f" {file_path}: 没有导入"
 
     def _op_callers(self, directory: str, rest: str) -> str:
         if not directory:
@@ -581,7 +581,7 @@ class Plugin:
             except (UnicodeDecodeError, PermissionError):
                 continue
 
-        return f"🔎 '{func_name}' 的调用 ({len(results)}):\n" + '\n'.join(results) if results else f"未找到调用 '{func_name}'"
+        return f" '{func_name}' 的调用 ({len(results)}):\n" + '\n'.join(results) if results else f"未找到调用 '{func_name}'"
 
     def _op_todo(self, directory: str, rest: str) -> str:
         if not directory:
@@ -602,7 +602,7 @@ class Plugin:
             except (UnicodeDecodeError, PermissionError):
                 continue
 
-        return f"📝 TODO/FIXME ({len(results)}):\n" + '\n'.join(results) if results else "没有 TODO/FIXME"
+        return f" TODO/FIXME ({len(results)}):\n" + '\n'.join(results) if results else "没有 TODO/FIXME"
 
     def _op_structure(self, directory: str, rest: str) -> str:
         if not directory:
@@ -612,7 +612,7 @@ class Plugin:
             return f"错误：目录不存在: {search_dir}"
 
         max_depth = int(rest) if rest.strip().isdigit() else 3
-        lines = [f"📁 {os.path.basename(search_dir)}/"]
+        lines = [f" {os.path.basename(search_dir)}/"]
         skip = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'env', '.tox'}
 
         def _tree(path, prefix="", depth=0):
@@ -660,7 +660,7 @@ class Plugin:
         start = max(1, line_num - ctx)
         end = min(total, line_num + ctx)
 
-        result = [f"📄 {path} 第 {start}-{end} 行 (目标: 第 {line_num} 行):", "─" * 60]
+        result = [f" {path} 第 {start}-{end} 行 (目标: 第 {line_num} 行):", "─" * 60]
         for i in range(start - 1, end):
             marker = ">>>" if i + 1 == line_num else "   "
             result.append(f"{marker} {i+1:4d} | {lines[i].rstrip()}")
@@ -689,7 +689,7 @@ class Plugin:
             except (UnicodeDecodeError, PermissionError):
                 continue
 
-        return (f"📊 代码统计 ({search_dir}):\n"
+        return (f" 代码统计 ({search_dir}):\n"
                 f"  文件: {len(files)}\n"
                 f"  总行: {total}\n"
                 f"  代码: {code}\n"

@@ -853,8 +853,8 @@ multi 操作支持一次修改多处：
                         # 无参数：循环切换
                         safety.cycle_mode()
                     mode_name = safety.get_mode_name()
-                    icons = {"无限制": "🔴", "普通": "🟢", "人工确认": "🟡"}
-                    icon = icons.get(mode_name, "⚪")
+                    icons = {"无限制": "", "普通": "", "人工确认": ""}
+                    icon = icons.get(mode_name, "")
                     print(f"{icon} 安全模式: {mode_name}")
                     continue
 
@@ -880,7 +880,7 @@ multi 操作支持一次修改多处：
                     response_lines = processed_response.split('\n')
                     for i, line in enumerate(response_lines):
                         if i == 0:
-                            line = "✦ " + line
+                            line = " " + line
                         if i == len(response_lines) - 1:
                             print(f"{line} {user_id_display}")
                         else:

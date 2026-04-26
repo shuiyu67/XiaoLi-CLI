@@ -146,9 +146,9 @@ class Plugin:
             dirs = sum(1 for x in items if x[0] == 'dir')
             files = len(items) - dirs
 
-            result = [f"📁 {path}", "─" * 50]
+            result = [f" {path}", "─" * 50]
             for t, name, size in items[:100]:
-                result.append(f"  {'📁' if t == 'dir' else '📄'} {name}{'/' if t == 'dir' else f'  ({size})'}")
+                result.append(f"  {'' if t == 'dir' else ''} {name}{'/' if t == 'dir' else f'  ({size})'}")
             if len(items) > 100:
                 result.append(f"  ... 还有 {len(items) - 100} 项")
             result.append("─" * 50)
@@ -189,11 +189,11 @@ class Plugin:
                         if i < max_lines:
                             lines.append(f"{i+1:4d} | {line.rstrip()}")
                     content = '\n'.join(lines)
-                    header = f"📄 {file_path} ({size}B, 前 {min(max_lines, total)}/{total} 行)"
+                    header = f" {file_path} ({size}B, 前 {min(max_lines, total)}/{total} 行)"
                 else:
                     all_lines = f.readlines()
                     content = '\n'.join(f"{i+1:4d} | {l.rstrip()}" for i, l in enumerate(all_lines))
-                    header = f"📄 {file_path} ({size}B, {len(all_lines)} 行)"
+                    header = f" {file_path} ({size}B, {len(all_lines)} 行)"
 
             return f"{header}\n{'─' * 50}\n{content}"
         except UnicodeDecodeError:
@@ -214,7 +214,7 @@ class Plugin:
         os.makedirs(os.path.dirname(fp) or ".", exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f"✅ 已写入: {fp} ({len(content)} 字符)"
+        return f" 已写入: {fp} ({len(content)} 字符)"
 
     def _op_append(self, args: List[str]) -> str:
         if len(args) < 2:
@@ -232,7 +232,7 @@ class Plugin:
             return f"错误：文件不存在: {fp}"
         with open(fp, 'a', encoding='utf-8') as f:
             f.write(content)
-        return f"✅ 已追加: {fp}"
+        return f" 已追加: {fp}"
 
     def _op_copy(self, args: List[str]) -> str:
         if len(args) < 2:
@@ -245,7 +245,7 @@ class Plugin:
             shutil.copy2(src, dst)
         else:
             shutil.copytree(src, dst, dirs_exist_ok=True)
-        return f"✅ 已复制:\n  {src}\n  → {dst}"
+        return f" 已复制:\n  {src}\n  → {dst}"
 
     def _op_move(self, args: List[str]) -> str:
         if len(args) < 2:
@@ -255,7 +255,7 @@ class Plugin:
             return f"错误：源不存在: {src}"
         os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
         shutil.move(src, dst)
-        return f"✅ 已移动:\n  {src}\n  → {dst}"
+        return f" 已移动:\n  {src}\n  → {dst}"
 
     def _op_delete(self, args: List[str]) -> str:
         if not args:
@@ -266,14 +266,14 @@ class Plugin:
             return f"错误：不存在: {path}"
         if os.path.isfile(path):
             os.remove(path)
-            return f"✅ 已删除文件: {path}"
+            return f" 已删除文件: {path}"
         elif os.path.isdir(path):
             if recursive:
                 shutil.rmtree(path)
-                return f"✅ 已删除目录: {path}"
+                return f" 已删除目录: {path}"
             elif not os.listdir(path):
                 os.rmdir(path)
-                return f"✅ 已删除空目录: {path}"
+                return f" 已删除空目录: {path}"
             else:
                 return "错误：目录不为空，用 -r 递归删除"
 
@@ -346,4 +346,4 @@ class Plugin:
         if os.path.exists(path):
             return f"错误：已存在: {path}"
         os.makedirs(path, exist_ok=True)
-        return f"✅ 已创建: {path}"
+        return f" 已创建: {path}"

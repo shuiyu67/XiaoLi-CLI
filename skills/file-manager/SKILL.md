@@ -148,7 +148,7 @@ del filename.txt
 rmdir /s /q directory_name
 ```
 
-⚠️ **Warning**: Deletion is permanent. Always confirm before deleting.
+ **Warning**: Deletion is permanent. Always confirm before deleting.
 
 ### Copy File or Directory
 

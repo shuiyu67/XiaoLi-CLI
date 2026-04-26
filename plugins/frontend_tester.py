@@ -29,12 +29,12 @@ JSON格式示例：
 - analyze <项目路径> - 分析整个前端项目的结构和问题
 
 支持的检查项：
-✓ HTML语法验证
-✓ CSS语法和兼容性检查
-✓ JavaScript语法检查
-✓ 响应式设计检查
-✓ 可访问性检查
-✓ 性能优化建议"""
+ HTML语法验证
+ CSS语法和兼容性检查
+ JavaScript语法检查
+ 响应式设计检查
+ 可访问性检查
+ 性能优化建议"""
         self.cli = None
 
     def set_cli(self, cli):
@@ -138,13 +138,13 @@ JSON格式示例：
     def _validate_html(self, file_path):
         """验证HTML文件"""
         if not os.path.exists(file_path):
-            return f"❌ 文件不存在: {file_path}"
+            return f" 文件不存在: {file_path}"
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            result = f"\n🧪 HTML验证结果: {file_path}\n"
+            result = f"\n HTML验证结果: {file_path}\n"
             result += "=" * 60 + "\n\n"
 
             # 基本检查
@@ -191,7 +191,7 @@ JSON格式示例：
             link_count = content.count('<link')
             script_count = content.count('<script')
 
-            result += f"📊 文件统计:\n"
+            result += f" 文件统计:\n"
             result += f"   - div元素: {div_count}\n"
             result += f"   - img元素: {img_count}\n"
             result += f"   - img alt属性: {img_alt_count}\n"
@@ -207,38 +207,38 @@ JSON格式示例：
 
             # 显示问题
             if issues:
-                result += f"⚠️  发现 {len(issues)} 个问题:\n\n"
+                result += f"  发现 {len(issues)} 个问题:\n\n"
                 for i, issue in enumerate(issues, 1):
                     level = issue['level']
                     if level == 'error':
-                        icon = f"{Fore.RED}❌{Style.RESET_ALL}"
+                        icon = f"{Fore.RED}{Style.RESET_ALL}"
                     elif level == 'warning':
-                        icon = f"{Fore.YELLOW}⚠️{Style.RESET_ALL}"
+                        icon = f"{Fore.YELLOW}{Style.RESET_ALL}"
                     else:
-                        icon = f"{Fore.GREEN}ℹ️{Style.RESET_ALL}"
+                        icon = f"{Fore.GREEN}ℹ{Style.RESET_ALL}"
                     result += f"{icon} {i}. {issue['message']}\n"
             else:
-                result += f"{Fore.GREEN}✅ 未发现问题{Style.RESET_ALL}\n"
+                result += f"{Fore.GREEN} 未发现问题{Style.RESET_ALL}\n"
 
             result += "\n" + "=" * 60 + "\n"
 
             return result
 
         except UnicodeDecodeError:
-            return "❌ 文件编码问题，无法读取"
+            return " 文件编码问题，无法读取"
         except Exception as e:
-            return f"❌ 验证失败: {str(e)}"
+            return f" 验证失败: {str(e)}"
 
     def _test_css(self, file_path):
         """测试CSS文件"""
         if not os.path.exists(file_path):
-            return f"❌ 文件不存在: {file_path}"
+            return f" 文件不存在: {file_path}"
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            result = f"\n🧪 CSS测试结果: {file_path}\n"
+            result = f"\n CSS测试结果: {file_path}\n"
             result += "=" * 60 + "\n\n"
 
             issues = []
@@ -268,44 +268,44 @@ JSON格式示例：
             rule_count = content.count('{')
             selector_count = len([line for line in content.split('\n') if '{' in line])
 
-            result += f"📊 文件统计:\n"
+            result += f" 文件统计:\n"
             result += f"   - CSS规则: {rule_count}\n"
             result += f"   - 选择器: {selector_count}\n\n"
 
             # 显示问题
             if issues:
-                result += f"⚠️  发现 {len(issues)} 个问题:\n\n"
+                result += f"  发现 {len(issues)} 个问题:\n\n"
                 for i, issue in enumerate(issues, 1):
                     level = issue['level']
                     if level == 'error':
-                        icon = f"{Fore.RED}❌{Style.RESET_ALL}"
+                        icon = f"{Fore.RED}{Style.RESET_ALL}"
                     elif level == 'warning':
-                        icon = f"{Fore.YELLOW}⚠️{Style.RESET_ALL}"
+                        icon = f"{Fore.YELLOW}{Style.RESET_ALL}"
                     else:
-                        icon = f"{Fore.GREEN}ℹ️{Style.RESET_ALL}"
+                        icon = f"{Fore.GREEN}ℹ{Style.RESET_ALL}"
                     result += f"{icon} {i}. {issue['message']}\n"
             else:
-                result += f"{Fore.GREEN}✅ 未发现问题{Style.RESET_ALL}\n"
+                result += f"{Fore.GREEN} 未发现问题{Style.RESET_ALL}\n"
 
             result += "\n" + "=" * 60 + "\n"
 
             return result
 
         except UnicodeDecodeError:
-            return "❌ 文件编码问题，无法读取"
+            return " 文件编码问题，无法读取"
         except Exception as e:
-            return f"❌ 测试失败: {str(e)}"
+            return f" 测试失败: {str(e)}"
 
     def _check_js(self, file_path):
         """检查JS文件"""
         if not os.path.exists(file_path):
-            return f"❌ 文件不存在: {file_path}"
+            return f" 文件不存在: {file_path}"
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            result = f"\n🧪 JavaScript检查结果: {file_path}\n"
+            result = f"\n JavaScript检查结果: {file_path}\n"
             result += "=" * 60 + "\n\n"
 
             issues = []
@@ -339,52 +339,52 @@ JSON格式示例：
             line_count = len(content.split('\n'))
             function_count = content.count('function ')
 
-            result += f"📊 文件统计:\n"
+            result += f" 文件统计:\n"
             result += f"   - 代码行数: {line_count}\n"
             result += f"   - 函数数量: {function_count}\n\n"
 
             # 显示问题
             if issues:
-                result += f"⚠️  发现 {len(issues)} 个问题:\n\n"
+                result += f"  发现 {len(issues)} 个问题:\n\n"
                 for i, issue in enumerate(issues, 1):
                     level = issue['level']
                     if level == 'error':
-                        icon = f"{Fore.RED}❌{Style.RESET_ALL}"
+                        icon = f"{Fore.RED}{Style.RESET_ALL}"
                     elif level == 'warning':
-                        icon = f"{Fore.YELLOW}⚠️{Style.RESET_ALL}"
+                        icon = f"{Fore.YELLOW}{Style.RESET_ALL}"
                     else:
-                        icon = f"{Fore.GREEN}ℹ️{Style.RESET_ALL}"
+                        icon = f"{Fore.GREEN}ℹ{Style.RESET_ALL}"
                     result += f"{icon} {i}. {issue['message']}\n"
             else:
-                result += f"{Fore.GREEN}✅ 未发现问题{Style.RESET_ALL}\n"
+                result += f"{Fore.GREEN} 未发现问题{Style.RESET_ALL}\n"
 
             result += "\n" + "=" * 60 + "\n"
 
             return result
 
         except UnicodeDecodeError:
-            return "❌ 文件编码问题，无法读取"
+            return " 文件编码问题，无法读取"
         except Exception as e:
-            return f"❌ 检查失败: {str(e)}"
+            return f" 检查失败: {str(e)}"
 
     def _preview_in_browser(self, file_path):
         """在浏览器中预览"""
         if not os.path.exists(file_path):
-            return f"❌ 文件不存在: {file_path}"
+            return f" 文件不存在: {file_path}"
 
         try:
             # Windows系统
             os.startfile(file_path)
-            return f"✅ 已在默认浏览器中打开: {file_path}"
+            return f" 已在默认浏览器中打开: {file_path}"
         except Exception as e:
-            return f"❌ 无法打开浏览器: {str(e)}"
+            return f" 无法打开浏览器: {str(e)}"
 
     def _analyze_project(self, project_path):
         """分析整个前端项目"""
         if not os.path.exists(project_path):
-            return f"❌ 项目路径不存在: {project_path}"
+            return f" 项目路径不存在: {project_path}"
 
-        result = f"\n🧪 前端项目分析: {project_path}\n"
+        result = f"\n 前端项目分析: {project_path}\n"
         result += "=" * 60 + "\n\n"
 
         try:
@@ -402,13 +402,13 @@ JSON格式示例：
                     elif file.endswith('.js'):
                         js_files.append(os.path.join(root, file))
 
-            result += f"📊 项目文件统计:\n"
+            result += f" 项目文件统计:\n"
             result += f"   - HTML文件: {len(html_files)}\n"
             result += f"   - CSS文件: {len(css_files)}\n"
             result += f"   - JavaScript文件: {len(js_files)}\n\n"
 
             # 建议检查
-            result += f"💡 建议检查:\n"
+            result += f" 建议检查:\n"
 
             if html_files:
                 result += f"   - HTML文件:\n"
@@ -431,13 +431,13 @@ JSON格式示例：
                 if len(js_files) > 3:
                     result += f"     • ... 还有 {len(js_files) - 3} 个文件\n"
 
-            result += f"\n{Fore.GREEN}✅ 分析完成{Style.RESET_ALL}\n"
+            result += f"\n{Fore.GREEN} 分析完成{Style.RESET_ALL}\n"
             result += "\n" + "=" * 60 + "\n"
 
             return result
 
         except Exception as e:
-            return f"❌ 分析失败: {str(e)}"
+            return f" 分析失败: {str(e)}"
 
 
 # 测试函数

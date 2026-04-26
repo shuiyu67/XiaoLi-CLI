@@ -96,7 +96,7 @@ class Plugin:
             # 安全检查
             for blocked in self.BLOCKED:
                 if blocked in rest:
-                    return f"🚫 安全拦截: 检测到危险命令模式 '{blocked}'"
+                    return f" 安全拦截: 检测到危险命令模式 '{blocked}'"
 
             return self._execute(rest, timeout)
 
@@ -139,6 +139,6 @@ class Plugin:
             return output.strip()
 
         except subprocess.TimeoutExpired:
-            return f"⏱️ 命令超时 ({timeout}s): {command}"
+            return f" 命令超时 ({timeout}s): {command}"
         except Exception as e:
             return f"执行失败: {str(e)}"

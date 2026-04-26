@@ -129,7 +129,7 @@ if TEXTUAL_AVAILABLE:
     class XiaoliTUI(App):
         """小狸 TUI v2 - GitHub 暗色主题"""
         CSS = _TUI_CSS
-        TITLE = "🐱 小狸 Pro-CLI"
+        TITLE = " 小狸 Pro-CLI"
         SUB_TITLE = "智能编程助手"
 
         BINDINGS = [
@@ -163,13 +163,13 @@ if TEXTUAL_AVAILABLE:
                             id="input-hint"
                         )
                 with Vertical(id="sidebar"):
-                    yield Static("⚙️  引擎", classes="sidebar-header")
+                    yield Static("  引擎", classes="sidebar-header")
                     yield Vertical(id="engine-list", classes="sidebar-section")
                     yield Rule(line_style="heavy")
-                    yield Static("🔧 工具", classes="sidebar-header")
+                    yield Static(" 工具", classes="sidebar-header")
                     yield Vertical(id="tool-list", classes="sidebar-section")
                     yield Rule(line_style="heavy")
-                    yield Static("📊 状态", classes="sidebar-header")
+                    yield Static(" 状态", classes="sidebar-header")
                     yield Vertical(id="status-info", classes="sidebar-section")
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
@@ -184,14 +184,14 @@ if TEXTUAL_AVAILABLE:
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║   🐱 小狸 Pro-CLI v5.1                       ║", "msg-welcome"),
-                ("  ║   智能编程助手 · 对标 Claude Code              ║", "msg-welcome"),
+                ("  ║    小狸 Pro-CLI v5.1                       ║", "msg-welcome"),
+                ("  ║   智能编程助手              ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
                 ("", "msg-dim"),
-                ("  💡 代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
-                ("  📝 输入 /help 查看命令 | /model 切换引擎", "msg-system"),
-                (f"  🔧 当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
+                ("   代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
+                ("   输入 /help 查看命令 | /model 切换引擎", "msg-system"),
+                (f"   当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
                 ("", "msg-dim"),
             ]
             for text, cls in lines:
@@ -233,13 +233,13 @@ if TEXTUAL_AVAILABLE:
             self._append(Static(text, classes=cls))
 
         def _user_msg(self, text):
-            self._add(f"  👤 {text}", "msg-user")
+            self._add(f"   {text}", "msg-user")
 
         def _ai_msg(self, text):
             if "```" in text:
                 self._render_with_code(text)
             else:
-                self._add(f"  ✦ {text}", "msg-ai")
+                self._add(f"   {text}", "msg-ai")
 
         def _render_with_code(self, text):
             parts = re.split(r'```(\w*)\n(.*?)```', text, flags=re.DOTALL)
@@ -248,7 +248,7 @@ if TEXTUAL_AVAILABLE:
                 if i % 3 == 0:
                     if parts[i].strip():
                         for line in parts[i].strip().split('\n'):
-                            self._add(f"  ✦ {line}", "msg-ai")
+                            self._add(f"   {line}", "msg-ai")
                 elif i % 3 == 2:
                     code = parts[i]
                     lang = parts[i-1] if i > 1 else ""
@@ -263,19 +263,19 @@ if TEXTUAL_AVAILABLE:
                 i += 1
 
         def _tool_ok(self, name, args):
-            self._add(f"  ✅ {name}: {args[:60]}", "msg-tool-ok")
+            self._add(f"   {name}: {args[:60]}", "msg-tool-ok")
 
         def _tool_err(self, name, args):
-            self._add(f"  ❌ {name}: {args[:60]}", "msg-tool-err")
+            self._add(f"   {name}: {args[:60]}", "msg-tool-err")
 
         def _thinking(self):
-            self._add("  💭 思考中...", "msg-thinking")
+            self._add("   思考中...", "msg-thinking")
 
         def _system(self, text):
-            self._add(f"  ℹ️  {text}", "msg-system")
+            self._add(f"  ℹ  {text}", "msg-system")
 
         def _error(self, text):
-            self._add(f"  ⚠️  {text}", "msg-error")
+            self._add(f"    {text}", "msg-error")
 
         @on(Input.Submitted, "#user-input")
         def on_input(self, event):
@@ -291,7 +291,7 @@ if TEXTUAL_AVAILABLE:
             self._user_msg(text)
             self._thinking()
             self.is_generating = True
-            self._update_status("🔄 思考中...")
+            self._update_status(" 思考中...")
             self.run_worker(self._generate(text), exclusive=True)
 
         def _handle_command(self, cmd):
@@ -309,7 +309,7 @@ if TEXTUAL_AVAILABLE:
                 'cls': lambda: self.action_clear(),
                 'model': lambda: self._switch_model(args),
                 'engine': lambda: self._switch_model(args),
-                'about': lambda: self._system("🐱 小狸 Pro-CLI v5.1 - 智能编程助手"),
+                'about': lambda: self._system(" 小狸 Pro-CLI v5.1 - 智能编程助手"),
                 'status': lambda: self._show_status(),
                 'tools': lambda: self._show_tools(),
                 'engines': lambda: self._show_engines(),
@@ -331,7 +331,7 @@ if TEXTUAL_AVAILABLE:
                     self._error(f"未知命令: /{name}，输入 /help 查看帮助")
 
         def _show_help(self):
-            help_text = """  📖 命令:
+            help_text = """   命令:
   /help          帮助信息
   /quit          退出
   /cli           切换命令行模式
@@ -341,7 +341,7 @@ if TEXTUAL_AVAILABLE:
   /status        系统状态
   /clear         清屏
 
-  ⌨️  快捷键:
+  ⌨  快捷键:
   Ctrl+C   退出    Ctrl+L   清屏
   Ctrl+N   新对话  F1       侧栏
   Escape   取消生成"""
@@ -425,11 +425,11 @@ if TEXTUAL_AVAILABLE:
                 pass
 
         def _write_raw(self, msg):
-            if '✅' in msg or 'OK 工具' in msg:
+            if '' in msg or 'OK 工具' in msg:
                 self._add(f"  {msg}", "msg-tool-ok")
-            elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
+            elif '' in msg or 'X 工具' in msg or '错误' in msg:
                 self._add(f"  {msg}", "msg-tool-err")
-            elif '✦' in msg:
+            elif '' in msg:
                 self._add(f"  {msg}", "msg-ai")
             elif '工具' in msg and ('调用' in msg or '执行' in msg):
                 self._add(f"  {msg}", "msg-tool-ok")

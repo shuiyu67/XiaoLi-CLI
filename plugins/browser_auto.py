@@ -172,7 +172,7 @@ class Plugin:
 
         sync_playwright = self._ensure_playwright()
         if not sync_playwright:
-            return ("❌ 未安装 Playwright。安装步骤:\n"
+            return (" 未安装 Playwright。安装步骤:\n"
                     "  pip install playwright\n"
                     "  playwright install chromium")
 
@@ -184,9 +184,9 @@ class Plugin:
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             self._page = self._context.new_page()
-            return "✅ 浏览器已启动 (headless Chromium, 1280×720)"
+            return " 浏览器已启动 (headless Chromium, 1280×720)"
         except Exception as e:
-            return f"❌ 启动失败: {e}"
+            return f" 启动失败: {e}"
 
     def _stop(self, args: str) -> str:
         try:
@@ -202,14 +202,14 @@ class Plugin:
         self._context = None
         self._browser = None
         self._pw = None
-        return "✅ 浏览器已关闭"
+        return " 浏览器已关闭"
 
     def _status(self, args: str) -> str:
         if self._page and not self._page.is_closed():
             url = self._page.url
             title = self._page.title()
-            return f"🟢 运行中\n  URL: {url}\n  标题: {title}"
-        return "🔴 未运行"
+            return f" 运行中\n  URL: {url}\n  标题: {title}"
+        return " 未运行"
 
     def _require_page(self):
         """确保页面可用，否则自动启动"""
@@ -231,24 +231,24 @@ class Plugin:
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
             title = page.title()
-            return f"✅ 已打开: {url}\n  标题: {title}"
+            return f" 已打开: {url}\n  标题: {title}"
         except Exception as e:
-            return f"❌ 打开失败: {e}"
+            return f" 打开失败: {e}"
 
     def _back(self, args: str) -> str:
         page = self._require_page()
         page.go_back()
-        return f"✅ 后退 → {page.url}"
+        return f" 后退 → {page.url}"
 
     def _forward(self, args: str) -> str:
         page = self._require_page()
         page.go_forward()
-        return f"✅ 前进 → {page.url}"
+        return f" 前进 → {page.url}"
 
     def _reload(self, args: str) -> str:
         page = self._require_page()
         page.reload()
-        return f"✅ 已刷新: {page.url}"
+        return f" 已刷新: {page.url}"
 
     def _title(self, args: str) -> str:
         page = self._require_page()
@@ -267,9 +267,9 @@ class Plugin:
         page = self._require_page()
         try:
             page.click(selector, timeout=10000)
-            return f"✅ 已点击: {selector}"
+            return f" 已点击: {selector}"
         except Exception as e:
-            return f"❌ 点击失败: {e}"
+            return f" 点击失败: {e}"
 
     def _fill(self, args: str) -> str:
         parts = args.strip().split(maxsplit=1)
@@ -279,9 +279,9 @@ class Plugin:
         page = self._require_page()
         try:
             page.fill(selector, text, timeout=10000)
-            return f"✅ 已填写: {selector}"
+            return f" 已填写: {selector}"
         except Exception as e:
-            return f"❌ 填写失败: {e}"
+            return f" 填写失败: {e}"
 
     def _select(self, args: str) -> str:
         parts = args.strip().split(maxsplit=1)
@@ -291,38 +291,38 @@ class Plugin:
         page = self._require_page()
         try:
             page.select_option(selector, value, timeout=10000)
-            return f"✅ 已选择: {selector} = {value}"
+            return f" 已选择: {selector} = {value}"
         except Exception as e:
-            return f"❌ 选择失败: {e}"
+            return f" 选择失败: {e}"
 
     def _check(self, selector: str) -> str:
         page = self._require_page()
         try:
             page.check(selector.strip(), timeout=10000)
-            return f"✅ 已勾选: {selector}"
+            return f" 已勾选: {selector}"
         except Exception as e:
-            return f"❌ 勾选失败: {e}"
+            return f" 勾选失败: {e}"
 
     def _uncheck(self, selector: str) -> str:
         page = self._require_page()
         try:
             page.uncheck(selector.strip(), timeout=10000)
-            return f"✅ 已取消勾选: {selector}"
+            return f" 已取消勾选: {selector}"
         except Exception as e:
-            return f"❌ 取消勾选失败: {e}"
+            return f" 取消勾选失败: {e}"
 
     def _hover(self, selector: str) -> str:
         page = self._require_page()
         try:
             page.hover(selector.strip(), timeout=10000)
-            return f"✅ 悬停: {selector}"
+            return f" 悬停: {selector}"
         except Exception as e:
-            return f"❌ 悬停失败: {e}"
+            return f" 悬停失败: {e}"
 
     def _press(self, key: str) -> str:
         page = self._require_page()
         page.keyboard.press(key.strip())
-        return f"✅ 按键: {key}"
+        return f" 按键: {key}"
 
     # ── 提取 ──
 
@@ -338,7 +338,7 @@ class Plugin:
                 return text
             return f"未找到元素: {selector}"
         except Exception as e:
-            return f"❌ 获取文本失败: {e}"
+            return f" 获取文本失败: {e}"
 
     def _html(self, selector: str) -> str:
         selector = selector.strip() or "body"
@@ -352,7 +352,7 @@ class Plugin:
                 return html
             return f"未找到元素: {selector}"
         except Exception as e:
-            return f"❌ 获取 HTML 失败: {e}"
+            return f" 获取 HTML 失败: {e}"
 
     def _attr(self, args: str) -> str:
         parts = args.strip().split(maxsplit=1)
@@ -367,7 +367,7 @@ class Plugin:
                 return f"{attr_name} = {val}"
             return f"未找到元素: {selector}"
         except Exception as e:
-            return f"❌ 获取属性失败: {e}"
+            return f" 获取属性失败: {e}"
 
     def _value(self, selector: str) -> str:
         page = self._require_page()
@@ -377,7 +377,7 @@ class Plugin:
                 return el.input_value()
             return f"未找到元素: {selector}"
         except Exception as e:
-            return f"❌ 获取值失败: {e}"
+            return f" 获取值失败: {e}"
 
     def _eval(self, script: str) -> str:
         script = script.strip()
@@ -390,7 +390,7 @@ class Plugin:
                 return json.dumps(result, ensure_ascii=False, indent=2)
             return str(result)
         except Exception as e:
-            return f"❌ JS 执行失败: {e}"
+            return f" JS 执行失败: {e}"
 
     def _query(self, selector: str) -> str:
         selector = selector.strip()
@@ -411,7 +411,7 @@ class Plugin:
                 result.append(f"  ... 还有 {len(elements) - 20} 个")
             return '\n'.join(result)
         except Exception as e:
-            return f"❌ 查询失败: {e}"
+            return f" 查询失败: {e}"
 
     # ── 截图 ──
 
@@ -443,9 +443,9 @@ class Plugin:
                 page.screenshot(path=path, full_page=True)
 
             size = os.path.getsize(path)
-            return f"✅ 截图已保存: {path} ({size/1024:.1f} KB)"
+            return f" 截图已保存: {path} ({size/1024:.1f} KB)"
         except Exception as e:
-            return f"❌ 截图失败: {e}"
+            return f" 截图失败: {e}"
 
     # ── 等待 ──
 
@@ -458,9 +458,9 @@ class Plugin:
         page = self._require_page()
         try:
             page.wait_for_selector(selector, timeout=timeout)
-            return f"✅ 元素已出现: {selector}"
+            return f" 元素已出现: {selector}"
         except Exception:
-            return f"⏱️ 等待超时: {selector}"
+            return f" 等待超时: {selector}"
 
     def _wait_gone(self, args: str) -> str:
         parts = args.strip().split()
@@ -471,9 +471,9 @@ class Plugin:
         page = self._require_page()
         try:
             page.wait_for_selector(selector, state="hidden", timeout=timeout)
-            return f"✅ 元素已消失: {selector}"
+            return f" 元素已消失: {selector}"
         except Exception:
-            return f"⏱️ 等待超时: {selector}"
+            return f" 等待超时: {selector}"
 
     def _wait_url(self, args: str) -> str:
         parts = args.strip().split()
@@ -484,9 +484,9 @@ class Plugin:
         page = self._require_page()
         try:
             page.wait_for_url(f"**{url_part}**", timeout=timeout)
-            return f"✅ URL 已变化: {page.url}"
+            return f" URL 已变化: {page.url}"
         except Exception:
-            return f"⏱️ 等待超时: URL 未变化"
+            return f" 等待超时: URL 未变化"
 
     # ── 高级 ──
 
@@ -496,9 +496,9 @@ class Plugin:
         try:
             page.pdf(path=path)
             size = os.path.getsize(path)
-            return f"✅ PDF 已保存: {path} ({size/1024:.1f} KB)"
+            return f" PDF 已保存: {path} ({size/1024:.1f} KB)"
         except Exception as e:
-            return f"❌ PDF 生成失败: {e}"
+            return f" PDF 生成失败: {e}"
 
     def _cookies(self, args: str) -> str:
         page = self._require_page()
@@ -517,7 +517,7 @@ class Plugin:
             return "错误：cookie 必须是 JSON 格式: {\"name\": \"...\", \"value\": \"...\", \"domain\": \"...\"}"
         page = self._require_page()
         page.context.add_cookies([cookie])
-        return f"✅ 已设置 cookie: {cookie.get('name', '?')}"
+        return f" 已设置 cookie: {cookie.get('name', '?')}"
 
     def _viewport(self, args: str) -> str:
         parts = args.strip().split()
@@ -529,7 +529,7 @@ class Plugin:
             return "错误：宽高必须是整数"
         page = self._require_page()
         page.set_viewport_size({"width": w, "height": h})
-        return f"✅ 视口已设置: {w}×{h}"
+        return f" 视口已设置: {w}×{h}"
 
     def _download(self, args: str) -> str:
         parts = args.strip().split()
@@ -544,6 +544,6 @@ class Plugin:
             download = download_info.value
             download.save_as(save_path)
             size = os.path.getsize(save_path)
-            return f"✅ 已下载: {save_path} ({size/1024:.1f} KB)"
+            return f" 已下载: {save_path} ({size/1024:.1f} KB)"
         except Exception as e:
-            return f"❌ 下载失败: {e}"
+            return f" 下载失败: {e}"

@@ -178,7 +178,7 @@ class ImageEngineManager:
         """列出所有引擎"""
         result = f"{Fore.CYAN}图像识别引擎列表:{Style.RESET_ALL}\n"
         for name, engine in self.engines.items():
-            status = f"{Fore.GREEN}✓ 可用{Style.RESET_ALL}" if engine.is_available() else f"{Fore.RED}✗ 不可用{Style.RESET_ALL}"
+            status = f"{Fore.GREEN} 可用{Style.RESET_ALL}" if engine.is_available() else f"{Fore.RED} 不可用{Style.RESET_ALL}"
             current = f" {Fore.YELLOW}[当前]{Style.RESET_ALL}" if name == self.current_engine_name else ""
             result += f"  - {name}: {engine.description} {status}{current}\n"
         return result

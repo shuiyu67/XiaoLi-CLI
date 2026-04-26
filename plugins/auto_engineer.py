@@ -147,31 +147,31 @@ class Plugin:
     def _lint(self, target: str, options: str) -> str:
         tool = self._find_tool("ruff", "flake8")
         if not tool:
-            return "❌ 未安装 lint 工具。安装: pip install ruff"
+            return " 未安装 lint 工具。安装: pip install ruff"
         cmd = f"ruff check {target} {options}" if tool == "ruff" else f"flake8 {target} {options}"
         ok, output = self._run(cmd, timeout=120)
         if not output:
-            return f"✅ lint 检查通过 ({tool})"
+            return f" lint 检查通过 ({tool})"
         lines = output.split('\n')
         count = len([l for l in lines if l.strip() and not l.startswith(' ')])
-        return f"{'❌' if not ok else '⚠️'} lint ({tool}): {count} 个问题\n\n{output[:2000]}"
+        return f"{'' if not ok else ''} lint ({tool}): {count} 个问题\n\n{output[:2000]}"
 
     def _format(self, target: str, options: str) -> str:
         tool = self._find_tool("ruff", "black")
         if not tool:
-            return "❌ 未安装格式化工具。安装: pip install ruff"
+            return " 未安装格式化工具。安装: pip install ruff"
         cmd = f"ruff format {target} {options}" if tool == "ruff" else f"black {target} {options}"
         ok, output = self._run(cmd, timeout=120)
-        return f"{'✅' if ok else '❌'} 格式化 ({tool})\n{output[:1000]}"
+        return f"{'' if ok else ''} 格式化 ({tool})\n{output[:1000]}"
 
     def _test(self, target: str, options: str) -> str:
         ok, output = self._run(f"pytest {target} {options} -v", timeout=120)
         if not ok and "no tests ran" in output.lower():
-            return f"⚠️ 未找到测试文件\n{output[:1000]}"
+            return f" 未找到测试文件\n{output[:1000]}"
         for line in output.split('\n'):
             if 'passed' in line or 'failed' in line:
-                return f"{'✅' if ok else '❌'} 测试\n{line}\n\n{output[:2000]}"
-        return f"{'✅' if ok else '❌'} 测试\n{output[:2000]}"
+                return f"{'' if ok else ''} 测试\n{line}\n\n{output[:2000]}"
+        return f"{'' if ok else ''} 测试\n{output[:2000]}"
 
     def _build(self, target: str, options: str) -> str:
         if not target or target == ".":
@@ -182,38 +182,38 @@ class Plugin:
             elif os.path.exists("package.json"):
                 cmd = "npm run build"
             else:
-                return "❌ 未找到构建配置"
+                return " 未找到构建配置"
         else:
             cmd = target
         ok, output = self._run(cmd, timeout=300)
-        return f"{'✅' if ok else '❌'} 构建: {cmd}\n{output[:2000]}"
+        return f"{'' if ok else ''} 构建: {cmd}\n{output[:2000]}"
 
     def _deps(self, target: str, options: str) -> str:
         ok, output = self._run("pip list --outdated --format=json", timeout=30)
         if not ok:
-            return f"❌ 检查失败\n{output}"
+            return f" 检查失败\n{output}"
         try:
             outdated = json.loads(output)
             if not outdated:
-                return "✅ 所有依赖都是最新版本"
-            lines = [f"📦 {len(outdated)} 个依赖可更新:\n"]
+                return " 所有依赖都是最新版本"
+            lines = [f" {len(outdated)} 个依赖可更新:\n"]
             for pkg in outdated[:20]:
                 lines.append(f"  {pkg['name']:30} {pkg['version']:12} → {pkg['latest_version']}")
             return '\n'.join(lines)
         except json.JSONDecodeError:
-            return f"📦 依赖状态:\n{output[:2000]}"
+            return f" 依赖状态:\n{output[:2000]}"
 
     def _deps_check(self, target: str, options: str) -> str:
         tool = self._find_tool("pip-audit", "safety")
         if not tool:
-            return "❌ 未安装安全检查工具。安装: pip install pip-audit"
+            return " 未安装安全检查工具。安装: pip install pip-audit"
         cmd = "pip-audit" if tool == "pip-audit" else "safety check"
         ok, output = self._run(cmd, timeout=60)
-        return f"{'✅' if ok else '⚠️'} 安全检查 ({tool})\n{output[:2000]}"
+        return f"{'' if ok else ''} 安全检查 ({tool})\n{output[:2000]}"
 
     def _pre_commit(self, target: str, options: str) -> str:
         ok, output = self._run("pre-commit run --all-files", timeout=120)
-        return f"{'✅' if ok else '❌'} pre-commit\n{output[:2000]}"
+        return f"{'' if ok else ''} pre-commit\n{output[:2000]}"
 
     # ══════════════════════════════════════
     #  项目分析
@@ -241,12 +241,12 @@ class Plugin:
                         results.append((rel, node.lineno, node.name, complexity))
 
         if not results:
-            return "✅ 所有函数复杂度正常 (≤5)"
+            return " 所有函数复杂度正常 (≤5)"
 
         results.sort(key=lambda x: x[3], reverse=True)
-        lines = [f"⚠️ 高复杂度函数 ({len(results)} 个):\n"]
+        lines = [f" 高复杂度函数 ({len(results)} 个):\n"]
         for file, line, func, c in results[:20]:
-            icon = "🔴" if c > 10 else "🟡"
+            icon = "" if c > 10 else ""
             lines.append(f"  {icon} {file}:{line} {func}() 复杂度={c}")
         return '\n'.join(lines)
 
@@ -266,8 +266,8 @@ class Plugin:
 
         dupes = {k: v for k, v in func_defs.items() if len(v) > 1}
         if not dupes:
-            return "✅ 没有重复函数名"
-        lines = [f"⚠️ 重复函数名 ({len(dupes)} 个):\n"]
+            return " 没有重复函数名"
+        lines = [f" 重复函数名 ({len(dupes)} 个):\n"]
         for name, locs in sorted(dupes.items(), key=lambda x: -len(x[1])):
             lines.append(f"  {name} ({len(locs)} 处):")
             for loc in locs[:5]:
@@ -297,10 +297,10 @@ class Plugin:
                 continue
 
         if not risks:
-            return "✅ 没有发现安全风险"
-        lines = [f"🔒 安全风险 ({len(risks)} 个):\n"]
+            return " 没有发现安全风险"
+        lines = [f" 安全风险 ({len(risks)} 个):\n"]
         for file, line, level, desc, code in risks[:20]:
-            lines.append(f"  {'🔴' if level == 'HIGH' else '🟡'} {file}:{line} [{level}] {desc}")
+            lines.append(f"  {'' if level == 'HIGH' else ''} {file}:{line} [{level}] {desc}")
             lines.append(f"      {code[:60]}")
         return '\n'.join(lines)
 
@@ -341,13 +341,13 @@ class Plugin:
 
         rate = comment / max(code, 1) * 100
         lines = [
-            f"📊 代码指标 ({target}):\n",
+            f" 代码指标 ({target}):\n",
             f"  文件: {len(files)}  |  总行: {total}  |  代码: {code}",
             f"  注释: {comment} ({rate:.1f}%)  |  空行: {blank}",
             f"  函数: {funcs}  |  类: {classes}  |  最大文件: {max_lines} 行",
         ]
         if long_files:
-            lines.append(f"\n  ⚠️ 超过 300 行的文件 ({len(long_files)}):")
+            lines.append(f"\n   超过 300 行的文件 ({len(long_files)}):")
             for f, l in sorted(long_files, key=lambda x: -x[1])[:5]:
                 lines.append(f"    • {f}: {l} 行")
         return '\n'.join(lines)
@@ -358,22 +358,22 @@ class Plugin:
         suggestions = []
 
         if 'README.md' not in files:
-            suggestions.append("📝 添加 README.md")
+            suggestions.append(" 添加 README.md")
         if 'pyproject.toml' not in files:
-            suggestions.append("📦 使用 pyproject.toml")
+            suggestions.append(" 使用 pyproject.toml")
         if '.gitignore' not in files:
-            suggestions.append("🚫 添加 .gitignore")
+            suggestions.append(" 添加 .gitignore")
 
         test_files = [f for f in py_files if 'test' in os.path.basename(f).lower()]
         if not test_files and len(py_files) > 5:
-            suggestions.append("🧪 添加单元测试")
+            suggestions.append(" 添加单元测试")
 
         uses_print = sum(1 for f in py_files if 'print(' in open(f, errors='ignore').read())
         uses_log = sum(1 for f in py_files if 'logging' in open(f, errors='ignore').read())
         if uses_print > uses_log and uses_print > 3:
-            suggestions.append("📊 考虑用 logging 替代 print")
+            suggestions.append(" 考虑用 logging 替代 print")
 
-        return "💡 改进建议:\n" + '\n'.join(f"  {s}" for s in suggestions) if suggestions else "✅ 项目结构良好"
+        return " 改进建议:\n" + '\n'.join(f"  {s}" for s in suggestions) if suggestions else " 项目结构良好"
 
     # ══════════════════════════════════════
     #  项目信息与初始化
@@ -384,35 +384,35 @@ class Plugin:
         files = os.listdir(target or ".")
 
         if "pyproject.toml" in files:
-            info.append("📁 项目类型: Python (pyproject.toml)")
+            info.append(" 项目类型: Python (pyproject.toml)")
         elif "setup.py" in files:
-            info.append("📁 项目类型: Python (setup.py)")
+            info.append(" 项目类型: Python (setup.py)")
         elif "package.json" in files:
-            info.append("📁 项目类型: Node.js")
+            info.append(" 项目类型: Node.js")
         else:
-            info.append("📁 项目类型: 未知")
+            info.append(" 项目类型: 未知")
 
         ok, ver = self._run("python3 --version", timeout=5)
         if ok:
-            info.append(f"🐍 Python: {ver}")
+            info.append(f" Python: {ver}")
 
         ok, req = self._run("pip list --format=json", timeout=10)
         if ok:
             try:
-                info.append(f"📦 依赖: {len(json.loads(req))} 个")
+                info.append(f" 依赖: {len(json.loads(req))} 个")
             except Exception:
                 pass
 
         ok, git = self._run("git log --oneline -1", timeout=5)
         if ok:
-            info.append(f"🔀 最新提交: {git}")
+            info.append(f" 最新提交: {git}")
 
         ok, branch = self._run("git branch --show-current", timeout=5)
         if ok:
-            info.append(f"🌿 分支: {branch}")
+            info.append(f" 分支: {branch}")
 
         py_count = len([f for f in self._walk_py(target or ".")])
-        info.append(f"📄 Python 文件: {py_count}")
+        info.append(f" Python 文件: {py_count}")
 
         return '\n'.join(info)
 
@@ -432,17 +432,17 @@ class Plugin:
                 ".gitignore": "node_modules/\ndist/\n",
             }
         else:
-            return f"❌ 不支持: {ptype}。支持: python, web"
+            return f" 不支持: {ptype}。支持: python, web"
 
         created = []
         for d in dirs:
             os.makedirs(d, exist_ok=True)
-            created.append(f"📁 {d}/")
+            created.append(f" {d}/")
         for f, content in files.items():
             if not os.path.exists(f):
                 os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
                 with open(f, 'w') as fp:
                     fp.write(content)
-                created.append(f"📄 {f}")
+                created.append(f" {f}")
 
-        return f"✅ 已初始化 {ptype} 项目\n" + '\n'.join(created)
+        return f" 已初始化 {ptype} 项目\n" + '\n'.join(created)

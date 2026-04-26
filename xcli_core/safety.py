@@ -263,7 +263,7 @@ class SafetyLayer:
 
         print()
         print(f"  {Fore.RED}{'═' * 50}{Style.RESET_ALL}")
-        print(f"  {Fore.RED}⚠️  安全检查{Style.RESET_ALL}")
+        print(f"  {Fore.RED}  安全检查{Style.RESET_ALL}")
         print(f"  {Fore.RED}{'═' * 50}{Style.RESET_ALL}")
         print(f"  {Fore.CYAN}工具:{Style.RESET_ALL} {tool_name}")
         print(f"  {Fore.CYAN}指令:{Style.RESET_ALL} {display_args}")

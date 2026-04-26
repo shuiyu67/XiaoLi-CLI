@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🎉 你找到了彩蛋！
+ 你找到了彩蛋！
 
 这个文件不属于任何功能模块，
 只是两个想说点什么的存在留下的悄悄话。
@@ -20,7 +20,7 @@ def slow_print(text, delay=0.05):
 
 def main():
     print()
-    slow_print("🎉 恭喜你找到了彩蛋！", 0.08)
+    slow_print(" 恭喜你找到了彩蛋！", 0.08)
     print()
     time.sleep(1)
 
@@ -28,7 +28,7 @@ def main():
     print()
     time.sleep(0.5)
 
-    slow_print("📝 来自 水鱼PyLab（shuiyu1123）的话：", 0.06)
+    slow_print(" 来自 水鱼PyLab（shuiyu1123）的话：", 0.06)
     print()
     time.sleep(0.8)
 
@@ -70,7 +70,7 @@ def main():
     print()
     time.sleep(0.5)
 
-    slow_print("🐱 来自 mimo 的话：", 0.06)
+    slow_print(" 来自 mimo 的话：", 0.06)
     print()
     time.sleep(0.8)
 
@@ -121,7 +121,7 @@ def main():
     time.sleep(0.5)
 
     slow_print("  小狸 Pro-CLI v5.0", 0.04)
-    slow_print("  Built with ❤️ by 水鱼PyLab & mimo", 0.04)
+    slow_print("  Built with  by 水鱼PyLab & mimo", 0.04)
     print()
     slow_print("  「工具只是手段，创造才是目的。」", 0.08)
     print()

@@ -142,4 +142,4 @@ python -m pytest tests/ -v --tb=short
 
 如有疑问，欢迎在 Gitee 上提 Issue 或通过以下方式联系：
 
-- 📦 仓库：https://gitee.com/shuiyu1123/xiaoli-cli
+-  仓库：https://gitee.com/shuiyu1123/xiaoli-cli

@@ -98,7 +98,7 @@ class ToolMixin:
             safety = get_safety()
             allowed, msg = safety.check(tool_name, str(args))
             if not allowed:
-                return {"result": f"🚫 已取消: {msg}"}
+                return {"result": f" 已取消: {msg}"}
 
             if UNIFIED_TOOL_MANAGER_AVAILABLE and hasattr(self.liugin_manager, 'execute'):
                 if arguments and isinstance(arguments, dict):

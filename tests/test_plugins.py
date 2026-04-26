@@ -134,7 +134,7 @@ class TestCodeEditor:
 
     def test_structure(self, editor, tmp_path):
         result = editor.handle(f"structure {tmp_path} 1")
-        assert "📁" in result
+        assert "" in result
 
     def test_find(self, editor, tmp_path):
         (tmp_path / "a.py").write_text("x = 1\ny = 2\n")

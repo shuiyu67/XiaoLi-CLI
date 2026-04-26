@@ -138,7 +138,7 @@ JSON格式示例：
             if result.startswith("错误："):
                 return result
 
-            return f"📄 网址内容 (来自 {url}):\n\n{result}"
+            return f" 网址内容 (来自 {url}):\n\n{result}"
 
         except Exception as e:
             return f"网址搜索错误: {str(e)}"
@@ -156,7 +156,7 @@ JSON格式示例：
             if result.startswith("错误："):
                 return result
 
-            return f"🔍 搜索结果 (搜索词: {query}):\n\n{result}"
+            return f" 搜索结果 (搜索词: {query}):\n\n{result}"
 
         except Exception as e:
             return f"网络搜索错误: {str(e)}"

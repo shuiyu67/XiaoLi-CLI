@@ -170,14 +170,14 @@ JSON格式示例：
         error = self._save_tasks()
         if error:
             return error
-        return f"✅ 已添加任务 #{task_id}: {description}"
+        return f" 已添加任务 #{task_id}: {description}"
 
     def _list_tasks(self):
         """列出所有任务"""
         if not self.tasks:
-            return "📝 当前没有任务"
+            return " 当前没有任务"
 
-        result = f"\n📋 任务列表 (共 {len(self.tasks)} 个任务)\n"
+        result = f"\n 任务列表 (共 {len(self.tasks)} 个任务)\n"
         result += "=" * 50 + "\n"
 
         pending_count = 0
@@ -193,25 +193,25 @@ JSON格式示例：
             # 统计
             if status == 'pending':
                 pending_count += 1
-                status_icon = "⏳"
+                status_icon = ""
                 status_color = Fore.YELLOW
             elif status == 'in_progress':
                 in_progress_count += 1
-                status_icon = "🔄"
+                status_icon = ""
                 status_color = Fore.CYAN
             elif status == 'completed':
                 completed_count += 1
-                status_icon = "✅"
+                status_icon = ""
                 status_color = Fore.GREEN
             else:
-                status_icon = "❌"
+                status_icon = ""
                 status_color = Fore.RED
 
             result += f"{status_icon} [{task_id}] {status_color}{status}{Style.RESET_ALL} - {description}\n"
             result += f"    创建时间: {created_at}\n\n"
 
         result += "=" * 50 + "\n"
-        result += f"📊 统计: {Fore.YELLOW}待处理 {pending_count}{Style.RESET_ALL} | {Fore.CYAN}进行中 {in_progress_count}{Style.RESET_ALL} | {Fore.GREEN}已完成 {completed_count}{Style.RESET_ALL}\n"
+        result += f" 统计: {Fore.YELLOW}待处理 {pending_count}{Style.RESET_ALL} | {Fore.CYAN}进行中 {in_progress_count}{Style.RESET_ALL} | {Fore.GREEN}已完成 {completed_count}{Style.RESET_ALL}\n"
 
         return result
 
@@ -226,9 +226,9 @@ JSON格式示例：
                 error = self._save_tasks()
                 if error:
                     return error
-                return f"✅ 任务 #{task_id} 状态已更新: {old_status} → {new_status}"
+                return f" 任务 #{task_id} 状态已更新: {old_status} → {new_status}"
 
-        return f"❌ 未找到任务ID: {task_id}"
+        return f" 未找到任务ID: {task_id}"
 
     def _delete_task(self, task_id):
         """删除任务"""
@@ -238,21 +238,21 @@ JSON格式示例：
                 error = self._save_tasks()
                 if error:
                     return error
-                return f"🗑️ 已删除任务 #{task_id}: {deleted_task.get('task', '')}"
+                return f" 已删除任务 #{task_id}: {deleted_task.get('task', '')}"
 
-        return f"❌ 未找到任务ID: {task_id}"
+        return f" 未找到任务ID: {task_id}"
 
     def _clear_completed(self):
         """清除所有已完成的任务"""
         completed_count = len([t for t in self.tasks if t.get('status') == 'completed'])
         if completed_count == 0:
-            return "📝 没有已完成的任务需要清除"
+            return " 没有已完成的任务需要清除"
 
         self.tasks = [t for t in self.tasks if t.get('status') != 'completed']
         error = self._save_tasks()
         if error:
             return error
-        return f"✅ 已清除 {completed_count} 个已完成的任务"
+        return f" 已清除 {completed_count} 个已完成的任务"
 
 
 # 测试函数

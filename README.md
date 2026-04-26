@@ -13,19 +13,19 @@
 
 ---
 
-## ✨ 特性
+##  特性
 
-- 🤖 **双 AI 引擎** — Ollama 本地模型 + OpenAI 兼容格式（DeepSeek、Grok、硅基流动等）
-- 🔧 **代码编辑与搜索** — 精准替换、批量编辑、符号提取、依赖分析、正则搜索
-- 🔄 **Git 版本控制** — 完整 Git 操作 + 工作流自动化（smart-commit、changelog）
-- 🌐 **浏览器自动化** — Playwright 驱动，导航/交互/截图/JS 执行/PDF
-- 🤖 **子 Agent 系统** — 多 Agent 并行协作，独立任务分配与结果回收
-- 🛡️ **统一安全层** — AI 风险识别 + 三模式切换（普通/人工/无限制）
-- 🧩 **15 个插件 141 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、任务管理等
-- 🎨 **双模式界面** — TUI 图形化界面 + 传统命令行模式
-- 🧪 **113 个自动化测试** — pytest 覆盖全部插件和核心模块
+-  **双 AI 引擎** — Ollama 本地模型 + OpenAI 兼容格式（DeepSeek、Grok、硅基流动等）
+-  **代码编辑与搜索** — 精准替换、批量编辑、符号提取、依赖分析、正则搜索
+-  **Git 版本控制** — 完整 Git 操作 + 工作流自动化（smart-commit、changelog）
+-  **浏览器自动化** — Playwright 驱动，导航/交互/截图/JS 执行/PDF
+-  **子 Agent 系统** — 多 Agent 并行协作，独立任务分配与结果回收
+-  **统一安全层** — AI 风险识别 + 三模式切换（普通/人工/无限制）
+-  **15 个插件 141 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、任务管理等
+-  **双模式界面** — TUI 图形化界面 + 传统命令行模式
+-  **113 个自动化测试** — pytest 覆盖全部插件和核心模块
 
-## 📦 快速开始
+##  快速开始
 
 ### 安装
 
@@ -45,7 +45,7 @@ python ai_cli.py
 python ai_cli.py --engine openai
 ```
 
-## 🤖 AI 引擎
+##  AI 引擎
 
 | 引擎 | 类型 | 说明 |
 |------|------|------|
@@ -76,7 +76,7 @@ python ai_cli.py --engine openai
 }
 ```
 
-## 🔌 插件列表 (15 个)
+##  插件列表 (15 个)
 
 ### 核心生产力
 
@@ -108,15 +108,15 @@ python ai_cli.py --engine openai
 | `audio_player` | 音频播放 |
 | `send_image` | Clawli 模式下发图片到手机 |
 
-## 🛡️ 安全机制
+##  安全机制
 
 ### 三模式切换 (`/safe`)
 
 | 模式 | 图标 | 说明 |
 |------|------|------|
-| **普通模式** (默认) | 🟢 | AI 识别风险，有风险才请求确认 |
-| **人工确认** | 🟡 | 所有指令都需要用户确认 |
-| **无限制** | 🔴 | 直接执行，不检查 |
+| **普通模式** (默认) |  | AI 识别风险，有风险才请求确认 |
+| **人工确认** |  | 所有指令都需要用户确认 |
+| **无限制** |  | 直接执行，不检查 |
 
 ### 检查流程
 
@@ -137,7 +137,7 @@ python ai_cli.py --engine openai
 - 子进程隔离执行
 - 内存限制
 
-## 🎮 命令列表
+##  命令列表
 
 | 命令 | 说明 |
 |------|------|
@@ -153,7 +153,7 @@ python ai_cli.py --engine openai
 | `/tui` | 切换 TUI 模式 |
 | `/quit` | 退出 |
 
-## 🏗️ 项目结构
+##  项目结构
 
 ```
 xiaoli-cli/
@@ -170,7 +170,7 @@ xiaoli-cli/
 │   ├── cli_code_exec.py        # 代码执行
 │   ├── config.py               # 配置管理
 │   ├── constants.py            # 常量定义
-│   ├── safety.py               # 统一安全层 ⭐
+│   ├── safety.py               # 统一安全层 
 │   ├── sandbox.py              # 代码安全沙箱
 │   ├── plugin_manager.py       # 插件管理器
 │   └── tui.py                  # TUI 界面
@@ -203,7 +203,7 @@ xiaoli-cli/
 └── about.txt                   # 关于信息
 ```
 
-## 🧪 测试
+##  测试
 
 ```bash
 # 运行全部测试 (113 用例)
@@ -213,7 +213,7 @@ python -m pytest tests/ -v
 python -c "import py_compile; py_compile.compile('ai_cli.py', doraise=True)"
 ```
 
-## 🔌 插件开发
+##  插件开发
 
 ```python
 class Plugin:
@@ -238,12 +238,12 @@ class Plugin:
         return "处理结果"
 ```
 
-## 📄 许可证
+##  许可证
 
 [MIT License](LICENSE)
 
-## 🔗 链接
+##  链接
 
-- 📦 Gitee: https://gitee.com/shuiyu1123/xiaoli-cli
-- 📋 [更新日志](CHANGELOG.md)
-- ❓ [使用指南](HELP.md)
+-  Gitee: https://gitee.com/shuiyu1123/xiaoli-cli
+-  [更新日志](CHANGELOG.md)
+-  [使用指南](HELP.md)

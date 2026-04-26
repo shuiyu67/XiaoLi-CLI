@@ -177,7 +177,7 @@ class Plugin:
         thread = threading.Thread(target=self._run_agent, args=(agent,), daemon=True)
         thread.start()
 
-        return (f"✅ 已创建子 Agent\n"
+        return (f" 已创建子 Agent\n"
                 f"  ID: {agent_id}\n"
                 f"  名称: {name}\n"
                 f"  任务: {task}\n"
@@ -333,17 +333,17 @@ class Plugin:
         failed = [a for a in self.agents.values() if a.status == "failed"]
 
         if running:
-            result.append(f"🟢 运行中 ({len(running)}):")
+            result.append(f" 运行中 ({len(running)}):")
             for a in running:
                 result.append(f"  {a.id}  [{a.name}] 步骤:{a.steps}  任务:{a.task[:40]}")
 
         if done:
-            result.append(f"✅ 已完成 ({len(done)}):")
+            result.append(f" 已完成 ({len(done)}):")
             for a in done:
                 result.append(f"  {a.id}  [{a.name}]  任务:{a.task[:40]}")
 
         if failed:
-            result.append(f"❌ 失败 ({len(failed)}):")
+            result.append(f" 失败 ({len(failed)}):")
             for a in failed:
                 result.append(f"  {a.id}  [{a.name}]  错误:{a.error[:40] if a.error else '?'}")
 
@@ -432,7 +432,7 @@ class Plugin:
         thread = threading.Thread(target=self._process_message, args=(agent, message), daemon=True)
         thread.start()
 
-        return f"✅ 消息已发送给 {agent.id}"
+        return f" 消息已发送给 {agent.id}"
 
     def _process_message(self, agent: SubAgent, message: str):
         """处理发送给子 Agent 的消息"""
@@ -482,7 +482,7 @@ class Plugin:
         agent.status = "failed"
         agent.error = "被主 Agent 终止"
         agent.finished_at = datetime.now().strftime("%H:%M:%S")
-        return f"✅ 已终止 {agent.id}"
+        return f" 已终止 {agent.id}"
 
     def _clean(self, args: str) -> str:
         """清理已完成的 Agent"""
@@ -492,7 +492,7 @@ class Plugin:
             for aid in to_remove:
                 del self.agents[aid]
 
-        return f"✅ 已清理 {len(to_remove)} 个已完成的 Agent"
+        return f" 已清理 {len(to_remove)} 个已完成的 Agent"
 
     def _stats(self, args: str) -> str:
         """统计信息"""
@@ -503,7 +503,7 @@ class Plugin:
             failed = sum(1 for a in self.agents.values() if a.status == "failed")
             total_steps = sum(a.steps for a in self.agents.values())
 
-        return (f"📊 子 Agent 统计\n"
+        return (f" 子 Agent 统计\n"
                 f"  总数: {total}\n"
                 f"  运行中: {running}\n"
                 f"  已完成: {done}\n"

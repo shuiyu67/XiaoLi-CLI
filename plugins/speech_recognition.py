@@ -177,7 +177,7 @@ class VoiceRecorder:
     
     def _create_ui(self):
         # 标题
-        title_label = tk.Label(self.root, text="🎙️ 语音识别录音", font=("Arial", 18, "bold"))
+        title_label = tk.Label(self.root, text=" 语音识别录音", font=("Arial", 18, "bold"))
         title_label.pack(pady=15)
         
         # 状态标签
@@ -194,7 +194,7 @@ class VoiceRecorder:
         
         # 开始/停止按钮
         self.record_btn = tk.Button(
-            btn_frame, text="🎤 开始录音", font=("Arial", 12),
+            btn_frame, text=" 开始录音", font=("Arial", 12),
             width=12, height=2, command=self.toggle_record,
             bg="#4CAF50", fg="white", cursor="hand2"
         )
@@ -202,7 +202,7 @@ class VoiceRecorder:
         
         # 识别按钮
         self.recognize_btn = tk.Button(
-            btn_frame, text="📝 识别", font=("Arial", 12),
+            btn_frame, text=" 识别", font=("Arial", 12),
             width=12, height=2, command=self.recognize,
             bg="#2196F3", fg="white", cursor="hand2", state=tk.DISABLED
         )
@@ -231,8 +231,8 @@ class VoiceRecorder:
         self.is_recording = True
         self.frames = []
         self.start_time = time.time()
-        self.record_btn.config(text="⏹️ 停止录音", bg="#f44336")
-        self.status_label.config(text="🔴 正在录音...", fg="red")
+        self.record_btn.config(text=" 停止录音", bg="#f44336")
+        self.status_label.config(text=" 正在录音...", fg="red")
         self.recognize_btn.config(state=tk.DISABLED)
         
         CHUNK = 1024
@@ -263,7 +263,7 @@ class VoiceRecorder:
     
     def stop_record(self):
         self.is_recording = False
-        self.record_btn.config(text="🎤 开始录音", bg="#4CAF50")
+        self.record_btn.config(text=" 开始录音", bg="#4CAF50")
         self.status_label.config(text="录音完成，可以识别", fg="green")
         self.recognize_btn.config(state=tk.NORMAL)
         
@@ -286,7 +286,7 @@ class VoiceRecorder:
         wf.close()
         
         self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, "✅ 录音已保存\n点击 [识别] 按钮进行语音识别")
+        self.result_text.insert(tk.END, " 录音已保存\n点击 [识别] 按钮进行语音识别")
     
     def _update_time(self):
         if self.is_recording:
@@ -303,7 +303,7 @@ class VoiceRecorder:
         
         self.status_label.config(text="正在识别...", fg="blue")
         self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, "🔍 识别中，请稍候...")
+        self.result_text.insert(tk.END, " 识别中，请稍候...")
         self.root.update()
         
         # 尝试识别
@@ -317,7 +317,7 @@ class VoiceRecorder:
             with open(RESULT_FILE, "w", encoding="utf-8") as f:
                 f.write(result)
         else:
-            self.result_text.insert(tk.END, "❌ 识别失败\n\n请安装识别引擎:\n• pip install openai-whisper\n• pip install SpeechRecognition")
+            self.result_text.insert(tk.END, " 识别失败\n\n请安装识别引擎:\n• pip install openai-whisper\n• pip install SpeechRecognition")
             self.status_label.config(text="识别失败", fg="red")
     
     def _do_recognize(self):
@@ -330,7 +330,7 @@ class VoiceRecorder:
             result = model.transcribe(self.record_file, language="zh")
             text = result.get("text", "").strip()
             if text:
-                return f"✅ {{text}}"
+                return f" {{text}}"
         except Exception as e:
             print(f"Whisper error: {{e}}")
         
@@ -344,7 +344,7 @@ class VoiceRecorder:
                 audio = r.record(source)
             text = r.recognize_google(audio, language="zh-CN")
             if text:
-                return f"✅ {{text}}"
+                return f" {{text}}"
         except Exception as e:
             print(f"SpeechRecognition error: {{e}}")
         
@@ -374,9 +374,9 @@ if __name__ == "__main__":
         try:
             subprocess.Popen([sys.executable, recorder_script], 
                            creationflags=subprocess.CREATE_NEW_CONSOLE)
-            return "🎙️ 已弹出录音窗口，请在窗口中进行录音和识别\n\n使用方法：\n1. 点击「开始录音」\n2. 对着麦克风说话\n3. 点击「停止录音」\n4. 点击「识别」获取文字结果"
+            return " 已弹出录音窗口，请在窗口中进行录音和识别\n\n使用方法：\n1. 点击「开始录音」\n2. 对着麦克风说话\n3. 点击「停止录音」\n4. 点击「识别」获取文字结果"
         except Exception as e:
-            return f"❌ 启动录音窗口失败: {e}"
+            return f" 启动录音窗口失败: {e}"
     
     # ==================== 文件识别 ====================
     
@@ -388,7 +388,7 @@ if __name__ == "__main__":
         file_path = args[0]
         
         if not os.path.exists(file_path):
-            return f"❌ 文件不存在: {file_path}"
+            return f" 文件不存在: {file_path}"
         
         return self._recognize_file(file_path)
     
@@ -407,7 +407,7 @@ if __name__ == "__main__":
             self._save_result(result)
             return result
         
-        return "❌ 语音识别失败：未安装识别引擎\n\n安装方法:\n1. Whisper (推荐): pip install openai-whisper\n2. SpeechRecognition: pip install SpeechRecognition\n3. PyAudio (录音): pip install pyaudio"
+        return " 语音识别失败：未安装识别引擎\n\n安装方法:\n1. Whisper (推荐): pip install openai-whisper\n2. SpeechRecognition: pip install SpeechRecognition\n3. PyAudio (录音): pip install pyaudio"
     
     def _save_result(self, result: str):
         """保存识别结果"""
@@ -428,7 +428,7 @@ if __name__ == "__main__":
             
             text = result.get("text", "").strip()
             if text:
-                return f"✅ 识别结果:\n{text}"
+                return f" 识别结果:\n{text}"
             return None
             
         except ImportError:
@@ -456,7 +456,7 @@ if __name__ == "__main__":
             try:
                 text = r.recognize_google(audio, language="zh-CN")
                 if text:
-                    return f"✅ 识别结果:\n{text}"
+                    return f" 识别结果:\n{text}"
             except:
                 pass
             
@@ -502,28 +502,28 @@ if __name__ == "__main__":
     
     def _op_status(self, args: List[str]) -> str:
         """查看状态"""
-        lines = ["📊 语音识别插件状态"]
+        lines = [" 语音识别插件状态"]
         
         # 检查可用引擎
         engines = []
         
         try:
             import whisper
-            engines.append("whisper ✅")
+            engines.append("whisper ")
         except:
-            engines.append("whisper ❌ (pip install openai-whisper)")
+            engines.append("whisper  (pip install openai-whisper)")
         
         try:
             import speech_recognition
-            engines.append("speech_recognition ✅")
+            engines.append("speech_recognition ")
         except:
-            engines.append("speech_recognition ❌ (pip install SpeechRecognition)")
+            engines.append("speech_recognition  (pip install SpeechRecognition)")
         
         try:
             import pyaudio
-            engines.append("pyaudio ✅ (录音支持)")
+            engines.append("pyaudio  (录音支持)")
         except:
-            engines.append("pyaudio ❌ (pip install pyaudio)")
+            engines.append("pyaudio  (pip install pyaudio)")
         
         lines.append("\n可用引擎:")
         for e in engines:

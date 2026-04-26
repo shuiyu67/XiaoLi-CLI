@@ -56,7 +56,7 @@ class DisplayMixin:
         else:
             for i, line in enumerate(response_lines):
                 if i == 0:
-                    prefix = f"{Fore.YELLOW}✦{Style.RESET_ALL} " if is_continue else "✦ "
+                    prefix = f"{Fore.YELLOW}{Style.RESET_ALL} " if is_continue else " "
                     line = prefix + line
                 if i == len(response_lines) - 1:
                     print(f"{line} {user_id_display}")
@@ -207,7 +207,7 @@ class DisplayMixin:
 
                         print(''.join(line))
 
-                    print(f"{Fore.GREEN}✓ 已使用色块显示 ({new_width}x{new_height} 像素){Style.RESET_ALL}\n")
+                    print(f"{Fore.GREEN} 已使用色块显示 ({new_width}x{new_height} 像素){Style.RESET_ALL}\n")
                     return True
 
             except ImportError:
@@ -223,7 +223,7 @@ class DisplayMixin:
                 subprocess.run(['open', image_path])
             else:
                 subprocess.run(['xdg-open', image_path])
-            print(f"{Fore.GREEN}✓ 已在系统默认图片查看器中打开{Style.RESET_ALL}\n")
+            print(f"{Fore.GREEN} 已在系统默认图片查看器中打开{Style.RESET_ALL}\n")
             return True
 
         except Exception as e:

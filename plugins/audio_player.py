@@ -10,7 +10,7 @@ class Liugin:
         self.usage = """音频播放工具使用方法：
 audio_player play - 播放音频文件
 例如:
-- audio_player play - 播放Ciallo～(∠・ω- )⌒☆-.mp3音频文件
+- audio_player play - 播放Ciallo～(∠・ω- )⌒-.mp3音频文件
 
 使用工具的JSON格式示例:
 {"action": "use_tool", "tool": "audio_player", "args": "play"} - 播放音频文件
@@ -27,7 +27,7 @@ audio_player play - 播放音频文件
         # 获取主程序目录路径，通过CLI实例
         import os
         # 使用CLI实例中的项目目录信息
-        self.audio_file = os.path.join(os.path.dirname(cli.chat_history_dir), "Ciallo～(∠・ω- )⌒☆-.mp3")
+        self.audio_file = os.path.join(os.path.dirname(cli.chat_history_dir), "Ciallo～(∠・ω- )⌒-.mp3")
         # 注册插件命令
         self.cli.register_liugin_command('ciallo', self.play_command_handler)
     
