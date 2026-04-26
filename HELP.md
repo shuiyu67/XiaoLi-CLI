@@ -78,8 +78,8 @@ python ai_cli.py
 
 | 操作 | 说明 | 示例 |
 |------|------|------|
-| `edit` | 精准替换 | `edit file.py old_code <<<>>> new_code` |
-| `multi` | 批量编辑 | `multi file.py [{"old":"a","new":"b"}]` |
+| `edit` | 精准替换（自动检查语法） | `edit file.py old_code <<<>>> new_code` |
+| `multi` | 批量编辑（自动检查语法） | `multi file.py [{"old":"a","new":"b"}]` |
 | `read_range` | 按行读取 | `read_range file.py 10 20` |
 | `find` | 关键词搜索 | `find . keyword *.py` |
 | `regex` | 正则搜索 | `regex . def\\s+\\w+ *.py` |
@@ -90,8 +90,16 @@ python ai_cli.py
 | `stats` | 代码统计 | `stats .` |
 | `ast_info` | AST 摘要 | `ast_info file.py` |
 | `diff` | 文件对比 | `diff file1.py file2.py` |
-| `create` | 创建文件 | `create new.py content` |
-| `write` | 写入文件 | `write file.py content` |
+| `create` | 创建文件（自动检查语法） | `create new.py content` |
+| `write` | 写入文件（自动检查语法） | `write file.py content` |
+| `syntax_check` | **主动语法检查** | `syntax_check file.py` |
+| `check` | 语法检查简写 | `check file.py` |
+| `diff_popup` | **开关 diff 弹窗** | `diff_popup on` / `diff_popup off` |
+| `popup` | diff_popup 简写 | `popup` |
+
+> **自动语法检查**: edit/multi/insert/delete_lines/create/write/append 操作完成后，如果是代码文件（.py/.js/.ts/.json/.yaml/.html/.css/.sh/.sql 等），会自动检查语法并报告结果。AI 也可随时用 `syntax_check` 主动检查。
+
+> **Diff 弹窗**: 每次编辑操作完成后，自动弹出新终端窗口，显示修改前后的完整内容（带行号）和 diff 差异对比。默认开启，用 `diff_popup off` 关闭，`diff_popup on` 重新开启。
 
 ### Git 操作 (`git_tools`)
 

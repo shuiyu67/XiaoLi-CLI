@@ -466,7 +466,7 @@ class Launcher:
                 entry = {'api_key': '', 'base_url': '', 'model': ''}
                 if name == 'ollama':
                     entry['base_url'] = 'http://localhost:11434'
-                    entry['model'] = 'qwen2.5:latest'
+                    entry['model'] = 'gemma4:31b'
                 elif name == 'openai':
                     entry['base_url'] = 'https://api.deepseek.com/v1'
                     entry['model'] = 'deepseek-chat'

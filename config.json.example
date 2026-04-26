@@ -4,7 +4,7 @@
       "ollama": {
         "api_key": "",
         "base_url": "http://localhost:11434",
-        "model": "qwen2.5:latest"
+        "model": "gemma4:31b"
       },
       "openai": {
         "api_key": "your-api-key-here",

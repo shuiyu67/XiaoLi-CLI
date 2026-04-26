@@ -6,6 +6,13 @@ import os
 import re
 import ast
 import difflib
+import py_compile
+import json
+import subprocess
+import sys
+import tempfile
+import platform
+import threading
 from typing import Optional, Tuple, List
 
 
@@ -15,7 +22,7 @@ class Plugin:
     def __init__(self):
         self.usage = """代码编辑与搜索工具
 
-编辑操作:
+编辑操作 (修改后自动检查语法):
   edit <文件> <old> <<<>>> <new>   - 精准替换代码片段
   multi <文件> <JSON数组>           - 批量修改
   insert <文件> <行号> <内容>       - 在指定行插入
@@ -23,6 +30,16 @@ class Plugin:
   create <文件路径> [内容]          - 创建新文件
   write <文件路径> <内容>           - 写入/覆盖文件
   append <文件路径> <内容>          - 追加内容到文件
+
+语法检查:
+  syntax_check <文件路径>           - 主动检查文件语法 (别名: check)
+  支持: Python/JS/TS/JSON/YAML/TOML/HTML/XML/CSS/Shell/SQL
+  编辑操作后自动执行，无需手动调用
+
+Diff 弹窗:
+  diff_popup [on|off]              - 开关 diff 弹窗 (别名: popup)
+  编辑操作后弹出新窗口显示修改前后对比（默认开启）
+  on/开/enable  → 开启  |  off/关/disable → 关闭  |  无参数 → 切换
 
 查看操作:
   read_range <文件> <起始行> [结束行] - 读取指定行范围
@@ -42,6 +59,7 @@ class Plugin:
   stats <目录>                      - 代码统计
 """
         self.cli = None
+        self.diff_popup_enabled = True  # diff 弹窗开关，默认开启
 
     def set_cli(self, cli):
         self.cli = cli
@@ -49,16 +67,17 @@ class Plugin:
     def get_tool_info(self):
         return {
             "name": "code_editor",
-            "description": "代码编辑与搜索 — 精准替换、批量编辑、代码搜索、符号提取、依赖分析、diff对比",
+            "description": "代码编辑与搜索 — 精准替换、批量编辑、代码搜索、符号提取、依赖分析、diff对比、自动语法检查",
             "keywords": ["编辑", "修改", "代码", "文件", "edit", "replace", "search", "diff",
-                         "find", "grep", "符号", "structure", "imports", "todo", "callers"],
+                         "find", "grep", "符号", "structure", "imports", "todo", "callers",
+                         "语法", "syntax", "check", "lint", "检查"],
             "usage": self.usage
         }
 
     def get_mcp_definition(self):
         return {
             "name": "code_editor",
-            "description": "代码编辑与搜索工具",
+            "description": "代码编辑与搜索工具（含自动语法检查）",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -132,6 +151,12 @@ class Plugin:
                 "structure": self._op_structure,
                 "context": self._op_context,
                 "stats": self._op_stats,
+                # 语法检查
+                "syntax_check": self._op_syntax_check,
+                "check": self._op_syntax_check,  # 简写别名
+                # Diff 弹窗
+                "diff_popup": self._op_diff_popup,
+                "popup": self._op_diff_popup,  # 简写别名
             }
 
             handler = handlers.get(operation)
@@ -178,6 +203,614 @@ class Plugin:
         return f" 变更预览:\n{text}" if text else "内容无变化"
 
     # ══════════════════════════════════════
+    #  语法检查系统
+    # ══════════════════════════════════════
+
+    # 支持语法检查的语言映射
+    _CODE_EXTENSIONS = {
+        '.py':   'python',
+        '.pyw':  'python',
+        '.pyi':  'python',
+        '.js':   'javascript',
+        '.mjs':  'javascript',
+        '.cjs':  'javascript',
+        '.jsx':  'javascript',
+        '.ts':   'typescript',
+        '.tsx':  'typescript',
+        '.mts':  'typescript',
+        '.json': 'json',
+        '.jsonl': 'json',
+        '.jsonc': 'json',
+        '.yaml': 'yaml',
+        '.yml':  'yaml',
+        '.toml': 'toml',
+        '.html': 'html',
+        '.htm':  'html',
+        '.xml':  'xml',
+        '.css':  'css',
+        '.sh':   'shell',
+        '.bash': 'shell',
+        '.zsh':  'shell',
+        '.sql':  'sql',
+        '.md':   None,    # 不检查
+        '.txt':  None,
+        '.csv':  None,
+        '.log':  None,
+        '.gitignore': None,
+        '.env':  None,
+    }
+
+    def _get_lang(self, filepath: str) -> Optional[str]:
+        """根据文件扩展名获取语言类型，None 表示跳过检查"""
+        _, ext = os.path.splitext(filepath.lower())
+        return self._CODE_EXTENSIONS.get(ext)
+
+    def _is_code_file(self, filepath: str) -> bool:
+        """判断是否是需要语法检查的代码文件"""
+        lang = self._get_lang(filepath)
+        return lang is not None
+
+    def _check_syntax(self, filepath: str) -> str:
+        """
+        检查文件语法，返回结果字符串。
+        - 通过: 返回空字符串 ""
+        - 失败: 返回详细的错误信息
+        - 跳过: 返回 None
+        """
+        lang = self._get_lang(filepath)
+        if lang is None:
+            return None  # 非代码文件，跳过
+
+        if not os.path.exists(filepath):
+            return None
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                source = f.read()
+        except (UnicodeDecodeError, PermissionError):
+            return None
+
+        if not source.strip():
+            return None  # 空文件跳过
+
+        if lang == 'python':
+            return self._check_python_syntax(filepath, source)
+        elif lang == 'javascript':
+            return self._check_js_syntax(filepath, source)
+        elif lang == 'typescript':
+            return self._check_ts_syntax(filepath, source)
+        elif lang == 'json':
+            return self._check_json_syntax(filepath, source)
+        elif lang == 'yaml':
+            return self._check_yaml_syntax(filepath, source)
+        elif lang == 'toml':
+            return self._check_toml_syntax(filepath, source)
+        elif lang == 'html':
+            return self._check_html_syntax(filepath, source)
+        elif lang == 'xml':
+            return self._check_xml_syntax(filepath, source)
+        elif lang == 'css':
+            return self._check_css_syntax(filepath, source)
+        elif lang == 'shell':
+            return self._check_shell_syntax(filepath, source)
+        elif lang == 'sql':
+            return self._check_sql_syntax(filepath, source)
+        return None
+
+    def _check_python_syntax(self, filepath: str, source: str) -> str:
+        """Python 语法检查：ast.parse + py_compile 双重验证"""
+        errors = []
+
+        # 方法1: ast.parse（更精确的错误定位）
+        try:
+            tree = ast.parse(source, filename=filepath)
+        except SyntaxError as e:
+            lineno = e.lineno or 0
+            offset = e.offset or 0
+            text = (e.text or '').rstrip()
+            msg = e.msg or 'syntax error'
+            pointer = ' ' * (offset - 1) + '^' if offset > 0 else ''
+            errors.append(
+                f"  第 {lineno} 行, 列 {offset}: {msg}\n"
+                f"    {text}\n"
+                f"    {pointer}"
+            )
+
+        # 方法2: py_compile（捕获 ast.parse 可能遗漏的问题）
+        if not errors:
+            try:
+                py_compile.compile(filepath, doraise=True)
+            except py_compile.PyCompileError as e:
+                errors.append(f"  编译错误: {e}")
+
+        if errors:
+            return f" Python 语法检查失败 ({filepath}):\n" + "\n".join(errors)
+        return ""
+
+    def _check_js_syntax(self, filepath: str, source: str) -> str:
+        """JavaScript 语法检查：使用 Node.js --check"""
+        try:
+            result = subprocess.run(
+                [sys.executable, '-c', f'''
+import json, sys
+# 基础 JS 语法检查：括号匹配
+source = {json.dumps(source)}
+errors = []
+stack = []
+pairs = {{'(': ')', '[': ']', '{{': '}}'}}
+close_to_open = {{v: k for k, v in pairs.items()}}
+line = 1
+col = 0
+in_string = None
+in_comment = False
+in_block_comment = False
+prev = ''
+for i, ch in enumerate(source):
+    col += 1
+    if ch == '\\n':
+        line += 1
+        col = 0
+        in_comment = False
+        continue
+    if in_block_comment:
+        if prev == '*' and ch == '/':
+            in_block_comment = False
+        prev = ch
+        continue
+    if in_comment:
+        prev = ch
+        continue
+    if prev == '/' and ch == '/':
+        in_comment = True
+        prev = ch
+        continue
+    if prev == '/' and ch == '*':
+        in_block_comment = True
+        prev = ch
+        continue
+    if ch in ('"', "'", '`'):
+        if in_string == ch:
+            in_string = None
+        elif not in_string:
+            in_string = ch
+        prev = ch
+        continue
+    if in_string:
+        prev = ch
+        continue
+    if ch in pairs:
+        stack.append((ch, line, col))
+    elif ch in close_to_open:
+        if stack and stack[-1][0] == close_to_open[ch]:
+            stack.pop()
+        else:
+            errors.append(f"  第 {{line}} 行, 列 {{col}}: 不匹配的闭合括号 '{{ch}}'")
+    prev = ch
+for open_ch, line, col in stack:
+    errors.append(f"  第 {{line}} 行, 列 {{col}}: 未闭合的括号 '{{open_ch}}'")
+if errors:
+    print("ERROR:" + "\\n".join(errors))
+else:
+    print("OK")
+'''],
+                capture_output=True, text=True, timeout=5
+            )
+            output = result.stdout.strip()
+            if output.startswith("ERROR:"):
+                return f" JavaScript 语法检查失败 ({filepath}):\n" + output[6:]
+        except Exception:
+            pass
+        return ""
+
+    def _check_ts_syntax(self, filepath: str, source: str) -> str:
+        """TypeScript 语法检查：尝试 tsc --noEmit，回退到 JS 检查"""
+        try:
+            result = subprocess.run(
+                ['npx', 'tsc', '--noEmit', '--pretty', 'false', filepath],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0 and result.stderr.strip():
+                errors = []
+                for line in result.stderr.strip().split('\n')[:10]:
+                    if 'error TS' in line:
+                        errors.append(f"  {line.strip()}")
+                if errors:
+                    return f" TypeScript 语法检查失败 ({filepath}):\n" + "\n".join(errors)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        # 回退到 JS 括号检查
+        return self._check_js_syntax(filepath, source)
+
+    def _check_json_syntax(self, filepath: str, source: str) -> str:
+        """JSON 语法检查"""
+        try:
+            json.loads(source)
+        except json.JSONDecodeError as e:
+            lineno = e.lineno or 0
+            colno = e.colno or 0
+            return (
+                f" JSON 语法检查失败 ({filepath}):\n"
+                f"  第 {lineno} 行, 列 {colno}: {e.msg}\n"
+                f"    文档位置: 字符 {e.pos}"
+            )
+        return ""
+
+    def _check_yaml_syntax(self, filepath: str, source: str) -> str:
+        """YAML 语法检查"""
+        try:
+            import yaml
+            list(yaml.safe_load_all(source))
+        except ImportError:
+            # 无 PyYAML，用基础检查
+            if source.strip().startswith('{') or source.strip().startswith('['):
+                return self._check_json_syntax(filepath, source)
+        except yaml.YAMLError as e:
+            mark = getattr(e, 'problem_mark', None)
+            if mark:
+                return (
+                    f" YAML 语法检查失败 ({filepath}):\n"
+                    f"  第 {mark.line + 1} 行, 列 {mark.column + 1}: {getattr(e, 'problem', str(e))}"
+                )
+            return f" YAML 语法检查失败 ({filepath}):\n  {e}"
+        return ""
+
+    def _check_toml_syntax(self, filepath: str, source: str) -> str:
+        """TOML 语法检查"""
+        try:
+            import tomllib
+            tomllib.loads(source)
+        except ImportError:
+            pass  # Python < 3.11 无 tomllib
+        except Exception as e:
+            return f" TOML 语法检查失败 ({filepath}):\n  {e}"
+        return ""
+
+    def _check_html_syntax(self, filepath: str, source: str) -> str:
+        """HTML 基础检查：标签匹配"""
+        errors = []
+        import re as _re
+        # 匹配开闭标签
+        tag_pattern = _re.compile(r'<(/?)(\w+)[^>]*>')
+        void_tags = {'br', 'hr', 'img', 'input', 'meta', 'link', 'area',
+                     'base', 'col', 'embed', 'source', 'track', 'wbr'}
+        stack = []
+        for m in tag_pattern.finditer(source):
+            is_close = m.group(1) == '/'
+            tag_name = m.group(2).lower()
+            if tag_name in void_tags:
+                continue
+            pos = m.start()
+            line_num = source[:pos].count('\n') + 1
+            if is_close:
+                if stack and stack[-1][0] == tag_name:
+                    stack.pop()
+                elif stack:
+                    errors.append(
+                        f"  第 {line_num} 行: </{tag_name}> 与 <{stack[-1][0]}> 不匹配"
+                    )
+            else:
+                stack.append((tag_name, line_num))
+        for tag_name, line_num in stack:
+            errors.append(f"  第 {line_num} 行: <{tag_name}> 未闭合")
+        if errors and len(errors) <= 10:
+            return f" HTML 标签检查 ({filepath}):\n" + "\n".join(errors)
+        return ""
+
+    def _check_xml_syntax(self, filepath: str, source: str) -> str:
+        """XML 语法检查：使用 xml.etree"""
+        import xml.etree.ElementTree as ET
+        try:
+            ET.fromstring(source)
+        except ET.ParseError as e:
+            return f" XML 语法检查失败 ({filepath}):\n  {e}"
+        return ""
+
+    def _check_css_syntax(self, filepath: str, source: str) -> str:
+        """CSS 基础检查：花括号匹配"""
+        errors = []
+        depth = 0
+        in_string = False
+        string_char = None
+        line_num = 1
+        for i, ch in enumerate(source):
+            if ch == '\n':
+                line_num += 1
+                continue
+            if in_string:
+                if ch == string_char and (i == 0 or source[i-1] != '\\'):
+                    in_string = False
+                continue
+            if ch in ('"', "'"):
+                in_string = True
+                string_char = ch
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                if depth > 0:
+                    depth -= 1
+                else:
+                    errors.append(f"  第 {line_num} 行: 多余的闭合花括号 '}}'")
+        if depth > 0:
+            errors.append(f"  文件末尾: {depth} 个未闭合的花括号 '{{' ")
+        if errors:
+            return f" CSS 括号检查 ({filepath}):\n" + "\n".join(errors)
+        return ""
+
+    def _check_shell_syntax(self, filepath: str, source: str) -> str:
+        """Shell 脚本语法检查：使用 bash -n"""
+        try:
+            result = subprocess.run(
+                ['bash', '-n', filepath],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.strip()
+                lines = stderr.split('\n')[:5]
+                return f" Shell 语法检查失败 ({filepath}):\n" + "\n".join(f"  {l}" for l in lines)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return ""
+
+    def _check_sql_syntax(self, filepath: str, source: str) -> str:
+        """SQL 基础检查：关键字匹配"""
+        # 简单检查未闭合的引号和括号
+        errors = []
+        single_q = double_q = 0
+        paren_depth = 0
+        line_num = 1
+        for ch in source:
+            if ch == '\n':
+                line_num += 1
+                continue
+            if ch == "'":
+                single_q += 1
+            elif ch == '"':
+                double_q += 1
+            elif ch == '(':
+                paren_depth += 1
+            elif ch == ')':
+                paren_depth -= 1
+        if single_q % 2 != 0:
+            errors.append("  存在未闭合的单引号")
+        if double_q % 2 != 0:
+            errors.append("  存在未闭合的双引号")
+        if paren_depth > 0:
+            errors.append(f"  存在 {paren_depth} 个未闭合的括号")
+        if errors:
+            return f" SQL 检查 ({filepath}):\n" + "\n".join(errors)
+        return ""
+
+    def _auto_syntax_check(self, filepath: str) -> str:
+        """
+        编辑操作后自动语法检查。
+        返回格式化的结果字符串，供拼接到操作结果末尾。
+        - 通过: 返回简短成功提示
+        - 失败: 返回详细错误信息
+        - 跳过: 返回空字符串
+        """
+        result = self._check_syntax(filepath)
+        if result is None:
+            return ""  # 非代码文件，不检查
+        if result == "":
+            return f"\n  语法检查通过 ✓"
+        else:
+            return f"\n{result}"
+
+    # ══════════════════════════════════════
+    #  Diff 弹窗系统
+    # ══════════════════════════════════════
+
+    def _read_file_safe(self, filepath: str) -> str:
+        """安全读取文件，失败返回空字符串"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception:
+            return ""
+
+    def _spawn_diff_popup(self, filepath: str, before: str, after: str):
+        """
+        在新终端窗口中显示修改前后的对比。
+        使用独立线程避免阻塞主流程。
+        """
+        if not self.diff_popup_enabled:
+            return
+        if before == after:
+            return  # 内容无变化，不弹窗
+
+        thread = threading.Thread(
+            target=self._do_spawn_diff_popup,
+            args=(filepath, before, after),
+            daemon=True
+        )
+        thread.start()
+
+    def _do_spawn_diff_popup(self, filepath: str, before: str, after: str):
+        """实际执行弹窗创建（在子线程中运行）"""
+        basename = os.path.basename(filepath)
+
+        # 生成带行号的 before/after
+        before_numbered = self._number_lines(before)
+        after_numbered = self._number_lines(after)
+
+        # 生成 diff
+        diff_lines = list(difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"修改前: {basename}",
+            tofile=f"修改后: {basename}",
+            lineterm=''
+        ))
+        diff_text = '\n'.join(diff_lines)
+
+        # 统计变更
+        added = sum(1 for l in diff_lines if l.startswith('+') and not l.startswith('+++'))
+        removed = sum(1 for l in diff_lines if l.startswith('-') and not l.startswith('---'))
+
+        before_count = len(before.splitlines())
+        after_count = len(after.splitlines())
+
+        # 构建弹窗显示内容
+        display = self._build_diff_display(
+            basename, filepath,
+            before_numbered, after_numbered,
+            diff_text, added, removed,
+            before_count, after_count
+        )
+
+        # 写入临时脚本并弹出
+        self._launch_popup_window(display, basename)
+
+    def _number_lines(self, content: str) -> str:
+        """给内容加上行号"""
+        lines = content.splitlines()
+        width = len(str(len(lines)))
+        return '\n'.join(f"{i+1:>{width}} | {line}" for i, line in enumerate(lines))
+
+    def _build_diff_display(self, basename, filepath,
+                             before_numbered, after_numbered,
+                             diff_text, added, removed,
+                             before_count, after_count):
+        """构建完整的 diff 显示文本"""
+        sep = '═' * 70
+        thin_sep = '─' * 70
+
+        display = f"""
+{sep}
+  文件变更对比: {basename}
+  路径: {filepath}
+{sep}
+
+  统计: {before_count} 行 → {after_count} 行  |  +{added} 新增  -{removed} 删除
+
+{thin_sep}
+  修改前 ({before_count} 行):
+{thin_sep}
+{before_numbered}
+
+{thin_sep}
+  修改后 ({after_count} 行):
+{thin_sep}
+{after_numbered}
+
+{thin_sep}
+  差异 (Diff):
+{thin_sep}
+{diff_text if diff_text else '  (无差异)'}
+
+{sep}
+  按任意键关闭此窗口...
+{sep}
+"""
+        return display
+
+    def _launch_popup_window(self, display_text: str, title: str):
+        """根据平台弹出新终端窗口"""
+        # 写入临时显示脚本
+        try:
+            script_fd, script_path = tempfile.mkstemp(suffix='.py', prefix='xiaoli_diff_')
+            with os.fdopen(script_fd, 'w', encoding='utf-8') as f:
+                # 写入显示内容到脚本
+                escaped = display_text.replace('\\', '\\\\').replace("'", "\\'")
+                f.write(f"#!/usr/bin/env python3\n")
+                f.write(f"# -*- coding: utf-8 -*-\n")
+                f.write(f"import sys\n")
+                f.write(f"text = '''{escaped}'''\n")
+                f.write(f"try:\n")
+                f.write(f"    sys.stdout.reconfigure(encoding='utf-8')\n")
+                f.write(f"except Exception:\n")
+                f.write(f"    pass\n")
+                f.write(f"print(text)\n")
+                f.write(f"try:\n")
+                f.write(f"    input()\n")
+                f.write(f"except (EOFError, KeyboardInterrupt):\n")
+                f.write(f"    pass\n")
+
+            system = platform.system()
+
+            if system == 'Windows':
+                # Windows: 新开 cmd 窗口
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', 'cmd', '/k', sys.executable, script_path],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    shell=False
+                )
+            elif system == 'Darwin':
+                # macOS: 用 osascript 打开 Terminal.app
+                apple_script = (
+                    f'tell application "Terminal"\n'
+                    f'    activate\n'
+                    f'    do script "{sys.executable} {script_path}"\n'
+                    f'end tell'
+                )
+                subprocess.Popen(['osascript', '-e', apple_script])
+            else:
+                # Linux: 尝试多个终端模拟器
+                terminals = [
+                    ['gnome-terminal', '--', sys.executable, script_path],
+                    ['xterm', '-e', sys.executable, script_path],
+                    ['konsole', '-e', sys.executable, script_path],
+                    ['xfce4-terminal', '-e', f'{sys.executable} {script_path}'],
+                    ['lxterminal', '-e', sys.executable, script_path],
+                    ['mate-terminal', '-e', sys.executable, script_path],
+                ]
+                launched = False
+                for cmd in terminals:
+                    try:
+                        subprocess.Popen(cmd, start_new_session=True)
+                        launched = True
+                        break
+                    except FileNotFoundError:
+                        continue
+                if not launched:
+                    # 兜底: 用 xdg-open 不太行，直接打印到当前终端
+                    print(f"\n[Diff 弹窗] 无可用终端模拟器，直接输出:\n")
+                    print(display_text)
+                    try:
+                        os.unlink(script_path)
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            print(f"[Diff 弹窗] 创建失败: {e}")
+
+    def _op_diff_popup(self, path: str, rest: str) -> str:
+        """切换 diff 弹窗开关"""
+        arg = (path + ' ' + rest).strip().lower()
+        if arg in ('on', '开', '开启', 'enable', '1', 'true'):
+            self.diff_popup_enabled = True
+            return "  Diff 弹窗已开启"
+        elif arg in ('off', '关', '关闭', 'disable', '0', 'false'):
+            self.diff_popup_enabled = False
+            return "  Diff 弹窗已关闭"
+        else:
+            # 无参数：切换状态
+            self.diff_popup_enabled = not self.diff_popup_enabled
+            state = "开启" if self.diff_popup_enabled else "关闭"
+            return f"  Diff 弹窗: {state}"
+
+    def _op_syntax_check(self, path: str, rest: str) -> str:
+        """主动语法检查操作"""
+        if not path:
+            return "错误：请提供文件路径。用法: syntax_check <文件路径>"
+        fp = self._norm(path)
+        if not os.path.exists(fp):
+            return f"错误：文件不存在: {fp}"
+
+        lang = self._get_lang(fp)
+        if lang is None:
+            return f"⏭ 跳过: {fp} (不支持的文件类型，无需语法检查)"
+
+        result = self._check_syntax(fp)
+        if result is None:
+            return f"⏭ 跳过: {fp} (无法读取文件)"
+        if result == "":
+            return f"  语法检查通过 ✓ ({fp})\n  语言: {lang}"
+        else:
+            return result
+
+    # ══════════════════════════════════════
     #  编辑操作
     # ══════════════════════════════════════
 
@@ -221,11 +854,15 @@ class Plugin:
         if count > 1:
             return f"警告：找到 {count} 处匹配，请提供更多上下文以确保唯一。"
 
+        before_content = content  # 保存修改前内容
         new_content = content.replace(old_text, new_text, 1)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(new_content)
 
-        return f" 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
+        self._spawn_diff_popup(fp, before_content, new_content)
+        result = f" 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_multi_edit(self, path: str, rest: str) -> str:
         import json
@@ -245,6 +882,7 @@ class Plugin:
         with open(fp, 'r', encoding='utf-8') as f:
             content = f.read()
 
+        before_content = content  # 保存修改前内容
         results = []
         for i, op in enumerate(ops):
             old = op.get("old", "").strip()
@@ -259,7 +897,10 @@ class Plugin:
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f" 批量编辑: {fp}\n" + "\n".join(results)
+        self._spawn_diff_popup(fp, before_content, content)
+        result = f" 批量编辑: {fp}\n" + "\n".join(results)
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_insert(self, path: str, rest: str) -> str:
         if not path:
@@ -282,12 +923,17 @@ class Plugin:
         if line_num < 1 or line_num > len(lines) + 1:
             return f"错误：行号超出范围 (1-{len(lines)+1})"
 
+        before_content = ''.join(lines)  # 保存修改前内容
         insert_lines = [l + '\n' for l in parts[1].strip().split('\n')]
         lines[line_num-1:line_num-1] = insert_lines
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        return f" 已在第 {line_num} 行插入 {len(insert_lines)} 行"
+        after_content = ''.join(lines)
+        self._spawn_diff_popup(fp, before_content, after_content)
+        result = f" 已在第 {line_num} 行插入 {len(insert_lines)} 行"
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_delete_lines(self, path: str, rest: str) -> str:
         if not path:
@@ -310,12 +956,17 @@ class Plugin:
         if start < 1 or end > len(lines) or start > end:
             return f"错误：行号范围无效 (1-{len(lines)})"
 
+        before_content = ''.join(lines)  # 保存修改前内容
         deleted = lines[start-1:end]
         lines[start-1:end] = []
 
         with open(fp, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        return f" 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
+        after_content = ''.join(lines)
+        self._spawn_diff_popup(fp, before_content, after_content)
+        result = f" 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_create(self, path: str, rest: str) -> str:
         if not path:
@@ -328,7 +979,10 @@ class Plugin:
             os.makedirs(dir_path, exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(rest or "")
-        return f" 已创建: {fp} ({len(rest or '')} 字符)"
+        self._spawn_diff_popup(fp, "", rest or "")
+        result = f" 已创建: {fp} ({len(rest or '')} 字符)"
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_write(self, path: str, rest: str) -> str:
         if not path:
@@ -337,9 +991,13 @@ class Plugin:
         dir_path = os.path.dirname(fp)
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
+        before_content = self._read_file_safe(fp)  # 保存修改前内容
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(rest)
-        return f" 已写入: {fp} ({len(rest)} 字符)"
+        self._spawn_diff_popup(fp, before_content, rest)
+        result = f" 已写入: {fp} ({len(rest)} 字符)"
+        result += self._auto_syntax_check(fp)
+        return result
 
     def _op_append(self, path: str, rest: str) -> str:
         if not path:
@@ -347,9 +1005,14 @@ class Plugin:
         fp = self._norm(path)
         if not os.path.exists(fp):
             return f"错误：文件不存在: {fp}"
+        before_content = self._read_file_safe(fp)  # 保存修改前内容
         with open(fp, 'a', encoding='utf-8') as f:
             f.write(rest)
-        return f" 已追加: {fp} ({len(rest)} 字符)"
+        after_content = self._read_file_safe(fp)
+        self._spawn_diff_popup(fp, before_content, after_content)
+        result = f" 已追加: {fp} ({len(rest)} 字符)"
+        result += self._auto_syntax_check(fp)
+        return result
 
     # ══════════════════════════════════════
     #  查看操作

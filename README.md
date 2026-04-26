@@ -16,13 +16,13 @@
 ##  特性
 
 -  **双 AI 引擎** — Ollama 本地模型 + OpenAI 兼容格式（DeepSeek、Grok、硅基流动等）
--  **代码编辑与搜索** — 精准替换、批量编辑、符号提取、依赖分析、正则搜索
+-  **代码编辑与搜索** — 精准替换、批量编辑、符号提取、依赖分析、正则搜索、**自动语法检查**
 -  **Git 版本控制** — 完整 Git 操作 + 工作流自动化（smart-commit、changelog）
 -  **浏览器自动化** — Playwright 驱动，导航/交互/截图/JS 执行/PDF
 -  **子 Agent 系统** — 多 Agent 并行协作，独立任务分配与结果回收
 -  **统一安全层** — AI 风险识别 + 三模式切换（普通/人工/无限制）
 -  **15 个插件 141 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、任务管理等
--  **双模式界面** — TUI 图形化界面 + 传统命令行模式
+- **三模式界面** — TUI 图形化 + 传统命令行 + **Web UI 浏览器界面**
 -  **113 个自动化测试** — pytest 覆盖全部插件和核心模块
 
 ##  快速开始
@@ -60,7 +60,7 @@ python ai_cli.py --engine openai
     "engines": {
       "ollama": {
         "base_url": "http://localhost:11434",
-        "model": "qwen2.5:latest"
+        "model": "gemma4:31b"
       },
       "openai": {
         "api_key": "your-key",
@@ -82,7 +82,7 @@ python ai_cli.py --engine openai
 
 | 插件 | 操作数 | 说明 |
 |------|--------|------|
-| `code_editor` | 23 | 代码编辑+搜索。精准替换、批量编辑、find/regex/symbols/imports/callers/todo/structure |
+| `code_editor` | 23 | 代码编辑+搜索。精准替换、批量编辑、find/regex/symbols/imports/callers/todo/structure + 自动语法检查 |
 | `git_tools` | 20 | Git 版本控制。status/diff/log/commit/branch + smart-commit/changelog/contributors |
 | `cmd_executor` | 1 | Shell 命令执行。跨平台，超时控制，危险命令拦截 |
 | `file_manager` | 11 | 文件系统。list/read/write/copy/move/delete/search/info/mkdir |
@@ -153,11 +153,35 @@ python ai_cli.py --engine openai
 | `/tui` | 切换 TUI 模式 |
 | `/quit` | 退出 |
 
+##  Web UI
+
+纯静态 HTML 界面，无需后端，浏览器直接打开。
+
+```bash
+# 直接用浏览器打开
+open webui.html        # macOS
+xdg-open webui.html    # Linux
+start webui.html       # Windows
+```
+
+### 功能
+
+| 功能 | 说明 |
+|------|------|
+|  对话界面 | 聊天气泡、快捷指令、打字动画 |
+|  代码编辑器 | 行号显示、Tab 缩进、Ctrl+S 保存、语法高亮 |
+|  文件浏览 | 侧栏项目文件树，点击查看 |
+| ️ 系统状态 | 插件/操作/引擎/测试统计 |
+|  引擎面板 | Ollama / OpenAI 引擎一览 |
+|  工具面板 | 15 个插件及操作数一览 |
+|  日志面板 | 系统操作实时记录 |
+
 ##  项目结构
 
 ```
 xiaoli-cli/
 ├── ai_cli.py                   # 主入口
+├── webui.html                  # Web UI 界面 (纯静态 HTML)
 ├── launcher.py                 # 智能启动器
 ├── config.json.example         # 配置模板
 │

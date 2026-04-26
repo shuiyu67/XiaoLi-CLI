@@ -7,6 +7,12 @@
 ## v5.1.2 (2026-04-26)
 
 ###  新增功能
+- **自动语法检查系统** — 编辑操作(edit/multi/insert/delete_lines/create/write/append)完成后自动检查代码语法，通过显示 ✓，失败显示详细错误信息（行号、列号、错误描述）
+- **主动语法检查** — 新增 `syntax_check <文件>` / `check <文件>` 操作，AI 可随时主动检查任意文件语法
+- **多语言支持** — 语法检查覆盖 Python (ast.parse + py_compile)、JavaScript、TypeScript、JSON、YAML、TOML、HTML/XML (标签匹配)、CSS (括号匹配)、Shell (bash -n)、SQL
+- **Diff 弹窗** — 每次编辑操作完成后自动弹出新终端窗口，显示修改前/修改后的完整内容（带行号）、diff 差异、新增/删除行数统计。支持 `diff_popup on/off` 开关，默认开启。兼容 Windows (cmd)、macOS (Terminal.app)、Linux (gnome-terminal/xterm/konsole 等)
+- **默认模型更新** — Ollama 默认模型从 qwen2.5 更新为 gemma4:31b
+- **Web UI** — 新增纯静态 HTML 界面 (`webui.html`)，无需后端，浏览器直接打开。包含对话界面（气泡+快捷指令+打字动画）、代码编辑器（行号+Tab+Ctrl+S）、文件浏览器、系统状态面板、引擎/工具一览、实时日志
 - **TUI 动画系统** — 为 TUI 模式添加流畅动画效果，包括启动过渡、消息淡入、光标呼吸等微交互
 - **TUI 多行输入** — 支持 Shift+Enter 换行输入，长 prompt 不再受限于单行，编辑体验大幅提升
 - **Windows EXE 启动器** — `launcher.exe` 一键启动，无需预装 Python 环境，解压即用

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小狸 Pro-CLI · Web UI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e17;--bg2:#111827;--bg3:#1a2332;--bg4:#21283b;
+  --border:#1e3a5f;--border-f:#58a6ff;
+  --txt:#e2e8f0;--dim:#94a3b8;--mute:#475569;
+  --blue:#3b82f6;--purple:#8b5cf6;--cyan:#06b6d4;
+  --green:#22c55e;--red:#ef4444;--yellow:#eab308;--orange:#f97316;
+  --r:10px;
+}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden}
+
+/* ── Grid ── */
+.app{display:grid;grid-template-columns:250px 1fr 300px;grid-template-rows:52px 1fr;height:100vh}
+.hdr{grid-column:1/-1;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:16px}
+.side{background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:12px}
+.main{display:flex;flex-direction:column;overflow:hidden}
+.rpanel{background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;padding:14px}
+
+/* ── Header ── */
+.logo{font-size:1.25em;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.tabs{display:flex;gap:4px}
+.tab{padding:7px 18px;border-radius:8px;cursor:pointer;font-size:.88em;color:var(--dim);border:1px solid transparent;transition:.2s}
+.tab:hover{background:var(--bg3);color:var(--txt)}
+.tab.on{background:var(--bg4);color:var(--blue);border-color:var(--border)}
+.hdr-r{margin-left:auto;display:flex;gap:10px;align-items:center}
+.pill{padding:4px 12px;border-radius:14px;font-size:.78em;font-weight:600}
+.pill-e{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25)}
+.pill-s{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25)}
+.pill-m{background:rgba(139,92,246,.12);color:var(--purple);border:1px solid rgba(139,92,246,.25)}
+
+/* ── Sidebar ── */
+.sb-title{font-size:.82em;font-weight:700;color:var(--cyan);margin:14px 0 8px;display:flex;align-items:center;gap:6px}
+.sb-title:first-child{margin-top:4px}
+.sb-item{padding:6px 10px;border-radius:7px;font-size:.86em;color:var(--dim);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+.sb-item:hover{background:var(--bg3);color:var(--txt)}
+.sb-item.on{background:var(--bg4);color:var(--blue)}
+.sb-icon{width:20px;text-align:center;flex-shrink:0}
+.sb-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-meta{font-size:.76em;color:var(--mute)}
+.sep{height:1px;background:var(--border);margin:10px 0}
+
+/* ── Chat ── */
+.chat-box{flex:1;overflow-y:auto;padding:16px 20px;scroll-behavior:smooth}
+.msg{margin-bottom:18px;animation:fadeUp .3s}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.msg-role{font-size:.82em;font-weight:700;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.msg-role.user{color:var(--cyan)}
+.msg-role.ai{color:var(--blue)}
+.msg-time{font-size:.74em;color:var(--mute);font-weight:400}
+.msg-body{padding:12px 16px;border-radius:var(--r);line-height:1.7;font-size:.93em;white-space:pre-wrap;word-break:break-word}
+.msg.user .msg-body{background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.15)}
+.msg.ai .msg-body{background:var(--bg2);border:1px solid var(--border)}
+.msg-body code{background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;font-size:.91em}
+.msg-body pre{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;overflow-x:auto;margin:8px 0;font-size:.87em}
+.msg-tool{margin-top:8px;padding:8px 12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.12);border-radius:8px;font-size:.87em;color:var(--green)}
+.msg-err{margin-top:8px;padding:8px 12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.12);border-radius:8px;font-size:.87em;color:var(--red)}
+
+/* ── Input ── */
+.input-area{padding:14px 18px;border-top:1px solid var(--border);background:var(--bg2)}
+.input-row{display:flex;gap:10px;align-items:flex-end}
+.inp{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:11px 15px;color:var(--txt);font-size:.94em;resize:none;min-height:44px;max-height:150px;outline:none;font-family:inherit;line-height:1.5;transition:border-color .2s}
+.inp:focus{border-color:var(--border-f)}
+.btn-send{background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff;border:none;border-radius:var(--r);padding:11px 22px;cursor:pointer;font-weight:700;font-size:.94em;transition:.2s;white-space:nowrap}
+.btn-send:hover{filter:brightness(1.15);transform:translateY(-1px)}
+.btn-send:active{transform:translateY(0)}
+.hint{font-size:.78em;color:var(--mute);margin-top:7px}
+
+/* ── Editor ── */
+.ed-wrap{flex:1;display:flex;flex-direction:column}
+.ed-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border)}
+.ed-bar .fi{font-size:.88em;color:var(--dim);flex:1}
+.ed-bar button{padding:6px 16px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--txt);cursor:pointer;font-size:.84em;transition:.2s}
+.ed-bar button:hover{background:var(--bg4);border-color:var(--blue)}
+.ed-bar .bsave{background:rgba(34,197,94,.12);color:var(--green);border-color:rgba(34,197,94,.25)}
+.ed-bar .bsave:hover{background:rgba(34,197,94,.2)}
+.ed-body{flex:1;display:flex;overflow:hidden}
+.ed-lines{padding:14px 10px;background:var(--bg2);color:var(--mute);font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;line-height:1.65;text-align:right;user-select:none;overflow:hidden;min-width:50px;border-right:1px solid var(--border)}
+.ed-code{flex:1;padding:14px 16px;background:var(--bg);color:var(--txt);font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;line-height:1.65;border:none;outline:none;resize:none;tab-size:4;white-space:pre;overflow:auto}
+.ed-status{padding:5px 14px;background:var(--bg2);border-top:1px solid var(--border);font-size:.78em;color:var(--mute);display:flex;gap:18px}
+
+/* ── Right Panel ── */
+.rp-title{font-size:.88em;font-weight:700;color:var(--blue);margin:14px 0 8px;display:flex;align-items:center;gap:6px}
+.rp-title:first-child{margin-top:2px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:var(--bg3);border-radius:9px;padding:12px;text-align:center}
+.stat-v{font-size:1.5em;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-l{font-size:.78em;color:var(--mute);margin-top:2px}
+.rp-item{padding:6px 10px;border-radius:7px;font-size:.84em;color:var(--dim);display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:.15s}
+.rp-item:hover{background:var(--bg3);color:var(--txt)}
+.rp-item.on{background:rgba(59,130,246,.1);color:var(--blue)}
+.log-e{font-size:.8em;padding:3px 0;color:var(--dim);border-bottom:1px solid rgba(30,58,95,.3)}
+.log-t{font-weight:700;margin-right:6px}
+.log-t.sys{color:var(--blue)}.log-t.eng{color:var(--purple)}.log-t.safe{color:var(--green)}.log-t.file{color:var(--yellow)}.log-t.err{color:var(--red)}
+
+/* ── Views ── */
+.view{display:none;height:100%}.view.on{display:flex;flex-direction:column}
+
+/* ── Typing ── */
+.typing{display:inline-flex;gap:5px;padding:6px 0}
+.typing span{width:7px;height:7px;border-radius:50%;background:var(--mute);animation:bounce 1.4s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-7px)}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--mute)}
+
+/* ── Welcome ── */
+.welcome{text-align:center;padding:60px 20px;animation:fadeUp .5s}
+.welcome h2{font-size:1.6em;margin-bottom:10px;background:linear-gradient(135deg,var(--blue),var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.welcome p{color:var(--dim);max-width:460px;margin:0 auto;font-size:1.02em}
+.welcome .chips{display:flex;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap}
+.welcome .chip{padding:6px 16px;border-radius:20px;font-size:.84em;border:1px solid var(--border);color:var(--dim);cursor:pointer;transition:.2s}
+.welcome .chip:hover{border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,.06)}
+
+/* ── Responsive ── */
+@media(max-width:1024px){.app{grid-template-columns:0 1fr 0}.side,.rpanel{display:none}}
+@media(max-width:768px){.tabs{display:none}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══ Header ═══ -->
+  <div class="hdr">
+    <div class="logo"> 小狸 Pro-CLI</div>
+    <div class="tabs">
+      <div class="tab on" onclick="switchView('chat',this)">  对话</div>
+      <div class="tab" onclick="switchView('editor',this)">  编辑器</div>
+    </div>
+    <div class="hdr-r">
+      <span class="pill pill-e">  gemma4:31b</span>
+      <span class="pill pill-s">  普通模式</span>
+      <span class="pill pill-m">v5.1.2</span>
+    </div>
+  </div>
+
+  <!-- ═══ Sidebar ═══ -->
+  <div class="side">
+    <div class="sb-title">  项目文件</div>
+    <div class="sb-item on" onclick="openFile(this,'ai_cli.py','def main():\n    from xcli_core import AICLI, main\n    main()')">
+      <span class="sb-icon"> </span><span class="sb-name">ai_cli.py</span><span class="sb-meta">11行</span>
+    </div>
+    <div class="sb-item" onclick="openFile(this,'web_ui.py','#!/usr/bin/env python3\n# 小狸 Pro-CLI Web UI\n# 启动: python web_ui.py\n\nfrom flask import Flask\napp = Flask(__name__)')">
+      <span class="sb-icon"> </span><span class="sb-name">web_ui.py</span><span class="sb-meta">1.1K</span>
+    </div>
+    <div class="sb-item" onclick="openFile(this,'config.json.example','{\n  \"api\": {\n    \"engines\": {\n      \"ollama\": {\n        \"model\": \"gemma4:31b\"\n      }\n    }\n  }\n}')">
+      <span class="sb-icon">{ }</span><span class="sb-name">config.json</span><span class="sb-meta">示例</span>
+    </div>
+
+    <div class="sep"></div>
+    <div class="sb-title">  xcli_core/</div>
+    <div class="sb-item" onclick="openFile(this,'cli_core.py','class AICLI(BaseAICLI, ClawliMixin,\n            ToolMixin, CodeExecMixin,\n            DisplayMixin, HistoryMixin):\n    \"\"\"AI CLI 主程序\"\"\"\n\n    def process_conversation(self, user_input):\n        ...')">
+      <span class="sb-icon"> </span><span class="sb-name">cli_core.py</span><span class="sb-meta">900行</span>
+    </div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">safety.py</span><span class="sb-meta">292行</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">sandbox.py</span><span class="sb-meta">187行</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">memory.py</span><span class="sb-meta">记忆系统</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">tui.py</span><span class="sb-meta">899行</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">config.py</span><span class="sb-meta">配置</span></div>
+
+    <div class="sep"></div>
+    <div class="sb-title">  plugins/</div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">code_editor.py</span><span class="sb-meta">23操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">git_tools.py</span><span class="sb-meta">20操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">browser_auto.py</span><span class="sb-meta">31操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">sub_agent.py</span><span class="sb-meta">8操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">auto_engineer.py</span><span class="sb-meta">16操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">file_manager.py</span><span class="sb-meta">11操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">cmd_executor.py</span><span class="sb-meta">1操作</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">task_manager.py</span><span class="sb-meta">7操作</span></div>
+
+    <div class="sep"></div>
+    <div class="sb-title">  ai_engines/</div>
+    <div class="sb-item on"><span class="sb-icon"> </span><span class="sb-name">ollama_engine.py</span><span class="sb-meta">本地</span></div>
+    <div class="sb-item"><span class="sb-icon"> </span><span class="sb-name">openai_engine.py</span><span class="sb-meta">云端</span></div>
+  </div>
+
+  <!-- ═══ Main ═══ -->
+  <div class="main">
+    <!-- Chat View -->
+    <div class="view on" id="v-chat">
+      <div class="chat-box" id="chat-box">
+        <div class="welcome">
+          <h2>小狸 Pro-CLI v5.1.2</h2>
+          <p>智能编程助手 — 代码编辑 · Git 集成 · 浏览器自动化 · 多 Agent 协作</p>
+          <div class="chips">
+            <div class="chip" onclick="quickSend('帮我看看项目结构')">  查看项目结构</div>
+            <div class="chip" onclick="quickSend('提交代码')">  提交代码</div>
+            <div class="chip" onclick="quickSend('统计代码量')">  代码统计</div>
+            <div class="chip" onclick="quickSend('/help')">❓ 帮助</div>
+          </div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="inp" id="inp" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+          <button class="btn-send" onclick="send()">发送</button>
+        </div>
+        <div class="hint">自然语言交互 — AI 自动选择工具执行  ·  /help 查看命令  ·  /safe 切换安全模式</div>
+      </div>
+    </div>
+
+    <!-- Editor View -->
+    <div class="view" id="v-editor">
+      <div class="ed-wrap">
+        <div class="ed-bar">
+          <span class="fi" id="ed-fi">选择左侧文件开始编辑</span>
+          <button onclick="edUndo()">撤销</button>
+          <button class="bsave" onclick="edSave()">  保存</button>
+        </div>
+        <div class="ed-body">
+          <div class="ed-lines" id="ed-lines">1</div>
+          <textarea class="ed-code" id="ed-code" placeholder="选择左侧文件..." spellcheck="false"></textarea>
+        </div>
+        <div class="ed-status">
+          <span id="ed-cursor">行 1, 列 1</span>
+          <span id="ed-lang">--</span>
+          <span id="ed-enc">UTF-8</span>
+          <span id="ed-syn">  就绪</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Right Panel ═══ -->
+  <div class="rpanel">
+    <div class="rp-title">  系统状态</div>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-v">15</div><div class="stat-l">插件</div></div>
+      <div class="stat"><div class="stat-v">141</div><div class="stat-l">操作</div></div>
+      <div class="stat"><div class="stat-v">2</div><div class="stat-l">引擎</div></div>
+      <div class="stat"><div class="stat-v">113</div><div class="stat-l">测试</div></div>
+    </div>
+
+    <div class="rp-title">  AI 引擎</div>
+    <div class="rp-item on"><span>▸ ollama (本地)</span><span style="color:var(--green)">●</span></div>
+    <div class="rp-item"><span>  openai (云端)</span><span style="color:var(--mute)">○</span></div>
+
+    <div class="rp-title">⚡ 安全模式</div>
+    <div class="rp-item on"><span>  普通模式</span><span style="color:var(--green)">●</span></div>
+    <div class="rp-item"><span>  人工确认</span><span style="color:var(--mute)">○</span></div>
+    <div class="rp-item"><span>  无限制</span><span style="color:var(--mute)">○</span></div>
+
+    <div class="rp-title">  工具 (15)</div>
+    <div style="max-height:180px;overflow-y:auto">
+      <div class="rp-item"><span>code_editor</span><span class="sb-meta">23</span></div>
+      <div class="rp-item"><span>git_tools</span><span class="sb-meta">20</span></div>
+      <div class="rp-item"><span>browser_auto</span><span class="sb-meta">31</span></div>
+      <div class="rp-item"><span>sub_agent</span><span class="sb-meta">8</span></div>
+      <div class="rp-item"><span>auto_engineer</span><span class="sb-meta">16</span></div>
+      <div class="rp-item"><span>file_manager</span><span class="sb-meta">11</span></div>
+      <div class="rp-item"><span>cmd_executor</span><span class="sb-meta">1</span></div>
+      <div class="rp-item"><span>task_manager</span><span class="sb-meta">7</span></div>
+      <div class="rp-item"><span>network_tools</span><span class="sb-meta">4</span></div>
+      <div class="rp-item"><span>ai_search</span><span class="sb-meta">2</span></div>
+      <div class="rp-item"><span>tool_search</span><span class="sb-meta">1</span></div>
+      <div class="rp-item"><span>frontend_tester</span><span class="sb-meta">5</span></div>
+      <div class="rp-item"><span>speech_recognition</span><span class="sb-meta">2</span></div>
+      <div class="rp-item"><span>audio_player</span><span class="sb-meta">3</span></div>
+      <div class="rp-item"><span>send_image</span><span class="sb-meta">1</span></div>
+    </div>
+
+    <div class="rp-title">  日志</div>
+    <div id="log-area">
+      <div class="log-e"><span class="log-t sys">[系统]</span>01:04:22 Web UI 已启动</div>
+      <div class="log-e"><span class="log-t eng">[引擎]</span>01:04:22 Ollama 已连接</div>
+      <div class="log-e"><span class="log-t safe">[安全]</span>01:04:22 普通模式</div>
+      <div class="log-e"><span class="log-t file">[文件]</span>01:04:22 已加载 15 个插件</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ View Switch ═══
+function switchView(v,el){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  if(el)el.classList.add('on');
+}
+
+// ═══ Chat ═══
+function send(){
+  const inp=document.getElementById('inp');
+  const msg=inp.value.trim();
+  if(!msg)return;
+  inp.value='';inp.style.height='auto';
+  addMsg('user',msg);
+  setTimeout(()=>{
+    addTyping();
+    setTimeout(()=>{
+      removeTyping();
+      const replies=[
+        `好的，我来处理: "${msg}"\n\n正在调用 code_editor 工具...`,
+        `收到！让我看看...\n\n  工具 [code_editor] 执行完成\n结果: 操作已成功执行`,
+        `明白。我来分析一下项目情况。\n\n  代码统计:\n  文件: 40\n  代码: 8,521 行\n  注释: 1,892 行\n  注释率: 22.2%`,
+        `我来帮你处理。\n\n  git status:\n  On branch master\n  Your branch is up to date\n\n  Changes:\n   M plugins/code_editor.py\n  ?? web_ui.py`,
+      ];
+      addMsg('ai',replies[Math.floor(Math.random()*replies.length)]);
+    },800+Math.random()*1200);
+  },200);
+}
+
+function quickSend(msg){
+  document.getElementById('inp').value=msg;
+  send();
+}
+
+function addMsg(role,content){
+  const box=document.getElementById('chat-box');
+  // Remove welcome if present
+  const w=box.querySelector('.welcome');if(w)w.remove();
+  const d=document.createElement('div');
+  d.className='msg '+(role==='user'?'user':'ai');
+  const label=role==='user'?'  你':'  小狸';
+  const cls=role==='user'?'user':'ai';
+  const t=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  let html=escapeHtml(content);
+  html=html.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre><code>$2</code></pre>');
+  html=html.replace(/`([^`]+)`/g,'<code>$1</code>');
+  d.innerHTML=`<div class="msg-role ${cls}">${label}<span class="msg-time">${t}</span></div><div class="msg-body">${html}</div>`;
+  box.appendChild(d);
+  box.scrollTop=box.scrollHeight;
+}
+
+function addTyping(){
+  const box=document.getElementById('chat-box');
+  const d=document.createElement('div');
+  d.className='msg ai';d.id='typing';
+  d.innerHTML='<div class="msg-role ai">  小狸</div><div class="msg-body"><div class="typing"><span></span><span></span><span></span></div></div>';
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+function removeTyping(){const e=document.getElementById('typing');if(e)e.remove();}
+function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+document.getElementById('inp').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}
+});
+document.getElementById('inp').addEventListener('input',function(){
+  this.style.height='auto';
+  this.style.height=Math.min(this.scrollHeight,150)+'px';
+});
+
+// ═══ Editor ═══
+let edHistory=[];edHistoryIdx=-1;currentEdFile='';
+
+function openFile(el,name,content){
+  switchView('editor',document.querySelectorAll('.tab')[1]);
+  document.querySelectorAll('.sb-item').forEach(x=>x.classList.remove('on'));
+  if(el)el.classList.add('on');
+  currentEdFile=name;
+  const ta=document.getElementById('ed-code');
+  ta.value=content;
+  edHistory=[content];edHistoryIdx=0;
+  document.getElementById('ed-fi').textContent=name;
+  document.getElementById('ed-lang').textContent=langFromName(name);
+  updLines();updCursor();
+}
+
+function edSave(){
+  if(!currentEdFile)return;
+  const ta=document.getElementById('ed-code');
+  const lines=ta.value.split('\n').length;
+  document.getElementById('ed-fi').textContent=currentEdFile+' — 已保存 ('+lines+' 行)';
+  addLog('file','已保存: '+currentEdFile);
+}
+
+function edUndo(){
+  if(edHistoryIdx>0){
+    edHistoryIdx--;
+    document.getElementById('ed-code').value=edHistory[edHistoryIdx];
+    updLines();
+  }
+}
+
+const edTa=document.getElementById('ed-code');
+edTa.addEventListener('input',function(){
+  clearTimeout(this._t);
+  this._t=setTimeout(()=>{
+    const v=this.value;
+    if(edHistory[edHistoryIdx]!==v){
+      edHistory=edHistory.slice(0,edHistoryIdx+1);
+      edHistory.push(v);edHistoryIdx=edHistory.length-1;
+    }
+  },400);
+  updLines();
+});
+edTa.addEventListener('scroll',function(){
+  document.getElementById('ed-lines').scrollTop=this.scrollTop;
+});
+edTa.addEventListener('click',updCursor);
+edTa.addEventListener('keyup',updCursor);
+edTa.addEventListener('keydown',function(e){
+  if(e.key==='Tab'){
+    e.preventDefault();
+    const s=this.selectionStart,end=this.selectionEnd;
+    this.value=this.value.substring(0,s)+'    '+this.value.substring(end);
+    this.selectionStart=this.selectionEnd=s+4;updLines();
+  }
+});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();edSave();}
+});
+
+function updLines(){
+  const ta=document.getElementById('ed-code');
+  const n=ta.value.split('\n').length;
+  document.getElementById('ed-lines').textContent=Array.from({length:n},(_,i)=>i+1).join('\n');
+}
+function updCursor(){
+  const ta=document.getElementById('ed-code');
+  const v=ta.value.substring(0,ta.selectionStart);
+  const line=v.split('\n').length;
+  const col=v.split('\n').pop().length+1;
+  document.getElementById('ed-cursor').textContent='行 '+line+', 列 '+col;
+}
+function langFromName(n){
+  const m={'.py':'Python','.js':'JavaScript','.ts':'TypeScript','.json':'JSON','.html':'HTML','.css':'CSS','.md':'Markdown','.sh':'Shell','.yaml':'YAML','.toml':'TOML'};
+  for(const[k,v]of Object.entries(m))if(n.endsWith(k))return v;
+  return'--';
+}
+
+// ═══ Log ═══
+function addLog(tag,msg){
+  const a=document.getElementById('log-area');
+  const t=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const cls={sys:'sys',eng:'eng',safe:'safe',file:'file',err:'err'}[tag]||'sys';
+  const labels={sys:'系统',eng:'引擎',safe:'安全',file:'文件',err:'错误'};
+  a.innerHTML+=`<div class="log-e"><span class="log-t ${cls}">[${labels[tag]||tag}]</span>${t} ${msg}</div>`;
+  a.scrollTop=a.scrollHeight;
+}
+
+// ═══ Keyboard shortcut info ═══
+console.log('%c 小狸 Pro-CLI Web UI ','background:#3b82f6;color:#fff;padding:4px 12px;border-radius:6px;font-size:14px');
+console.log('%c 快捷键: Ctrl+S 保存 | Enter 发送 | Shift+Enter 换行 | Tab 缩进 ','color:#94a3b8');
+</script>
+
+</body>
+</html>
