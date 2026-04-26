@@ -677,7 +677,7 @@ multi 操作支持一次修改多处：
         return summary
 
     def _generate_response_with_animation(self, current_input, liugin_prompts=None):
-        """生成AI响应并显示等待动画"""
+        """生成AI响应并显示等待动画 — 支持 ESC 跨平台取消"""
         # TUI 模式：不做动画
         if self.tui_output_callback:
             system_prompt = self._build_system_prompt(liugin_prompts)
@@ -691,37 +691,68 @@ multi 操作支持一次修改多处：
                 })
             return response
 
-        # CLI 模式：带动画和 ESC 检测
-        animation_running = True
+        # CLI 模式：带动画和跨平台 ESC 取消
+        animation_running = threading.Event()
+        animation_running.set()
         esc_pressed = threading.Event()
+        response_ready = threading.Event()
+        response_result = [None]  # 用列表存储，方便线程内修改
+
         love_sentences = []
         love_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), LOVE_FILE_PATH)
         if os.path.exists(love_file_path):
             try:
                 with open(love_file_path, 'r', encoding='utf-8') as f:
                     love_sentences = [line.strip() for line in f.readlines() if line.strip()]
-            except Exception as e:
-                print(f"读取love.txt文件时出错: {e}")
+            except Exception:
+                pass
         if not love_sentences:
             love_sentences = ["AI正在思考中...", "请稍等片刻...", "正在处理您的请求..."]
 
+        # ── 跨平台 ESC 检测 ──
         def check_for_esc():
-            try:
-                import msvcrt
-                while animation_running:
-                    if msvcrt.kbhit():
-                        key = msvcrt.getch()
-                        if ord(key) == 27:
-                            esc_pressed.set()
-                            break
-                    time.sleep(0.1)
-            except ImportError:
-                pass
+            """跨平台 ESC 键检测"""
+            import platform
+            if platform.system() == 'Windows':
+                try:
+                    import msvcrt
+                    while animation_running.is_set():
+                        if msvcrt.kbhit():
+                            key = msvcrt.getch()
+                            if ord(key) == 27:  # ESC
+                                esc_pressed.set()
+                                break
+                        time.sleep(0.05)
+                except ImportError:
+                    pass
+            else:
+                # Linux / macOS — 用 select 做非阻塞读取
+                import select
+                import sys
+                try:
+                    # 保存原始终端设置
+                    import tty, termios
+                    fd = sys.stdin.fileno()
+                    old_settings = termios.tcgetattr(fd)
+                    try:
+                        tty.setcbreak(fd)  # cbreak 模式：无需回车即可读取
+                        while animation_running.is_set():
+                            if select.select([sys.stdin], [], [], 0.05)[0]:
+                                ch = sys.stdin.read(1)
+                                if ord(ch) == 27:  # ESC
+                                    esc_pressed.set()
+                                    break
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    # 降级：无法检测 ESC，只能等 AI 完成
+                    pass
 
+        # ── 动画线程 ──
         def show_animation():
             last_change_time = time.time()
             current_sentence = random.choice(love_sentences)
-            while animation_running:
+            while animation_running.is_set():
                 current_time = time.time()
                 if current_time - last_change_time >= 5:
                     current_sentence = random.choice(love_sentences)
@@ -732,24 +763,46 @@ multi 操作支持一次修改多处：
                 print(f"\r{Fore.MAGENTA}{display_sentence} {animation_chars[char_idx]}{Style.RESET_ALL}", end="", flush=True)
                 time.sleep(0.1)
 
-        animation_thread = threading.Thread(target=show_animation)
-        animation_thread.daemon = True
-        animation_thread.start()
-        esc_thread = threading.Thread(target=check_for_esc)
-        esc_thread.daemon = True
-        esc_thread.start()
+        # ── AI 响应线程 ──
+        def generate_in_thread():
+            try:
+                system_prompt = self._build_system_prompt(liugin_prompts)
+                if not self.current_engine:
+                    response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
+                else:
+                    response_result[0] = self.current_engine.generate_response(
+                        current_input, system_prompt=system_prompt
+                    )
+            except Exception as e:
+                response_result[0] = f"AI 响应生成失败: {e}"
+            finally:
+                response_ready.set()
+
+        # 启动三个线程
+        threads = []
+        for target in (show_animation, check_for_esc, generate_in_thread):
+            t = threading.Thread(target=target, daemon=True)
+            t.start()
+            threads.append(t)
+
         try:
-            system_prompt = self._build_system_prompt(liugin_prompts)
-            if not self.current_engine:
-                return "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
+            # 主线程等待：ESC 或 响应完成
+            while not response_ready.is_set() and not esc_pressed.is_set():
+                time.sleep(0.1)
 
-            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt)
-            if response:
-                self._typeprint(response, Fore.CYAN)
-
+            # ESC 被按下 → 取消
             if esc_pressed.is_set():
-                print(f"\n{Fore.YELLOW}[AI请求已取消]{Style.RESET_ALL}")
+                # 清除动画行
+                print("\r" + " " * 80 + "\r", end="", flush=True)
+                print(f"\n{Fore.YELLOW}⚡ AI 请求已取消 (ESC){Style.RESET_ALL}")
                 return "[AI请求已取消]"
+
+            # 响应正常返回
+            response = response_result[0]
+            if response:
+                # 清除动画行后再输出
+                print("\r" + " " * 80 + "\r", end="", flush=True)
+                self._typeprint(response, Fore.CYAN)
 
             if response and self.shared_conversation_history is not None:
                 self.shared_conversation_history.append({
@@ -758,11 +811,11 @@ multi 操作支持一次修改多处：
                 })
 
             return response
+
         finally:
-            animation_running = False
-            animation_thread.join()
-            esc_thread.join()
-            print("\r" + " " * 50 + "\r", end="", flush=True)
+            animation_running.clear()
+            for t in threads:
+                t.join(timeout=1)
 
     # ── CLI 主循环 ──
 
