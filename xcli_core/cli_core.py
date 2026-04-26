@@ -17,6 +17,7 @@ from .cli_tools import ToolMixin
 from .cli_code_exec import CodeExecMixin
 from .cli_display import DisplayMixin
 from .cli_history import HistoryMixin
+from .notification import notify_task_complete, get_notification_manager
 
 
 class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, HistoryMixin):
@@ -663,6 +664,18 @@ multi 操作支持一次修改多处：
                 "content": f"已达到最大处理次数 ({max_loops})，已自动停止。如需继续处理，请重新输入。"
             })
 
+        # ── 任务完成通知 ──
+        task_summary = self._extract_task_summary(user_input)
+        notify_task_complete(task_summary)
+
+    def _extract_task_summary(self, user_input: str) -> str:
+        """提取任务摘要用于通知显示"""
+        # 取用户输入的前 80 字符作为摘要
+        summary = user_input.strip().replace('\n', ' ')
+        if len(summary) > 80:
+            summary = summary[:77] + "..."
+        return summary
+
     def _generate_response_with_animation(self, current_input, liugin_prompts=None):
         """生成AI响应并显示等待动画"""
         # TUI 模式：不做动画
@@ -775,6 +788,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/engine list' 查看可用AI引擎{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/engine switch <引擎名>' 切换AI引擎{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/notify' 切换任务完成通知 (开/关){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/file.read <文件名> [行数]' 直接读取文件内容{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@文件路径' 自动读取文件内容并发送给AI{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@图片路径' 自动分析图片并发送描述给AI{Style.RESET_ALL}")
@@ -908,6 +922,28 @@ multi 操作支持一次修改多处：
                     icons = {"无限制": "", "普通": "", "人工确认": ""}
                     icon = icons.get(mode_name, "")
                     print(f"{icon} 安全模式: {mode_name}")
+                    continue
+
+                if user_input.startswith('/notify'):
+                    parts = user_input.split()
+                    nm = get_notification_manager()
+                    if len(parts) > 1:
+                        arg = parts[1].lower()
+                        if arg in ('on', '开启', '启用'):
+                            nm.set_enabled(True)
+                            print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
+                        elif arg in ('off', '关闭', '禁用'):
+                            nm.set_enabled(False)
+                            print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.RED}用法: /notify [on|off]{Style.RESET_ALL}")
+                    else:
+                        # 无参数：切换状态
+                        nm.set_enabled(not nm.enabled)
+                        if nm.enabled:
+                            print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
                     continue
 
                 if user_input.startswith('/'):
