@@ -789,6 +789,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/engine switch <引擎名>' 切换AI引擎{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/notify' 切换任务完成通知 (开/关){Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/scheduler' 或 '/remind' 管理定时任务{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/file.read <文件名> [行数]' 直接读取文件内容{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@文件路径' 自动读取文件内容并发送给AI{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@图片路径' 自动分析图片并发送描述给AI{Style.RESET_ALL}")
