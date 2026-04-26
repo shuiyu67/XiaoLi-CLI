@@ -225,6 +225,15 @@ multi 操作支持一次修改多处：
 【continue 格式】
 {{"action": "continue", "content": "要补充的内容"}}"""
 
+        # ── 注入持久化记忆上下文 ──
+        if hasattr(self, 'memory_manager') and self.memory_manager:
+            try:
+                memory_ctx = self.memory_manager.build_memory_context()
+                if memory_ctx:
+                    prompt += memory_ctx
+            except Exception:
+                pass
+
         return prompt
 
     # ── JSON 解析 ──
@@ -668,6 +677,28 @@ multi 操作支持一次修改多处：
         task_summary = self._extract_task_summary(user_input)
         notify_task_complete(task_summary)
 
+        # ── 自动保存聊天记录 ──
+        if hasattr(self, 'memory_manager') and self.memory_manager:
+            try:
+                self.memory_manager.auto_save_chat(
+                    self.shared_conversation_history,
+                    label=user_input[:30]
+                )
+            except Exception:
+                pass
+
+            # ── 自动压缩上下文 ──
+            try:
+                if self.memory_manager.should_compress(self.shared_conversation_history):
+                    self.shared_conversation_history = self.memory_manager.compress_context(
+                        self.shared_conversation_history,
+                        engine=self.current_engine
+                    )
+                    self._set_shared_conversation_history()
+                    print(f"{Fore.DIM}[上下文已压缩，保留最近 10 条]{Style.RESET_ALL}")
+            except Exception:
+                pass
+
     def _extract_task_summary(self, user_input: str) -> str:
         """提取任务摘要用于通知显示"""
         # 取用户输入的前 80 字符作为摘要
@@ -843,6 +874,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/notify' 切换任务完成通知 (开/关){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/scheduler' 或 '/remind' 管理定时任务{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/memory' 管理记忆系统 (日记/搜索/聊天记录){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/file.read <文件名> [行数]' 直接读取文件内容{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@文件路径' 自动读取文件内容并发送给AI{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '@图片路径' 自动分析图片并发送描述给AI{Style.RESET_ALL}")
