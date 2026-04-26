@@ -1,4 +1,4 @@
-"""TUI 界面模块 - Textual TUI 实现"""
+"""TUI 界面模块 - Textual TUI 实现 (动画增强版 + 多行输入)"""
 
 from .constants import TEXTUAL_AVAILABLE
 
@@ -7,21 +7,13 @@ if TEXTUAL_AVAILABLE:
     import asyncio
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical, VerticalScroll, Container
-    from textual.widgets import (
-        Header, Footer, Input, Static, Rule, Label,
-        DataTable, ProgressBar, TabbedContent, TabPane
-    )
-    from textual.reactive import reactive, var
-    from textual.message import Message
+    from textual.widgets import Header, Static, Rule, TextArea
+    from textual.reactive import var
     from textual.binding import Binding
-    from textual import work, on
-    from rich.text import Text
-    from rich.markdown import Markdown as RichMarkdown
+    from textual import on
     from rich.syntax import Syntax
     from rich.panel import Panel
-    from rich.table import Table
-    from rich.tree import Tree as RichTree
-    from rich.box import ROUNDED, HEAVY, DOUBLE
+    from rich.box import ROUNDED
 
     # ── TUI 主题色 ──
     class _Theme:
@@ -42,70 +34,291 @@ if TEXTUAL_AVAILABLE:
         TOOL = "#56d364"
         TOOL_ERR = "#f85149"
         CODE_BG = "#161b22"
+        # 动画额外色
+        GLOW = "#1f6feb"
+        THINKING = "#8b949e"
+        WELCOME_ACCENT = "#58a6ff"
 
     _TUI_CSS = f"""
-    Screen {{ background: {_Theme.BG}; }}
-    #app-container {{ height: 100%; width: 100%; }}
-    #main {{ width: 1fr; height: 1fr; }}
+    Screen {{
+        background: {_Theme.BG};
+        /* 全局过渡 */
+        transition: background 300ms in_out_cubic;
+    }}
+
+    #app-container {{
+        height: 100%;
+        width: 100%;
+    }}
+
+    #main {{
+        width: 1fr;
+        height: 1fr;
+    }}
+
     #chat-scroll {{
-        height: 1fr; background: {_Theme.BG};
+        height: 1fr;
+        background: {_Theme.BG};
         scrollbar-color: {_Theme.BORDER};
         scrollbar-color-hover: {_Theme.TEXT_MUTED};
         padding: 0 1;
+        /* 平滑滚动 */
+        scroll-behavior: smooth;
     }}
+
+    /* ── 输入区域 ── */
     #input-area {{
-        height: auto; min-height: 4; max-height: 10; padding: 1 1 0 1;
+        height: auto;
+        min-height: 5;
+        max-height: 14;
+        padding: 0 1 1 1;
     }}
-    #user-input {{
-        height: auto; min-height: 3;
+
+    #input-wrapper {{
+        height: auto;
+        min-height: 4;
+        max-height: 12;
         background: {_Theme.BG_INPUT};
         border: tall {_Theme.BORDER};
-        color: {_Theme.TEXT}; padding: 0 1;
+        padding: 0;
+        /* 聚焦时边框颜色过渡 */
+        transition: border-color 300ms in_out_cubic;
     }}
-    #user-input:focus {{ border: tall {_Theme.BORDER_FOCUS}; }}
-    #input-hint {{
-        height: 1; color: {_Theme.TEXT_DIM};
+
+    #input-wrapper:focus-within {{
+        border: tall {_Theme.BORDER_FOCUS};
+        background: {_Theme.BG};
+    }}
+
+    #user-input {{
+        height: auto;
+        min-height: 3;
+        max-height: 10;
+        background: transparent;
+        color: {_Theme.TEXT};
         padding: 0 1;
+        border: none;
     }}
+
+    #user-input:focus {{
+        background: transparent;
+    }}
+
+    /* TextArea 内部样式覆盖 */
+    #user-input .text-area--cursor {{
+        color: {_Theme.ACCENT};
+    }}
+
+    #user-input .text-area--cursor-line {{
+        background: {_Theme.BG_LIGHT} 50%;
+    }}
+
+    #user-input .text-area--selection {{
+        background: {_Theme.GLOW} 40%;
+    }}
+
+    #input-hint {{
+        height: 1;
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1;
+        /* 渐入效果 */
+        opacity: 0;
+        transition: opacity 500ms in_out_cubic;
+    }}
+
+    #input-hint.visible {{
+        opacity: 1;
+    }}
+
+    /* ── 侧栏 ── */
     #sidebar {{
-        width: 32; min-width: 32; height: 1fr;
+        width: 32;
+        min-width: 32;
+        height: 1fr;
         background: {_Theme.BG_LIGHT};
         border-left: wide {_Theme.BORDER};
         display: block;
+        /* 侧栏滑入/滑出动画 */
+        transition: width 300ms in_out_cubic, opacity 300ms in_out_cubic;
+        overflow: hidden;
     }}
-    #sidebar.hidden {{ display: none; width: 0; min-width: 0; }}
+
+    #sidebar.hidden {{
+        display: none;
+        width: 0;
+        min-width: 0;
+        opacity: 0;
+    }}
+
     .sidebar-header {{
-        width: 100%; text-align: center;
-        color: {_Theme.ACCENT}; text-style: bold;
+        width: 100%;
+        text-align: center;
+        color: {_Theme.ACCENT};
+        text-style: bold;
         padding: 1 0 0 0;
     }}
-    .sidebar-section {{ height: auto; padding: 0 1; margin: 0 0 1 0; }}
-    .engine-item {{ padding: 0 1; color: {_Theme.TEXT_MUTED}; }}
-    .engine-item-active {{ padding: 0 1; color: {_Theme.SUCCESS}; text-style: bold; }}
-    .tool-item {{ padding: 0 0 0 1; color: {_Theme.TEXT_MUTED}; }}
-    .tool-item-name {{ color: {_Theme.TEXT}; text-style: bold; }}
-    #status-bar {{
-        height: 1; width: 100%; dock: bottom;
-        background: {_Theme.BG_LIGHT};
-        color: {_Theme.TEXT_MUTED}; padding: 0 1;
+
+    .sidebar-section {{
+        height: auto;
+        padding: 0 1;
+        margin: 0 0 1 0;
     }}
-    .msg-user {{ color: {_Theme.USER}; padding: 1 0 0 1; text-style: bold; }}
-    .msg-ai {{ color: {_Theme.AI}; padding: 0 1; }}
-    .msg-system {{ color: {_Theme.ACCENT}; padding: 0 1; }}
-    .msg-tool-ok {{ color: {_Theme.TOOL}; padding: 0 1; }}
-    .msg-tool-err {{ color: {_Theme.TOOL_ERR}; padding: 0 1; }}
-    .msg-thinking {{ color: {_Theme.TEXT_DIM}; text-style: italic; padding: 0 1; }}
-    .msg-error {{ color: {_Theme.ERROR}; padding: 0 1; }}
-    .msg-dim {{ color: {_Theme.TEXT_DIM}; padding: 0 1; }}
-    .msg-welcome {{ color: {_Theme.ACCENT}; padding: 0 1; text-style: bold; }}
+
+    .engine-item {{
+        padding: 0 1;
+        color: {_Theme.TEXT_MUTED};
+    }}
+
+    .engine-item-active {{
+        padding: 0 1;
+        color: {_Theme.SUCCESS};
+        text-style: bold;
+    }}
+
+    .tool-item {{
+        padding: 0 0 0 1;
+        color: {_Theme.TEXT_MUTED};
+    }}
+
+    .tool-item-name {{
+        color: {_Theme.TEXT};
+        text-style: bold;
+    }}
+
+    /* ── 状态栏 ── */
+    #status-bar {{
+        height: 1;
+        width: 100%;
+        dock: bottom;
+        background: {_Theme.BG_LIGHT};
+        color: {_Theme.TEXT_MUTED};
+        padding: 0 1;
+        /* 状态变化过渡 */
+        transition: color 300ms in_out_cubic;
+    }}
+
+    /* ── 消息样式 ── */
+    .msg-user {{
+        color: {_Theme.USER};
+        padding: 1 0 0 1;
+        text-style: bold;
+    }}
+
+    .msg-ai {{
+        color: {_Theme.AI};
+        padding: 0 1;
+    }}
+
+    .msg-system {{
+        color: {_Theme.ACCENT};
+        padding: 0 1;
+    }}
+
+    .msg-tool-ok {{
+        color: {_Theme.TOOL};
+        padding: 0 1;
+    }}
+
+    .msg-tool-err {{
+        color: {_Theme.TOOL_ERR};
+        padding: 0 1;
+    }}
+
+    .msg-thinking {{
+        color: {_Theme.THINKING};
+        text-style: italic;
+        padding: 0 1;
+    }}
+
+    .msg-error {{
+        color: {_Theme.ERROR};
+        padding: 0 1;
+    }}
+
+    .msg-dim {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1;
+    }}
+
+    .msg-welcome {{
+        color: {_Theme.WELCOME_ACCENT};
+        padding: 0 1;
+        text-style: bold;
+    }}
+
+    .msg-welcome-line {{
+        color: {_Theme.WELCOME_ACCENT};
+        padding: 0 1;
+        text-style: bold;
+        /* 每行依次淡入 */
+        opacity: 0;
+        transition: opacity 400ms in_out_cubic;
+    }}
+
+    .msg-welcome-line.visible {{
+        opacity: 1;
+    }}
+
+    .msg-system-line {{
+        color: {_Theme.ACCENT};
+        padding: 0 1;
+        opacity: 0;
+        transition: opacity 400ms in_out_cubic;
+    }}
+
+    .msg-system-line.visible {{
+        opacity: 1;
+    }}
+
+    /* 动画思考指示器 */
+    .thinking-indicator {{
+        color: {_Theme.THINKING};
+        text-style: italic;
+        padding: 0 1;
+    }}
+
     .code-block {{
         background: {_Theme.CODE_BG};
         border: wide {_Theme.BORDER};
-        padding: 0 1; margin: 0 2 0 2;
+        padding: 0 1;
+        margin: 0 2 0 2;
     }}
-    Tab {{ background: {_Theme.BG}; }}
-    Tab.-active {{ background: {_Theme.BG_LIGHT}; }}
-    TabbedContent > Tabs {{ background: {_Theme.BG}; }}
+
+    /* ── Tab 样式 ── */
+    Tab {{
+        background: {_Theme.BG};
+    }}
+
+    Tab.-active {{
+        background: {_Theme.BG_LIGHT};
+    }}
+
+    TabbedContent > Tabs {{
+        background: {_Theme.BG};
+    }}
+
+    /* ── 闪光动画 keyframes ── */
+    @keyframes pulse-glow {{
+        0% {{ color: {_Theme.THINKING}; }}
+        50% {{ color: {_Theme.ACCENT}; }}
+        100% {{ color: {_Theme.THINKING}; }}
+    }}
+
+    @keyframes fade-in {{
+        from {{ opacity: 0; }}
+        to {{ opacity: 1; }}
+    }}
+
+    @keyframes slide-in-right {{
+        from {{ offset-x: 100%; }}
+        to {{ offset-x: 0; }}
+    }}
+
+    @keyframes bounce-in {{
+        0% {{ opacity: 0; offset-y: 5%; }}
+        60% {{ opacity: 1; offset-y: -1%; }}
+        100% {{ opacity: 1; offset-y: 0; }}
+    }}
     """
 
     class _TUIBridge:
@@ -126,8 +339,101 @@ if TEXTUAL_AVAILABLE:
                 return True
             return False
 
+
+    # ═══════════════════════════════════════════════════
+    #  动画辅助组件
+    # ═══════════════════════════════════════════════════
+
+    class ThinkingSpinner(Static):
+        """动态思考指示器 - 旋转 + 脉冲"""
+        FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        DOTS_FRAMES = ["   ", ".  ", ".. ", "..."]
+
+        def __init__(self, **kwargs):
+            super().__init__("", **kwargs)
+            self._frame = 0
+            self._dot_frame = 0
+            self._running = False
+
+        def on_mount(self):
+            self._running = True
+            self.set_interval(0.08, self._animate)
+
+        def _animate(self):
+            if not self._running:
+                return
+            spinner = self.FRAMES[self._frame % len(self.FRAMES)]
+            dots = self.DOTS_FRAMES[self._dot_frame % len(self.DOTS_FRAMES)]
+            self.update(f"  {spinner} 思考中{dots}")
+            self._frame += 1
+            if self._frame % 3 == 0:
+                self._dot_frame += 1
+
+        def stop(self):
+            self._running = False
+
+
+    class AnimatedWelcome(Static):
+        """逐行动画显示的欢迎组件"""
+        def __init__(self, lines, **kwargs):
+            super().__init__("", **kwargs)
+            self._lines = lines
+            self._current = 0
+
+        def on_mount(self):
+            self.set_interval(0.12, self._show_next_line)
+
+        def _show_next_line(self):
+            if self._current < len(self._lines):
+                current_text = self.renderable
+                new_line = self._lines[self._current]
+                if self._current == 0:
+                    self.update(new_line)
+                else:
+                    self.update(str(current_text) + "\n" + new_line)
+                self._current += 1
+
+
+    class MessageBubble(Static):
+        """带入场动画的消息气泡"""
+        def __init__(self, text, **kwargs):
+            super().__init__(text, **kwargs)
+            self.styles.opacity = 0
+
+        def on_mount(self):
+            self.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
+
+
+    class TypingIndicator(Static):
+        """打字指示器 - 模拟 AI 正在打字"""
+        FRAMES = ["●○○", "○●○", "○○●", "○●○"]
+
+        def __init__(self, **kwargs):
+            super().__init__("", **kwargs)
+            self._frame = 0
+            self._running = False
+
+        def on_mount(self):
+            self._running = True
+            self.set_interval(0.3, self._tick)
+
+        def _tick(self):
+            if not self._running:
+                return
+            dots = self.FRAMES[self._frame % len(self.FRAMES)]
+            self.update(f"  {dots} AI 正在输入")
+            self._frame += 1
+
+        def stop(self):
+            self._running = False
+
+
+    # ═══════════════════════════════════════════════════
+    #  TUI 主应用
+    # ═══════════════════════════════════════════════════
+
     class XiaoliTUI(App):
-        """小狸 TUI v2 - GitHub 暗色主题"""
+        """小狸 TUI v3 - 动画增强版 + 多行输入"""
         CSS = _TUI_CSS
         TITLE = " 小狸 Pro-CLI"
         SUB_TITLE = "智能编程助手"
@@ -136,6 +442,7 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+c", "quit", "退出", show=True),
             Binding("ctrl+l", "clear", "清屏", show=True),
             Binding("ctrl+n", "new_chat", "新对话", show=True),
+            Binding("ctrl+enter", "send_message", "发送", show=True),
             Binding("f1", "toggle_sidebar", "侧栏", show=True),
             Binding("escape", "cancel", "取消", show=False),
         ]
@@ -147,6 +454,8 @@ if TEXTUAL_AVAILABLE:
             super().__init__()
             self.cli = cli
             self.bridge = _TUIBridge(cli)
+            self._thinking_widget = None
+            self._typing_widget = None
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
@@ -154,12 +463,15 @@ if TEXTUAL_AVAILABLE:
                 with Vertical(id="main"):
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
-                        yield Input(
-                            placeholder="  输入消息... (Enter 发送, /help 帮助)",
-                            id="user-input"
-                        )
+                        with Container(id="input-wrapper"):
+                            yield TextArea(
+                                placeholder="输入消息... (Ctrl+Enter 发送, Enter 换行)",
+                                id="user-input",
+                                soft_wrap=True,
+                                tab_behavior="indent",
+                            )
                         yield Static(
-                            "  Tab 补全 | ↑↓ 历史 | Ctrl+L 清屏 | F1 侧栏",
+                            "  Ctrl+Enter 发送 | ↑↓ 历史 | Ctrl+L 清屏 | F1 侧栏 | Tab 缩进",
                             id="input-hint"
                         )
                 with Vertical(id="sidebar"):
@@ -174,28 +486,81 @@ if TEXTUAL_AVAILABLE:
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
         def on_mount(self):
-            self._render_welcome()
+            self._render_welcome_animated()
             self._update_sidebar()
             self.query_one("#user-input").focus()
+            # 延迟显示输入提示（淡入效果）
+            self.set_timer(1.5, lambda: self.query_one("#input-hint").add_class("visible"))
+
+        # ── 动画欢迎界面 ──
+
+        def _render_welcome_animated(self):
+            """逐行动画显示欢迎界面"""
+            scroll = self.query_one("#chat-scroll")
+
+            welcome_lines = [
+                "",
+                "  ╔══════════════════════════════════════════════╗",
+                "  ║                                              ║",
+                "  ║    小狸 Pro-CLI v5.1                        ║",
+                "  ║    智能编程助手 · 动画增强版                  ║",
+                "  ║                                              ║",
+                "  ╚══════════════════════════════════════════════╝",
+                "",
+                "   代码编辑 · 代码搜索 · Git 集成 · 多引擎",
+                "   输入 /help 查看命令 | /model 切换引擎",
+                f"   当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个",
+                "   支持多行输入 — Ctrl+Enter 发送",
+                "",
+            ]
+
+            # 逐行渲染，带延迟
+            for i, line in enumerate(welcome_lines):
+                if "╔" in line or "║" in line or "╚" in line:
+                    cls = "msg-welcome-line"
+                elif line.strip().startswith("小狸"):
+                    cls = "msg-welcome-line"
+                elif line.strip().startswith("智能"):
+                    cls = "msg-welcome-line"
+                elif "代码编辑" in line or "输入 /help" in line or "当前引擎" in line:
+                    cls = "msg-system-line"
+                elif "多行输入" in line:
+                    cls = "msg-system-line"
+                else:
+                    cls = "msg-dim"
+
+                widget = Static(line, classes=cls)
+                scroll.mount(widget)
+                # 延迟显示每一行
+                delay = i * 0.1
+                self.set_timer(delay, lambda w=widget: w.add_class("visible"))
+
+            # 最后滚动到底部
+            self.set_timer(len(welcome_lines) * 0.1 + 0.1,
+                          lambda: scroll.scroll_end(animate=True, duration=0.3))
 
         def _render_welcome(self):
+            """静态欢迎界面（用于清屏后快速恢复）"""
             scroll = self.query_one("#chat-scroll")
             lines = [
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║    小狸 Pro-CLI v5.1                       ║", "msg-welcome"),
-                ("  ║   智能编程助手              ║", "msg-welcome"),
+                ("  ║    小狸 Pro-CLI v5.1                        ║", "msg-welcome"),
+                ("  ║    智能编程助手 · 动画增强版                  ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
                 ("", "msg-dim"),
                 ("   代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
                 ("   输入 /help 查看命令 | /model 切换引擎", "msg-system"),
                 (f"   当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
+                ("   支持多行输入 — Ctrl+Enter 发送", "msg-system"),
                 ("", "msg-dim"),
             ]
             for text, cls in lines:
                 scroll.mount(Static(text, classes=cls))
+
+        # ── 侧栏更新 ──
 
         def _update_sidebar(self):
             engine_container = self.query_one("#engine-list")
@@ -224,13 +589,16 @@ if TEXTUAL_AVAILABLE:
             engine = self.bridge.current_engine()
             bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话")
 
+        # ── 消息追加 ──
+
         def _append(self, widget):
             scroll = self.query_one("#chat-scroll")
             scroll.mount(widget)
-            scroll.scroll_end(animate=False)
+            scroll.scroll_end(animate=True, duration=0.2)
 
         def _add(self, text, cls="msg-dim"):
-            self._append(Static(text, classes=cls))
+            widget = MessageBubble(text, classes=cls)
+            self._append(widget)
 
         def _user_msg(self, text):
             self._add(f"   {text}", "msg-user")
@@ -255,8 +623,10 @@ if TEXTUAL_AVAILABLE:
                     try:
                         syntax = Syntax(code, lang or "python", theme="monokai",
                                         line_numbers=True, word_wrap=True)
-                        self._append(Panel(syntax, border_style=f"dim {_Theme.BORDER}",
-                                           box=ROUNDED, padding=(0, 1)))
+                        panel = Panel(syntax, border_style=f"dim {_Theme.BORDER}",
+                                     box=ROUNDED, padding=(0, 1))
+                        widget = MessageBubble(str(panel), classes="code-block")
+                        self._append(widget)
                     except Exception:
                         for line in code.split('\n'):
                             self._add(f"    {line}", "msg-dim")
@@ -268,8 +638,47 @@ if TEXTUAL_AVAILABLE:
         def _tool_err(self, name, args):
             self._add(f"   {name}: {args[:60]}", "msg-tool-err")
 
+        def _show_thinking(self):
+            """显示动画思考指示器"""
+            self._remove_thinking()
+            spinner = ThinkingSpinner(classes="thinking-indicator")
+            scroll = self.query_one("#chat-scroll")
+            scroll.mount(spinner)
+            scroll.scroll_end(animate=True, duration=0.2)
+            self._thinking_widget = spinner
+
+        def _remove_thinking(self):
+            """移除思考指示器"""
+            if self._thinking_widget:
+                try:
+                    self._thinking_widget.stop()
+                    self._thinking_widget.remove()
+                except Exception:
+                    pass
+                self._thinking_widget = None
+
+        def _show_typing_indicator(self):
+            """显示打字指示器"""
+            self._remove_typing_indicator()
+            indicator = TypingIndicator(classes="thinking-indicator")
+            scroll = self.query_one("#chat-scroll")
+            scroll.mount(indicator)
+            scroll.scroll_end(animate=True, duration=0.2)
+            self._typing_widget = indicator
+
+        def _remove_typing_indicator(self):
+            """移除打字指示器"""
+            if self._typing_widget:
+                try:
+                    self._typing_widget.stop()
+                    self._typing_widget.remove()
+                except Exception:
+                    pass
+                self._typing_widget = None
+
         def _thinking(self):
-            self._add("   思考中...", "msg-thinking")
+            """兼容旧接口"""
+            self._show_thinking()
 
         def _system(self, text):
             self._add(f"  ℹ  {text}", "msg-system")
@@ -277,22 +686,41 @@ if TEXTUAL_AVAILABLE:
         def _error(self, text):
             self._add(f"    {text}", "msg-error")
 
-        @on(Input.Submitted, "#user-input")
-        def on_input(self, event):
-            text = event.value.strip()
+        # ── 多行输入处理 ──
+
+        def action_send_message(self):
+            """Ctrl+Enter 发送消息"""
+            text_area = self.query_one("#user-input")
+            text = text_area.text.strip()
             if not text:
                 return
-            event.input.value = ""
+
+            # 清空输入框
+            text_area.clear()
 
             if text.startswith('/'):
                 self._handle_command(text)
                 return
 
             self._user_msg(text)
-            self._thinking()
+            self._show_thinking()
             self.is_generating = True
             self._update_status(" 思考中...")
             self.run_worker(self._generate(text), exclusive=True)
+
+        # ── 兼容旧 Input 提交（保留以防万一） ──
+
+        @on(TextArea.Changed, "#user-input")
+        def on_textarea_changed(self, event):
+            """输入框内容变化时调整高度"""
+            text_area = event.text_area
+            line_count = text_area.text.count('\n') + 1
+            # 动态调整输入区域高度
+            wrapper = self.query_one("#input-wrapper")
+            new_height = min(max(line_count + 1, 4), 12)
+            wrapper.styles.height = new_height
+
+        # ── 命令处理 ──
 
         def _handle_command(self, cmd):
             parts = cmd[1:].split(maxsplit=1)
@@ -342,9 +770,10 @@ if TEXTUAL_AVAILABLE:
   /clear         清屏
 
   ⌨  快捷键:
-  Ctrl+C   退出    Ctrl+L   清屏
-  Ctrl+N   新对话  F1       侧栏
-  Escape   取消生成"""
+  Ctrl+C     退出        Ctrl+L     清屏
+  Ctrl+N     新对话      Ctrl+Enter 发送消息
+  F1         侧栏        Escape     取消生成
+  Enter      换行        Tab        缩进"""
             self._system(help_text)
 
         def _switch_cli(self):
@@ -387,11 +816,15 @@ if TEXTUAL_AVAILABLE:
   工具数: {len(self.bridge.tools())}
   对话数: {len(self.bridge.history())}""")
 
+        # ── AI 生成 ──
+
         async def _generate(self, user_input):
             try:
                 self.call_after_refresh(self._remove_thinking)
+                self.call_after_refresh(self._show_typing_indicator)
 
                 def tui_output(msg):
+                    self.call_after_refresh(self._remove_typing_indicator)
                     self.call_after_refresh(self._write_raw, msg)
 
                 original = self.cli.tui_output_callback
@@ -406,23 +839,14 @@ if TEXTUAL_AVAILABLE:
                     self.cli.tui_output_callback = original
 
             except Exception as e:
+                self.call_after_refresh(self._remove_typing_indicator)
                 self.call_after_refresh(self._error, str(e))
             finally:
+                self.call_after_refresh(self._remove_thinking)
+                self.call_after_refresh(self._remove_typing_indicator)
                 self.is_generating = False
                 self.call_after_refresh(lambda: self._update_status("就绪"))
                 self.call_after_refresh(self._update_sidebar)
-
-        def _remove_thinking(self):
-            try:
-                scroll = self.query_one("#chat-scroll")
-                for child in reversed(list(scroll.children)):
-                    renderable = getattr(child, 'renderable', None)
-                    text = str(renderable) if renderable is not None else ""
-                    if '思考中' in text:
-                        child.remove()
-                        break
-            except Exception:
-                pass
 
         def _write_raw(self, msg):
             if '' in msg or 'OK 工具' in msg:
@@ -435,6 +859,8 @@ if TEXTUAL_AVAILABLE:
                 self._add(f"  {msg}", "msg-tool-ok")
             else:
                 self._add(f"  {msg}", "msg-dim")
+
+        # ── 动作 ──
 
         def action_clear(self):
             scroll = self.query_one("#chat-scroll")
@@ -449,9 +875,16 @@ if TEXTUAL_AVAILABLE:
         def action_toggle_sidebar(self):
             sidebar = self.query_one("#sidebar")
             sidebar.visible = not sidebar.visible
+            # 动画：侧栏切换时平滑过渡
+            if sidebar.visible:
+                sidebar.remove_class("hidden")
+            else:
+                sidebar.add_class("hidden")
 
         def action_cancel(self):
             if self.is_generating:
+                self._remove_thinking()
+                self._remove_typing_indicator()
                 self._system("已取消")
                 self.is_generating = False
 
