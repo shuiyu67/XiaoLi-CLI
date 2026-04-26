@@ -100,11 +100,21 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 在调用任何工具之前，你必须先使用 tool_search 查询该工具的详细用法、参数格式和示例。
 这是硬性要求，没有例外。即使你认为自己知道工具的用法，也必须先查询确认。
 
+【⚠️ 工具调用格式 — 必须使用 JSON】
+所有工具都必须通过 JSON 指令调用，格式如下：
+{{"action": "use_tool", "tool": "工具名", "args": "操作 参数"}}
+
+禁止直接写 "工具名 操作 参数"，必须包在 JSON 里。
+例如：
+  ✅ 正确: {{"action": "use_tool", "tool": "code_editor", "args": "find . keyword *.py"}}
+  ❌ 错误: code_editor find . keyword *.py
+  ❌ 错误: code_editor("find . keyword *.py")
+
 执行流程：
 第一步：用 tool_search 查询工具用法
-{"action": "use_tool", "tool": "tool_search", "args": "你要用的工具名"}
+{{"action": "use_tool", "tool": "tool_search", "args": "你要用的工具名"}}
 第二步：阅读 tool_search 返回的详细说明（包括参数格式、操作列表、示例）
-第三步：根据返回的说明，正确构造工具调用指令
+第三步：根据返回的说明，用 JSON 格式正确调用工具
 
 为什么要这样做：
 - 工具的参数格式可能已更新，你的记忆可能过时
@@ -116,17 +126,20 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 用户: "帮我修复 src/app.py 第 10 行的 bug"
 你的思考过程:
 1. 需要先查看代码 → 先查 code_editor 怎么读取文件
-2. tool_search "code_editor" → 发现 read_range 操作
-3. 调用 code_editor read_range src/app.py 5 15 → 拿到代码
+2. {{"action": "use_tool", "tool": "tool_search", "args": "code_editor"}} → 发现 read_range 操作
+3. {{"action": "use_tool", "tool": "code_editor", "args": "read_range src/app.py 5 15"}} → 拿到代码
 4. 需要修改代码 → 已经在第一步查过 code_editor，知道 edit 格式
-5. 调用 code_editor edit src/app.py 旧代码 <<<>>> 新代码
+5. {{"action": "use_tool", "tool": "code_editor", "args": "edit src/app.py
+旧代码
+<<<>>>
+新代码"}}
 
 示例流程（Git 操作）：
 用户: "帮我提交代码"
 你的思考过程:
 1. 需要 git 操作 → 先查 git_tools 怎么用
-2. tool_search "git_tools" → 发现 smart-commit 操作
-3. 调用 git_tools smart-commit → 自动提交"""
+2. {{"action": "use_tool", "tool": "tool_search", "args": "git_tools"}} → 发现 smart-commit 操作
+3. {{"action": "use_tool", "tool": "git_tools", "args": "smart-commit"}} → 自动提交"""
 
         if liugin_prompts:
             prompt = f"""{base_prompt}
@@ -226,9 +239,9 @@ multi 操作支持一次修改多处：
         return response.strip()
 
     def get_liugin_usage_prompts(self):
-        """获取插件和技能提示词"""
+        """获取可用工具提示词"""
         if not self.liugin_manager.tools:
-            return "当前没有可用的工具插件."
+            return "当前没有可用的工具."
 
         prompts = []
         prompts.append("可用的工具列表：\n")
@@ -243,14 +256,14 @@ multi 操作支持一次修改多处：
                 plugins.append(tool)
 
         if plugins:
-            prompts.append("## Plugin 工具（使用 tool_search 查询详细用法）：")
+            prompts.append("## 内置工具（使用 tool_search 查询详细用法）：")
             for tool in plugins:
                 tool_name = tool.get('name', '')
                 tool_desc = tool.get('description', '')
                 prompts.append(f"- {tool_name}: {tool_desc}")
 
         if skills:
-            prompts.append("\n## Agent Skills（已加载详细指令）：")
+            prompts.append("\n## 扩展技能（已加载详细指令）：")
             for tool in skills:
                 tool_name = tool.get('name', '')
                 tool_desc = tool.get('description', '')

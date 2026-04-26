@@ -1,5 +1,5 @@
 """
-代码工具插件 - 统一的代码编辑与搜索能力
+代码工具 - 统一的代码编辑与搜索能力
 合并原 code_editor + code_search，消除重复
 """
 import os
@@ -49,7 +49,7 @@ class Plugin:
     def get_tool_info(self):
         return {
             "name": "code_editor",
-            "description": "代码编辑与搜索 - 精准替换、批量编辑、代码搜索、符号提取、依赖分析、diff对比",
+            "description": "代码编辑与搜索 — 精准替换、批量编辑、代码搜索、符号提取、依赖分析、diff对比",
             "keywords": ["编辑", "修改", "代码", "文件", "edit", "replace", "search", "diff",
                          "find", "grep", "符号", "structure", "imports", "todo", "callers"],
             "usage": self.usage

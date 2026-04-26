@@ -1,11 +1,11 @@
 """
-工具搜索插件 - 支持按需发现工具
+工具搜索助手 - 支持按需发现工具
 """
 import json
 
 
 class Liugin:
-    """工具搜索插件 - 允许 AI 按需搜索和发现可用工具"""
+    """工具搜索助手 - 允许 AI 按需搜索和发现可用工具"""
 
     def __init__(self):
         self.usage = """工具搜索使用方法：
@@ -16,7 +16,7 @@ tool_search <关键词> - 根据关键词搜索可用工具
 - tool_search 网络 - 搜索与网络相关的工具
 - tool_search 图片 - 搜索与图片相关的工具
 
-此插件帮助 AI 在需要特定功能时快速找到合适的工具，
+此工具帮助 AI 在需要特定功能时快速找到合适的工具，
 而不是预加载所有工具到上下文中。"""
         self.cli = None
 
@@ -27,7 +27,7 @@ tool_search <关键词> - 根据关键词搜索可用工具
     def get_tool_info(self):
         return {
             "name": "tool_search",
-            "description": "工具搜索插件，支持按需发现和搜索可用工具。当你不确定有哪些工具可用时，可以使用此工具搜索相关功能的工具。",
+            "description": "工具搜索助手，支持按需发现和搜索可用工具。当你不确定有哪些工具可用时，可以使用此工具搜索相关功能的工具。",
             "keywords": ["搜索", "工具", "发现", "search", "tool", "find", "可用工具", "工具列表"],
             "usage": """tool_search 工具使用说明：
 JSON格式示例：
@@ -45,7 +45,7 @@ JSON格式示例：
     def get_mcp_definition(self):
         return {
             "name": "tool_search",
-            "description": "工具搜索插件，搜索可用工具的用法和信息",
+            "description": "工具搜索助手，搜索可用工具的用法和信息",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -120,7 +120,7 @@ JSON格式示例：
                 
                 return "\n".join(result_lines)
             else:
-                return "错误：无法访问插件管理器。"
+                return "错误：无法访问工具管理器。"
                 
         except Exception as e:
             return f"工具搜索失败: {str(e)}"
