@@ -6,6 +6,7 @@ import time
 import shutil
 import threading
 import random
+from typing import Optional
 from colorama import Fore, Style
 
 from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY
@@ -473,6 +474,14 @@ multi 操作支持一次修改多处：
             processed_response = self.process_thinking_response(response)
             processed_response = self._process_code_blocks(processed_response)
 
+            # ── Function Calling 响应检测 ──
+            fc_handled = self._handle_fc_response(processed_response, user_input)
+            if fc_handled:
+                # FC 工具已执行，用结果继续循环
+                current_input = fc_handled
+                loop_count += 1
+                continue
+
             try:
                 text_content, json_data = self._parse_mixed_response(processed_response)
 
@@ -707,6 +716,99 @@ multi 操作支持一次修改多处：
             summary = summary[:77] + "..."
         return summary
 
+    def _handle_fc_response(self, response: str, original_input: str) -> Optional[str]:
+        """
+        处理 Function Calling 响应
+        如果响应是 FC 格式，执行工具并返回结果（供下一轮循环使用）
+        如果不是 FC 响应，返回 None
+        """
+        if not response or '_fc' not in response:
+            return None
+
+        try:
+            data = json.loads(response)
+            if not data.get("_fc"):
+                return None
+
+            tool_calls = data.get("tool_calls", [])
+            if not tool_calls:
+                return None
+
+            # 记录 assistant 的 FC 消息到历史
+            fc_history_entry = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": tc.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": tc.get("name", ""),
+                        "arguments": json.dumps(tc.get("arguments", {}), ensure_ascii=False)
+                    }
+                } for tc in tool_calls]
+            }
+            self.shared_conversation_history.append(fc_history_entry)
+
+            # 执行每个工具调用
+            results = []
+            for tc in tool_calls:
+                tool_name = tc.get("tool", tc.get("name", ""))
+                tool_args = tc.get("args", "")
+                call_id = tc.get("id", "")
+
+                print(f"\n{Fore.GREEN}  FC 调用: {tool_name}({tool_args[:60]}){Style.RESET_ALL}")
+
+                # 通过插件管理器执行
+                result = self._execute_tool_by_name(tool_name, tool_args)
+
+                # 记录工具结果到历史
+                tool_result_msg = {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "content": result[:5000] if result else "执行完成"
+                }
+                self.shared_conversation_history.append(tool_result_msg)
+
+                results.append(f"[{tool_name}]: {result[:200] if result else '完成'}")
+
+            # 返回工具结果，供下一轮 AI 处理
+            return "工具执行结果:\n" + "\n".join(results)
+
+        except (ValueError, KeyError, TypeError):
+            return None
+
+    def _execute_tool_by_name(self, tool_name: str, tool_args: str) -> str:
+        """根据名称执行工具（FC 调用路径）"""
+        # 安全检查
+        safety = get_safety()
+        allowed, msg = safety.check(tool_name, tool_args)
+        if not allowed:
+            return f"操作被拒绝: {msg}"
+
+        # 查找工具
+        tool = self.liugin_manager.get_tool_by_name(tool_name)
+        if tool and 'handler' in tool:
+            try:
+                return tool['handler'](tool_args)
+            except Exception as e:
+                return f"工具执行失败: {e}"
+
+        # memory 内置工具
+        if tool_name == 'memory' and hasattr(self, 'memory_manager'):
+            return self.memory_manager.handle_tool(tool_args)
+
+        # scheduler 内置工具
+        if tool_name == 'scheduler':
+            for t in self.liugin_manager.tools:
+                if t.get('name') == 'scheduler' and 'handler' in t:
+                    try:
+                        return t['handler'](tool_args)
+                    except Exception as e:
+                        return f"工具执行失败: {e}"
+
+        return f"未找到工具: {tool_name}"
+
     def _generate_response_with_animation(self, current_input, liugin_prompts=None):
         """生成AI响应并显示等待动画 — 支持 ESC 跨平台取消"""
         # TUI 模式：不做动画
@@ -714,7 +816,14 @@ multi 操作支持一次修改多处：
             system_prompt = self._build_system_prompt(liugin_prompts)
             if not self.current_engine:
                 return "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
-            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt)
+            # TUI 模式也支持 FC
+            fc_tools = None
+            try:
+                from .fc_tools import mcp_to_openai_tools
+                fc_tools = mcp_to_openai_tools(self.liugin_manager)
+            except Exception:
+                pass
+            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=fc_tools)
             if response and self.shared_conversation_history is not None:
                 self.shared_conversation_history.append({
                     "role": "assistant",
@@ -801,8 +910,18 @@ multi 操作支持一次修改多处：
                 if not self.current_engine:
                     response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
                 else:
+                    # ── 收集 FC 工具定义 ──
+                    fc_tools = None
+                    try:
+                        from .fc_tools import mcp_to_openai_tools
+                        fc_tools = mcp_to_openai_tools(self.liugin_manager)
+                        if fc_tools:
+                            fc_tools = fc_tools  # 已经是列表
+                    except Exception:
+                        fc_tools = None
+
                     response_result[0] = self.current_engine.generate_response(
-                        current_input, system_prompt=system_prompt
+                        current_input, system_prompt=system_prompt, tools=fc_tools
                     )
             except Exception as e:
                 response_result[0] = f"AI 响应生成失败: {e}"

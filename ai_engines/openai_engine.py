@@ -125,8 +125,16 @@ OpenAI 兼容格式引擎帮助信息
             url = url.rstrip('/') + '/chat/completions'
         return url
 
-    def generate_response(self, user_input, tool_results=None, system_prompt=None):
-        """生成 AI 响应"""
+    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
+        """
+        生成 AI 响应
+
+        Args:
+            user_input: 用户输入
+            tool_results: 工具执行结果
+            system_prompt: 系统提示词
+            tools: OpenAI FC 工具定义列表 (可选)
+        """
         try:
             if not self.base_url:
                 return "错误: openai 引擎的 base_url 未配置，请在 config.json 中设置"
@@ -145,6 +153,11 @@ OpenAI 兼容格式引擎帮助信息
                 "stream": False
             }
 
+            # ── Function Calling: 注入工具定义 ──
+            if tools:
+                body["tools"] = tools
+                body["tool_choice"] = "auto"
+
             # 发送请求
             api_url = self._get_api_url()
             response = requests.post(
@@ -157,18 +170,49 @@ OpenAI 兼容格式引擎帮助信息
             if response.status_code == 200:
                 response_data = response.json()
                 if "choices" in response_data and len(response_data["choices"]) > 0:
-                    ai_response = response_data["choices"][0]["message"]["content"]
-                    # 清理无效的 UTF-8 代理字符
-                    ai_response = ai_response.encode('utf-8', 'replace').decode('utf-8')
-                    # 处理思考内容
-                    ai_response = self._process_thinking_content(ai_response)
-                    return ai_response
+                    message = response_data["choices"][0].get("message", {})
+
+                    # ── Function Calling: 检查 tool_calls ──
+                    tool_calls_raw = message.get("tool_calls")
+                    if tool_calls_raw:
+                        # 返回 FC 结果（由调用方处理工具执行）
+                        from xcli_core.fc_tools import parse_fc_response
+                        fc_calls = parse_fc_response(response_data)
+                        if fc_calls:
+                            # 返回一个特殊的 JSON 字符串，标记为 FC 调用
+                            return json.dumps({
+                                "_fc": True,
+                                "tool_calls": fc_calls,
+                                "raw_message": message
+                            }, ensure_ascii=False)
+
+                    # 普通文本响应
+                    ai_response = message.get("content", "")
+                    if ai_response:
+                        # 清理无效的 UTF-8 代理字符
+                        ai_response = ai_response.encode('utf-8', 'replace').decode('utf-8')
+                        # 处理思考内容
+                        ai_response = self._process_thinking_content(ai_response)
+                    return ai_response or ""
                 else:
                     return f"API 返回格式错误: {response_data}"
             elif response.status_code == 401:
                 return "API 认证失败，请检查 api_key 是否正确"
             elif response.status_code == 404:
                 return f"API 端点不存在，请检查 base_url 是否正确: {api_url}"
+            elif response.status_code == 400:
+                # 工具定义可能不兼容，降级为无工具重试
+                if tools and "tools" in str(response.text).lower():
+                    print(f"{Fore.YELLOW}FC 不支持，降级为普通模式{Style.RESET_ALL}")
+                    body.pop("tools", None)
+                    body.pop("tool_choice", None)
+                    retry = requests.post(url=api_url, json=body, headers=self._get_headers(), timeout=None)
+                    if retry.status_code == 200:
+                        rd = retry.json()
+                        if "choices" in rd and rd["choices"]:
+                            ai_response = rd["choices"][0].get("message", {}).get("content", "")
+                            return ai_response.encode('utf-8', 'replace').decode('utf-8') if ai_response else ""
+                return f"API 调用失败: {response.status_code} - {response.text}"
             else:
                 return f"API 调用失败: {response.status_code} - {response.text}"
 
@@ -178,7 +222,7 @@ OpenAI 兼容格式引擎帮助信息
             return f"API 调用失败: {str(e)}"
 
     def _build_messages_with_history(self, system_prompt, user_input):
-        """构建包含历史记录的消息列表"""
+        """构建包含历史记录的消息列表（支持 FC tool 消息）"""
         messages = []
 
         # 添加系统提示词
@@ -192,11 +236,37 @@ OpenAI 兼容格式引擎帮助信息
         # 添加历史对话记录（使用共享历史）
         if self.shared_conversation_history is not None:
             for msg in self.shared_conversation_history[-self.max_history:]:
-                if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    clean_content = msg["content"].encode('utf-8', 'replace').decode('utf-8')
-                    messages.append({"role": msg["role"], "content": clean_content})
-                else:
+                if not isinstance(msg, dict) or "role" not in msg:
                     continue
+
+                role = msg["role"]
+
+                # tool 角色消息（FC 工具结果）
+                if role == "tool":
+                    tool_msg = {"role": "tool", "content": msg.get("content", "")}
+                    if "tool_call_id" in msg:
+                        tool_msg["tool_call_id"] = msg["tool_call_id"]
+                    if "name" in msg:
+                        tool_msg["name"] = msg["name"]
+                    messages.append(tool_msg)
+                    continue
+
+                # assistant 消息可能包含 tool_calls
+                if role == "assistant" and "tool_calls" in msg:
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": msg.get("content"),
+                        "tool_calls": msg["tool_calls"]
+                    }
+                    messages.append(assistant_msg)
+                    continue
+
+                # 普通 user/assistant 消息
+                if "content" in msg:
+                    clean_content = msg["content"]
+                    if isinstance(clean_content, str):
+                        clean_content = clean_content.encode('utf-8', 'replace').decode('utf-8')
+                    messages.append({"role": role, "content": clean_content})
 
         # 添加当前用户输入
         if user_input:

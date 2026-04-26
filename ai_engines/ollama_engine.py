@@ -107,74 +107,136 @@ Ollama AI引擎插件帮助信息
             # 如果出现异常,说明服务未运行
             return False
     
-    def generate_response(self, user_input, tool_results=None, system_prompt=None):
-        """生成AI响应 - 使用Ollama API"""
+    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
+        """
+        生成AI响应 - 使用Ollama API
+
+        Args:
+            user_input: 用户输入
+            tool_results: 工具执行结果
+            system_prompt: 系统提示词
+            tools: OpenAI FC 工具定义列表 (可选)
+        """
         try:
             # 检查Ollama服务是否运行
             if not self.is_service_running:
                 return "错误:Ollama服务未运行,请启动Ollama服务后再使用此引擎."
-            
+
             # 如果有工具结果,将其作为上下文返回给AI处理
             if tool_results:
                 tool_result_text = f"工具执行结果: {tool_results.get('result', '无结果')}"
-                # 构建包含历史记录的消息列表
                 messages = self._build_messages_with_history(system_prompt, tool_result_text)
-                
-                # 使用Ollama Python库调用API
-                response = ollama_client.chat(
-                    model=self.model,
-                    messages=messages,
-                    stream=False
-                )
-                
-                # 返回AI的回复
-                return response["message"]["content"]
-            
-            # 构建包含历史记录的消息列表
-            messages = self._build_messages_with_history(system_prompt, user_input)
-            
+            else:
+                messages = self._build_messages_with_history(system_prompt, user_input)
+
+            # 构建调用参数
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False
+            }
+
+            # ── Function Calling: 注入工具定义 ──
+            if tools:
+                kwargs["tools"] = tools
+
             # 使用Ollama Python库调用API
-            response = ollama_client.chat(
-                model=self.model,
-                messages=messages,
-                stream=False
-            )
-            
-            # 返回AI的回复
-            content = response["message"]["content"]
+            response = ollama_client.chat(**kwargs)
+
+            # ── Function Calling: 检查 tool_calls ──
+            message = response.get("message", {})
+            tool_calls_raw = message.get("tool_calls")
+            if tool_calls_raw:
+                # Ollama 的 tool_calls 格式: [{"function": {"name": ..., "arguments": {...}}}]
+                fc_calls = []
+                for i, tc in enumerate(tool_calls_raw):
+                    func = tc.get("function", {})
+                    name = func.get("name", "")
+                    args = func.get("arguments", {})
+                    call_id = f"call_{name}_{i}"
+
+                    # 统一为小狸内部格式
+                    if "args" in args and isinstance(args["args"], str):
+                        final_args = args["args"]
+                    elif "args" in args:
+                        final_args = json.dumps(args["args"], ensure_ascii=False)
+                    else:
+                        parts = []
+                        for k, v in args.items():
+                            parts.append(str(v) if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
+                        final_args = " ".join(parts) if parts else ""
+
+                    fc_calls.append({
+                        "id": call_id,
+                        "name": name,
+                        "arguments": args,
+                        "action": "use_tool",
+                        "tool": name,
+                        "args": final_args,
+                    })
+
+                if fc_calls:
+                    return json.dumps({
+                        "_fc": True,
+                        "tool_calls": fc_calls,
+                    }, ensure_ascii=False)
+
+            # 普通文本响应
+            content = message.get("content", "")
             # 清理无效的 UTF-8 代理字符
             content = content.encode('utf-8', 'replace').decode('utf-8')
             return content
-            
+
         except Exception as e:
-            # 如果API调用失败,返回错误信息
             return f"Ollama API调用失败: {str(e)}"
 
     def _build_messages_with_history(self, system_prompt, user_input):
-        """构建包含历史记录的消息列表"""
+        """构建包含历史记录的消息列表（支持 FC tool 消息）"""
         messages = []
-        
+
         # 添加系统提示词
         if system_prompt:
-            # 清理代理字符
             clean_prompt = system_prompt.encode('utf-8', 'replace').decode('utf-8')
             messages.append({
                 "role": "system",
                 "content": clean_prompt
             })
-        
-# 添加历史对话记录（使用共享历史）
+
+        # 添加历史对话记录（使用共享历史）
         if self.shared_conversation_history is not None:
-            # 确保历史记录格式正确
             for msg in self.shared_conversation_history[-self.max_history:]:
-                if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    # 清理内容中的代理字符
-                    clean_content = msg["content"].encode('utf-8', 'replace').decode('utf-8')
-                    messages.append({"role": msg["role"], "content": clean_content})
-                else:
-                    # 如果格式不正确，跳过该条记录
+                if not isinstance(msg, dict) or "role" not in msg:
                     continue
-        
+
+                role = msg["role"]
+
+                # tool 角色消息（FC 工具结果）
+                if role == "tool":
+                    tool_msg = {"role": "tool", "content": msg.get("content", "")}
+                    if "tool_call_id" in msg:
+                        tool_msg["tool_call_id"] = msg["tool_call_id"]
+                    if "name" in msg:
+                        tool_msg["name"] = msg["name"]
+                    messages.append(tool_msg)
+                    continue
+
+                # assistant 消息可能包含 tool_calls
+                if role == "assistant" and "tool_calls" in msg:
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": msg.get("content"),
+                        "tool_calls": msg["tool_calls"]
+                    }
+                    messages.append(assistant_msg)
+                    continue
+
+                # 普通 user/assistant 消息
+                if "content" in msg:
+                    clean_content = msg["content"]
+                    if isinstance(clean_content, str):
+                        clean_content = clean_content.encode('utf-8', 'replace').decode('utf-8')
+                    messages.append({"role": role, "content": clean_content})
+
         # 清理用户输入
         if user_input:
             clean_input = user_input.encode('utf-8', 'replace').decode('utf-8')
@@ -182,7 +244,7 @@ Ollama AI引擎插件帮助信息
                 "role": "user",
                 "content": clean_input
             })
-        
+
         return messages
     
     
