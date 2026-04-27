@@ -36,6 +36,14 @@ Thumbs.db
 # 嵌入式 Python
 embedded_python/
 
+# 记忆系统数据（运行时生成）
+MEMORY.md
+memory/
+
+# 生成的图片
+generated_*.png
+screenshots/gen_*.png
+
 # 临时文件
 *.tmp
 *.bak
