@@ -369,9 +369,22 @@ class Plugin:
         image_paths = []
 
         try:
+            # 获取默认工作流（如果未指定则使用列表中第一个）
+            workflow = self.current_workflow
+            if not workflow:
+                workflows = self._fetch_workflows()
+                if workflows:
+                    # 优先选 "无Lora" 工作流，否则用第一个
+                    for wf in workflows:
+                        if "无lora" in wf.get("path", "").lower():
+                            workflow = wf["path"]
+                            break
+                    if not workflow:
+                        workflow = workflows[0].get("path", "")
+
             # 构建 payload
             payload = {
-                "workflow_path": self.current_workflow or "",
+                "workflow_path": workflow or "",
                 "inline_workflow": None,
                 "direct_prompt": self.direct_prompt,
                 "nl_prompt": self.nl_prompt,
@@ -384,8 +397,7 @@ class Plugin:
             result_lines.append("  正在连接 ai.2x.nz ...")
             result_lines.append(f"  直接 Tag: {self.direct_prompt[:80] or '(无)'}")
             result_lines.append(f"  自然语言: {self.nl_prompt[:80] or '(无)'}")
-            if self.current_workflow:
-                result_lines.append(f"  工作流: {self.current_workflow}")
+            result_lines.append(f"  工作流: {workflow or '(默认)'}")
             result_lines.append("")
 
             # 使用同步方式通过 REST + 轮询获取结果
