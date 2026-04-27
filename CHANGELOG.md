@@ -4,6 +4,29 @@
 
 ---
 
+## v5.1.3 (2026-04-28)
+
+###  新增功能
+- **图像生成插件** (`image_generator`) — 基于 ai.2x.nz 的 ComfyUI 在线服务，自然语言/Tag 双模式，支持中文描述，28 个角色工作流可选，分辨率可调（最大 1344×1344）
+- **记忆系统插件** (`memory_plugin`) — 包装 `xcli_core/memory.py` 的完整记忆工具，AI 可写日记、读日记、搜索记忆、管理聊天记录、操作长期记忆 MEMORY.md
+- **AI 编程助手横评页面** (`compare.html`) — 7 款工具（Claude Code / Codex CLI / Gemini CLI / Aider / Copilot CLI / 小狸 / TG HELPER）25+ 维度同口径对比
+
+###  修复
+- 修复记忆系统插件（`Liugin` 类在 `xcli_core/memory.py` 中定义但未被插件管理器加载）导致 AI 无法调用记忆工具的问题，新增 `plugins/memory_plugin.py` 包装层
+
+###  文档
+- 全面更新 README.md 至 v5.1.3
+- 新增记忆系统、Clawli 远程模式、MCP 协议支持、定时任务、系统通知等功能说明
+- 更新插件列表：15 个 → 17 个（+image_generator, +memory_plugin）
+- 更新操作数：141 → 141+
+- 补充 MCP 协议支持说明（17 个插件全部实现 MCP 定义）
+- 补充插件开发文档中 `Liugin` / `Plugin` 双协议说明
+
+###  贡献者
+- 感谢 **艾轮 卧壳** 对本版本的贡献 🖤
+
+---
+
 ## v5.1.2 (2026-04-26)
 
 ###  新增功能
