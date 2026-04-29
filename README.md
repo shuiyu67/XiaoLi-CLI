@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-113%20passed-brightgreen" alt="tests">
-  <img src="https://img.shields.io/badge/plugins-17-blueviolet" alt="plugins">
+  <img src="https://img.shields.io/badge/plugins-18-blueviolet" alt="plugins">
   <img src="https://img.shields.io/badge/MCP-supported-brightgreen" alt="mcp">
 </p>
 
@@ -28,8 +28,8 @@
 -  **Clawli 远程模式** — PC-手机 WebSocket 双向通信，支持内网穿透代理
 -  **定时任务** — 支持相对时间、绝对时间、重复任务，到期自动激活 AI
 -  **系统通知** — 跨平台任务完成通知（Windows / macOS / Linux）
--  **MCP 协议** — 17 个插件全部实现 MCP 定义，支持 Function Calling 原生调用
--  **17 个插件 141+ 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、图像生成、记忆等
+-  **MCP 协议** — 18 个插件全部实现 MCP 定义，支持 Function Calling 原生调用
+-  **18 个插件 160+ 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、图像生成、记忆、桌面GUI自动化等
 -  **三模式界面** — TUI 图形化 + 传统命令行 + **Web UI 浏览器界面**
 -  **113 个自动化测试** — pytest 覆盖全部插件和核心模块
 
@@ -87,7 +87,7 @@ launcher.exe
 }
 ```
 
-##  插件列表 (17 个)
+##  插件列表 (18 个)
 
 ### 核心生产力
 
@@ -106,6 +106,7 @@ launcher.exe
 |------|--------|------|
 | `sub_agent` | 8 | 子 Agent 系统。spawn/list/status/result/send/kill，多 Agent 并行协作 |
 | `browser_auto` | 28 | 浏览器自动化。导航/点击/填写/截图/JS执行/PDF/cookies（基于 Playwright） |
+| `gui_auto` | 20 | **桌面GUI自动化**。基于 Windows UIA，屏幕元素识别/点击/输入/截图/元素树遍历（仅Windows） |
 | `image_generator` | 7 | **图像生成**。基于 ComfyUI 在线服务，自然语言/Tag 双模式，28 个角色工作流 |
 | `memory_plugin` | 11 | **记忆系统**。AI 写日记/搜索记忆/管理聊天记录/长期记忆 MEMORY.md |
 | `scheduler` | 4 | **定时任务**。支持相对时间/绝对时间/重复任务，到期自动激活 AI |
@@ -186,7 +187,7 @@ memory_plugin chat_search 图像生成
 
 ##  MCP 协议支持
 
-所有 17 个插件均实现 MCP (Model Context Protocol) 定义，支持三种工具调用协议：
+所有 18 个插件均实现 MCP (Model Context Protocol) 定义，支持三种工具调用协议：
 
 | 协议 | 说明 |
 |------|------|
@@ -256,7 +257,7 @@ xiaoli-cli/
 │   ├── ollama_engine.py        # Ollama 本地模型
 │   └── openai_engine.py        # OpenAI 兼容格式
 │
-├── plugins/                    # 插件 (17 个)
+├── plugins/                    # 插件 (18 个)
 │   ├── code_editor.py          # 代码编辑+搜索 (24 操作)
 │   ├── git_tools.py            # Git 版本控制 (17 操作)
 │   ├── cmd_executor.py         # Shell 命令执行
@@ -265,6 +266,7 @@ xiaoli-cli/
 │   ├── task_manager.py         # 任务管理
 │   ├── sub_agent.py            # 子 Agent 系统 (8 操作)
 │   ├── browser_auto.py         # 浏览器自动化 (28 操作)
+│   ├── gui_auto.py             # 桌面GUI自动化 (20 操作) ⭐ NEW
 │   ├── image_generator.py      # 图像生成 (7 操作) ⭐ NEW
 │   ├── memory_plugin.py        # 记忆系统 (11 操作) ⭐ NEW
 │   ├── scheduler.py            # 定时任务

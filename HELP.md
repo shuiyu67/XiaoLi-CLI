@@ -154,6 +154,26 @@ run make build --timeout 60   # 60秒超时
 | `pdf page.pdf` | 保存 PDF |
 | `stop` | 关闭浏览器 |
 
+### 桌面GUI自动化 (`gui_auto`) ⭐ NEW
+
+> 仅支持 Windows，基于 UI Automation API
+
+| 操作 | 说明 |
+|------|------|
+| `snapshot [深度]` | 获取屏幕 UI 元素树 |
+| `snapshot --window 记事本` | 获取指定窗口元素树 |
+| `screenshot [路径]` | 全屏截图 |
+| `windows` | 列出所有窗口 |
+| `focus 记事本` | 聚焦窗口 |
+| `click 确定` | 点击元素（模糊匹配） |
+| `click --xy 500 300` | 点击坐标 |
+| `type 搜索框 Hello` | 在元素中输入文本 |
+| `keys ctrl+s` | 发送按键 |
+| `find 保存` | 查找元素 |
+| `exists 确定` | 检查元素是否存在 |
+| `wait 加载完成 10` | 等待元素出现 |
+| `highlight 确定` | 高亮闪烁元素 |
+
 ### 子 Agent (`sub_agent`)
 
 | 操作 | 说明 |
