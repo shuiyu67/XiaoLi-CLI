@@ -13,6 +13,18 @@
       "deps": ["websocket-client"],
       "optional_deps": ["qrcode"],
       "keywords": ["dg-lab", "dglab", "郊狼", "coyote", "websocket", "脉冲"]
+    },
+    "onebot": {
+      "name": "OneBot v11 QQ 机器人",
+      "description": "让 xiaoli-cli 成为 QQ 机器人，连接 go-cqhttp/Lagrange/LLOneBot 等 OneBot 实现",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "onebot.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/onebot.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/README.md",
+      "deps": ["websocket-client"],
+      "optional_deps": [],
+      "keywords": ["onebot", "qq", "机器人", "bot", "go-cqhttp", "lagrange", "群聊", "私聊"]
     }
   }
 }
