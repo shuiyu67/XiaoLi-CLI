@@ -6,6 +6,7 @@
 import os
 import sys
 import json
+import base64
 import importlib.util
 from colorama import Fore, Style
 
@@ -64,9 +65,41 @@ class PluginMarketMixin:
 
         for url in remote_urls:
             try:
-                req = Request(url, headers={"User-Agent": "xiaoli-cli/1.0"})
-                resp = urlopen(req, timeout=10)
-                remote = json.loads(resp.read().decode('utf-8'))
+                data = None
+                # 尝试直接获取
+                try:
+                    req = Request(url, headers={"User-Agent": "xiaoli-cli/1.0"})
+                    resp = urlopen(req, timeout=10)
+                    data = resp.read()
+                except Exception:
+                    pass
+
+                # Gitee raw 失败，尝试 API
+                if data is None and "gitee.com" in url and "/raw/" in url:
+                    try:
+                        parts = url.split("gitee.com/")[1]
+                        repo_path = parts.split("/raw/")[0]
+                        rest = parts.split("/raw/", 1)[1]
+                        rest_parts = rest.split("/", 1)
+                        branch = rest_parts[0]
+                        file_path = rest_parts[1] if len(rest_parts) > 1 else rest
+                        api_url = f"https://gitee.com/api/v5/repos/{repo_path}/contents/{file_path}?ref={branch}"
+                        token = os.environ.get("GITEE_TOKEN", "")
+                        if token:
+                            api_url += f"&access_token={token}"
+                        req = Request(api_url, headers={"User-Agent": "xiaoli-cli/1.0"})
+                        resp = urlopen(req, timeout=10)
+                        json_data = json.loads(resp.read())
+                        if "content" in json_data:
+                            import base64
+                            data = base64.b64decode(json_data["content"])
+                    except Exception:
+                        pass
+
+                if data is None:
+                    continue
+
+                remote = json.loads(data.decode('utf-8'))
                 remote_plugins = remote.get("plugins", {})
                 for code, info in remote_plugins.items():
                     if code not in registry.get("plugins", {}):
@@ -78,7 +111,7 @@ class PluginMarketMixin:
 
         if merged_count > 0:
             self._save_registry(registry)
-            print(f"{Fore.DIM}  (从远程同步了 {merged_count} 个插件){Style.RESET_ALL}")
+            print(f"{Style.DIM}  (从远程同步了 {merged_count} 个插件){Style.RESET_ALL}")
 
         return registry
 
@@ -144,18 +177,67 @@ class PluginMarketMixin:
     # ── 下载安装 ──
 
     def _download_file(self, url, dest_path):
-        """下载文件到指定路径"""
+        """下载文件到指定路径，支持 Gitee/GitHub raw 和 API"""
         if not HAS_URLLIB:
             return False, "缺少 urllib 模块"
-        try:
-            req = Request(url, headers={"User-Agent": "xiaoli-cli/1.0"})
-            resp = urlopen(req, timeout=30)
-            data = resp.read()
-            with open(dest_path, 'wb') as f:
-                f.write(data)
-            return True, f"下载完成 ({len(data)} 字节)"
-        except Exception as e:
-            return False, str(e)
+
+        import base64
+
+        # 尝试的 URL 列表（按优先级）
+        urls_to_try = [url]
+
+        # Gitee raw URL → 转为 API
+        if "gitee.com" in url and "/raw/" in url:
+            try:
+                parts = url.split("gitee.com/")[1]
+                repo_path = parts.split("/raw/")[0]
+                rest = parts.split("/raw/", 1)[1]
+                # rest = "master/dglab_ws/dglab_ws.py" → 分离 branch 和 path
+                rest_parts = rest.split("/", 1)
+                branch = rest_parts[0]
+                file_path = rest_parts[1] if len(rest_parts) > 1 else rest
+                api_url = f"https://gitee.com/api/v5/repos/{repo_path}/contents/{file_path}?ref={branch}"
+                token = os.environ.get("GITEE_TOKEN", "")
+                if token:
+                    api_url += f"&access_token={token}"
+                urls_to_try.insert(0, api_url)
+            except Exception:
+                pass
+
+        # GitHub raw URL → 转为 API
+        if "github.com" in url and "/raw/" in url:
+            try:
+                parts = url.split("github.com/")[1]
+                repo_path = parts.split("/raw/")[0]
+                file_path = parts.split("/raw/", 1)[1]
+                api_url = f"https://api.github.com/repos/{repo_path}/contents/{file_path}"
+                urls_to_try.insert(0, api_url)
+            except Exception:
+                pass
+
+        last_err = ""
+        for try_url in urls_to_try:
+            try:
+                req = Request(try_url, headers={"User-Agent": "xiaoli-cli/1.0"})
+                resp = urlopen(req, timeout=30)
+                data = resp.read()
+
+                # 检查是否是 JSON（API 响应）
+                try:
+                    json_data = json.loads(data)
+                    if isinstance(json_data, dict) and "content" in json_data:
+                        data = base64.b64decode(json_data["content"])
+                except (json.JSONDecodeError, ValueError):
+                    pass  # 不是 JSON，直接用原始数据
+
+                with open(dest_path, 'wb') as f:
+                    f.write(data)
+                return True, f"下载完成 ({len(data)} 字节)"
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+        return False, last_err
 
     def _install_deps(self, deps, optional=False):
         """提示安装依赖（不自动安装，遵守安全规则）"""
@@ -163,7 +245,7 @@ class PluginMarketMixin:
             return
         label = "可选依赖" if optional else "依赖"
         print(f"{Fore.YELLOW}  📦 {label}：{', '.join(deps)}{Style.RESET_ALL}")
-        print(f"{Fore.DIM}     运行: pip install {' '.join(deps)}{Style.RESET_ALL}")
+        print(f"{Style.DIM}     运行: pip install {' '.join(deps)}{Style.RESET_ALL}")
 
     # ── /plugin 命令入口 ──
 
@@ -241,15 +323,15 @@ class PluginMarketMixin:
             if target_name in installed:
                 status = f"{Fore.GREEN}✓ 已安装{Style.RESET_ALL}"
             else:
-                status = f"{Fore.DIM}○ 未安装{Style.RESET_ALL}"
+                status = f"{Style.DIM}○ 未安装{Style.RESET_ALL}"
 
             lines.append(f"  {Fore.WHITE}{code:<15}{Style.RESET_ALL} {status}  {name}")
             if desc:
-                lines.append(f"  {Fore.DIM}{'':15}  {desc[:50]}{Style.RESET_ALL}")
+                lines.append(f"  {Style.DIM}{'':15}  {desc[:50]}{Style.RESET_ALL}")
             if version:
-                lines.append(f"  {Fore.DIM}{'':15}  v{version}{Style.RESET_ALL}")
+                lines.append(f"  {Style.DIM}{'':15}  v{version}{Style.RESET_ALL}")
 
-        lines.append(f"\n{Fore.DIM}使用 /plugin install <插件码> 安装{Style.RESET_ALL}")
+        lines.append(f"\n{Style.DIM}使用 /plugin install <插件码> 安装{Style.RESET_ALL}")
         return "\n".join(lines)
 
     def _plugin_search(self, keyword):
@@ -292,7 +374,7 @@ class PluginMarketMixin:
             desc = info.get("description", "")
             lines.append(f"  {Fore.WHITE}{code:<15}{Style.RESET_ALL} {name}")
             if desc:
-                lines.append(f"  {Fore.DIM}{'':15}  {desc[:60]}{Style.RESET_ALL}")
+                lines.append(f"  {Style.DIM}{'':15}  {desc[:60]}{Style.RESET_ALL}")
 
         return "\n".join(lines)
 
@@ -380,7 +462,7 @@ class PluginMarketMixin:
             print(f"{Fore.YELLOW}⚠ 插件 '{name}' 已存在，将覆盖更新{Style.RESET_ALL}")
 
         print(f"{Fore.CYAN}📥 正在安装: {name}{Style.RESET_ALL}")
-        print(f"{Fore.DIM}   下载: {url}{Style.RESET_ALL}")
+        print(f"{Style.DIM}   下载: {url}{Style.RESET_ALL}")
 
         ok, msg = self._download_file(url, dest)
         if not ok:
