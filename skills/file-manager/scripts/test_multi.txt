@@ -1,5 +1,0 @@
-Line 1
-REPLACED LINE 2
-Line 3
-REPLACED LINE 4
-Line 5
