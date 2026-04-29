@@ -174,9 +174,10 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 - 如果语法检查失败，根据错误信息修复代码后再次编辑
 
 【Diff 弹窗 — 自动弹出修改对比】
-- 编辑操作完成后自动弹出新终端窗口，显示修改前后的完整内容和行号对比
-- 包含 diff 差异、新增/删除行数统计
-- 开关: diff_popup on（开启）/ diff_popup off（关闭）/ diff_popup（切换）
+- 编辑操作完成后自动显示修改前后的完整内容和行号对比
+- 新增行用绿色标记，删除行用红色标记
+- 支持两种模式: 弹窗模式（新终端窗口）/ 主终端内显示（SSH 兼容）
+- 开关: diff_popup on / diff_popup off / diff_popup popup / diff_popup inline
 - 默认开启，无需手动调用
 
 【code_editor 编辑格式】
@@ -1023,7 +1024,46 @@ multi 操作支持一次修改多处：
         if len(loaded_engines) > 1:
             print(f"{Fore.GREEN}已加载的AI引擎: {', '.join(loaded_engines)}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}{'-' * 50}{Style.RESET_ALL}")
+
+        # 询问 diff 弹窗模式
+        self._ask_diff_popup_mode()
+
         self._run_cli_loop()
+
+    def _ask_diff_popup_mode(self):
+        """启动时询问 diff 显示模式"""
+        # 找到 code_editor 插件
+        code_editor = None
+        for tool in self.liugin_manager.tools:
+            if tool.get('name') == 'code_editor':
+                code_editor = tool.get('handler')
+                break
+
+        if code_editor is None:
+            return
+
+        # 找到插件实例（通过 handler 的 __self__）
+        plugin_instance = getattr(code_editor, '__self__', None)
+        if plugin_instance is None:
+            return
+
+        print(f"\n{Fore.CYAN}  Diff 显示模式（AI 修改文件后的对比方式）:{Style.RESET_ALL}")
+        print(f"    {Fore.WHITE}1{Style.RESET_ALL} - 弹窗模式（新终端窗口显示）")
+        print(f"    {Fore.WHITE}2{Style.RESET_ALL} - 主终端内显示（SSH 兼容，推荐）")
+
+        try:
+            choice = input(f"\n{Fore.WHITE}  请选择 [1/2]（默认 2）: {Style.RESET_ALL}").strip()
+        except (EOFError, KeyboardInterrupt):
+            choice = '2'
+
+        if choice == '1':
+            plugin_instance.diff_popup_mode = True
+            print(f"{Fore.GREEN}  ✓ 已选择: 弹窗模式{Style.RESET_ALL}")
+        else:
+            plugin_instance.diff_popup_mode = False
+            print(f"{Fore.GREEN}  ✓ 已选择: 主终端内显示{Style.RESET_ALL}")
+
+        print()
 
     def _run_cli_loop(self):
         """运行 CLI 主循环"""

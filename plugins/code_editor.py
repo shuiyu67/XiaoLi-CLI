@@ -37,9 +37,10 @@ class Plugin:
   编辑操作后自动执行，无需手动调用
 
 Diff 弹窗:
-  diff_popup [on|off]              - 开关 diff 弹窗 (别名: popup)
-  编辑操作后弹出新窗口显示修改前后对比（默认开启）
-  on/开/enable  → 开启  |  off/关/disable → 关闭  |  无参数 → 切换
+  diff_popup [on|off|popup|inline]  - 开关/切换 diff 显示模式 (别名: popup)
+  popup/弹窗    → 弹窗模式（新终端窗口）
+  inline/ssh    → 主终端内显示（SSH 兼容）
+  on/开         → 开启  |  off/关 → 关闭  |  无参数 → 切换
 
 查看操作:
   read_range <文件> <起始行> [结束行] - 读取指定行范围
@@ -59,7 +60,8 @@ Diff 弹窗:
   stats <目录>                      - 代码统计
 """
         self.cli = None
-        self.diff_popup_enabled = True  # diff 弹窗开关，默认开启
+        self.diff_popup_enabled = True  # diff 弹窗开关
+        self.diff_popup_mode = None     # None=启动时询问, True=弹窗, False=主终端内显示
 
     def set_cli(self, cli):
         self.cli = cli
@@ -611,20 +613,26 @@ else:
 
     def _spawn_diff_popup(self, filepath: str, before: str, after: str):
         """
-        在新终端窗口中显示修改前后的对比。
-        使用独立线程避免阻塞主流程。
+        显示修改前后的对比。
+        根据 diff_popup_mode 决定弹窗还是主终端内显示。
         """
         if not self.diff_popup_enabled:
             return
         if before == after:
             return  # 内容无变化，不弹窗
 
-        thread = threading.Thread(
-            target=self._do_spawn_diff_popup,
-            args=(filepath, before, after),
-            daemon=True
-        )
-        thread.start()
+        # 启动时未选择模式，默认为主终端内显示（SSH 兼容）
+        popup = self.diff_popup_mode if self.diff_popup_mode is not None else False
+
+        if popup:
+            thread = threading.Thread(
+                target=self._do_spawn_diff_popup,
+                args=(filepath, before, after),
+                daemon=True
+            )
+            thread.start()
+        else:
+            self._show_inline_diff(filepath, before, after)
 
     def _do_spawn_diff_popup(self, filepath: str, before: str, after: str):
         """实际执行弹窗创建（在子线程中运行）"""
@@ -642,7 +650,6 @@ else:
             tofile=f"修改后: {basename}",
             lineterm=''
         ))
-        diff_text = '\n'.join(diff_lines)
 
         # 统计变更
         added = sum(1 for l in diff_lines if l.startswith('+') and not l.startswith('+++'))
@@ -655,7 +662,7 @@ else:
         display = self._build_diff_display(
             basename, filepath,
             before_numbered, after_numbered,
-            diff_text, added, removed,
+            diff_lines, added, removed,
             before_count, after_count
         )
 
@@ -670,38 +677,62 @@ else:
 
     def _build_diff_display(self, basename, filepath,
                              before_numbered, after_numbered,
-                             diff_text, added, removed,
+                             diff_lines, added, removed,
                              before_count, after_count):
-        """构建完整的 diff 显示文本"""
+        """构建完整的 diff 显示文本（带 ANSI 颜色）"""
         sep = '═' * 70
         thin_sep = '─' * 70
 
+        # ANSI 颜色
+        R = '\033[31m'   # 红
+        G = '\033[32m'   # 绿
+        C = '\033[36m'   # 青
+        B = '\033[1m'    # 粗体
+        D = '\033[2m'    # 暗
+        W = '\033[37m'   # 白
+        N = '\033[0m'    # 重置
+
+        # 构建带颜色的 diff
+        diff_colored_lines = []
+        for line in diff_lines:
+            if line.startswith('@@'):
+                diff_colored_lines.append(f"{C}{line}{N}")
+            elif line.startswith('+++') or line.startswith('---'):
+                diff_colored_lines.append(f"{B}{line}{N}")
+            elif line.startswith('+'):
+                diff_colored_lines.append(f"{G}{line}{N}")
+            elif line.startswith('-'):
+                diff_colored_lines.append(f"{R}{line}{N}")
+            else:
+                diff_colored_lines.append(line)
+        diff_colored = '\n'.join(diff_colored_lines) if diff_colored_lines else '  (无差异)'
+
         display = f"""
-{sep}
-  文件变更对比: {basename}
-  路径: {filepath}
-{sep}
+{W}{sep}{N}
+{B}  文件变更对比: {basename}{N}
+{D}  路径: {filepath}{N}
+{W}{sep}{N}
 
-  统计: {before_count} 行 → {after_count} 行  |  +{added} 新增  -{removed} 删除
+  统计: {before_count} 行 → {after_count} 行  |  {G}+{added} 新增{N}  {R}-{removed} 删除{N}
 
-{thin_sep}
+{W}{thin_sep}{N}
   修改前 ({before_count} 行):
-{thin_sep}
+{W}{thin_sep}{N}
 {before_numbered}
 
-{thin_sep}
+{W}{thin_sep}{N}
   修改后 ({after_count} 行):
-{thin_sep}
+{W}{thin_sep}{N}
 {after_numbered}
 
-{thin_sep}
+{W}{thin_sep}{N}
   差异 (Diff):
-{thin_sep}
-{diff_text if diff_text else '  (无差异)'}
+{W}{thin_sep}{N}
+{diff_colored}
 
-{sep}
+{W}{sep}{N}
   按任意键关闭此窗口...
-{sep}
+{W}{sep}{N}
 """
         return display
 
@@ -775,8 +806,81 @@ else:
         except Exception as e:
             print(f"[Diff 弹窗] 创建失败: {e}")
 
+    def _show_inline_diff(self, filepath: str, before: str, after: str):
+        """在主终端内显示 diff（SSH 兼容模式），带颜色"""
+        basename = os.path.basename(filepath)
+        is_tui = self.cli and getattr(self.cli, 'tui_output_callback', None)
+
+        # 生成 diff
+        diff_lines = list(difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"修改前: {basename}",
+            tofile=f"修改后: {basename}",
+            lineterm=''
+        ))
+
+        # 统计
+        added = sum(1 for l in diff_lines if l.startswith('+') and not l.startswith('+++'))
+        removed = sum(1 for l in diff_lines if l.startswith('-') and not l.startswith('---'))
+        before_count = len(before.splitlines())
+        after_count = len(after.splitlines())
+
+        sep = '═' * 60
+        thin = '─' * 60
+
+        if is_tui:
+            # TUI 模式：使用 Rich 标记
+            output = self.cli._output
+            output(f"[dim]{sep}[/]")
+            output(f"[bold cyan]  文件变更: {basename}[/]  [dim]{filepath}[/]")
+            output(f"[dim]{sep}[/]")
+            output(f"[bold]  统计: {before_count} 行 → {after_count} 行  |  "
+                   f"[green]+{added} 新增[/]  [red]-{removed} 删除[/]")
+            output(f"[dim]{thin}[/]")
+
+            for line in diff_lines:
+                if line.startswith('@@'):
+                    output(f"[cyan]{line}[/]")
+                elif line.startswith('+++') or line.startswith('---'):
+                    output(f"[bold]{line}[/]")
+                elif line.startswith('+'):
+                    output(f"[green]{line}[/]")
+                elif line.startswith('-'):
+                    output(f"[red]{line}[/]")
+                else:
+                    output(line)
+
+            output(f"[dim]{sep}[/]")
+        else:
+            # CLI 模式：使用 ANSI 颜色
+            from colorama import Fore, Style
+            _out = print
+
+            _out(f"{Fore.WHITE}{sep}{Style.RESET_ALL}")
+            _out(f"{Fore.CYAN}  文件变更: {basename}{Style.RESET_ALL}  {filepath}")
+            _out(f"{Fore.WHITE}{sep}{Style.RESET_ALL}")
+            _out(f"  统计: {before_count} 行 → {after_count} 行  |  "
+                 f"{Fore.GREEN}+{added} 新增{Style.RESET_ALL}  "
+                 f"{Fore.RED}-{removed} 删除{Style.RESET_ALL}")
+            _out(f"{Fore.WHITE}{thin}{Style.RESET_ALL}")
+
+            for line in diff_lines:
+                if line.startswith('@@'):
+                    _out(f"{Fore.CYAN}{line}{Style.RESET_ALL}")
+                elif line.startswith('+++') or line.startswith('---'):
+                    _out(f"{Style.BRIGHT}{line}{Style.RESET_ALL}")
+                elif line.startswith('+'):
+                    _out(f"{Fore.GREEN}{line}{Style.RESET_ALL}")
+                elif line.startswith('-'):
+                    _out(f"{Fore.RED}{line}{Style.RESET_ALL}")
+                else:
+                    _out(line)
+
+            _out(f"{Fore.WHITE}{sep}{Style.RESET_ALL}")
+
     def _op_diff_popup(self, path: str, rest: str) -> str:
-        """切换 diff 弹窗开关"""
+        """切换 diff 弹窗开关 / 设置显示模式"""
         arg = (path + ' ' + rest).strip().lower()
         if arg in ('on', '开', '开启', 'enable', '1', 'true'):
             self.diff_popup_enabled = True
@@ -784,6 +888,14 @@ else:
         elif arg in ('off', '关', '关闭', 'disable', '0', 'false'):
             self.diff_popup_enabled = False
             return "  Diff 弹窗已关闭"
+        elif arg in ('popup', '弹窗', '弹窗模式'):
+            self.diff_popup_enabled = True
+            self.diff_popup_mode = True
+            return "  Diff 模式: 弹窗（新终端窗口）"
+        elif arg in ('inline', '内联', 'ssh', '终端', '主终端'):
+            self.diff_popup_enabled = True
+            self.diff_popup_mode = False
+            return "  Diff 模式: 主终端内显示（SSH 兼容）"
         else:
             # 无参数：切换状态
             self.diff_popup_enabled = not self.diff_popup_enabled
