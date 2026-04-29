@@ -326,12 +326,24 @@ async def ws_handler(websocket):
                 elif msg_type == "switch_engine":
                     # 切换引擎
                     engine_name = msg_data.get("engine", "")
-                    if bridge.cli and engine_name in bridge.cli.engines:
-                        bridge.cli.switch_engine(engine_name)
-                        await websocket.send(json.dumps({
-                            "type": "engine_switched",
-                            "data": {"engine": engine_name},
-                        }, ensure_ascii=False))
+                    if bridge.cli:
+                        if engine_name in bridge.cli.engines:
+                            bridge.cli.switch_engine(engine_name)
+                            # 发送切换成功 + 更新后的状态
+                            await websocket.send(json.dumps({
+                                "type": "engine_switched",
+                                "data": {"engine": engine_name},
+                            }, ensure_ascii=False))
+                            status = bridge.get_status()
+                            await websocket.send(json.dumps({
+                                "type": "status",
+                                "data": status,
+                            }, ensure_ascii=False))
+                        else:
+                            await websocket.send(json.dumps({
+                                "type": "error",
+                                "data": {"message": f"未找到引擎: {engine_name}"},
+                            }, ensure_ascii=False))
 
                 elif msg_type == "switch_safety":
                     # 切换安全模式
