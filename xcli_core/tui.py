@@ -297,28 +297,6 @@ if TEXTUAL_AVAILABLE:
         background: {_Theme.BG};
     }}
 
-    /* ── 闪光动画 keyframes ── */
-    @keyframes pulse-glow {{
-        0% {{ color: {_Theme.THINKING}; }}
-        50% {{ color: {_Theme.ACCENT}; }}
-        100% {{ color: {_Theme.THINKING}; }}
-    }}
-
-    @keyframes fade-in {{
-        from {{ opacity: 0; }}
-        to {{ opacity: 1; }}
-    }}
-
-    @keyframes slide-in-right {{
-        from {{ offset-x: 100%; }}
-        to {{ offset-x: 0; }}
-    }}
-
-    @keyframes bounce-in {{
-        0% {{ opacity: 0; offset-y: 5%; }}
-        60% {{ opacity: 1; offset-y: -1%; }}
-        100% {{ opacity: 1; offset-y: 0; }}
-    }}
     """
 
     class _TUIBridge:
