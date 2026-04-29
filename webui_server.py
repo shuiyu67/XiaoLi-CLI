@@ -97,36 +97,103 @@ class AIEngineBridge:
         }
 
     def chat(self, message: str, callback=None):
-        """发送消息到 AI 并获取回复"""
+        """发送消息到 AI 并获取回复（支持工具调用循环）"""
         if not self.cli:
-            return "❌ 小狸核心未初始化，请检查配置"
+            return {"type": "error", "message": "小狸核心未初始化，请检查配置"}
+
+        results = []  # 收集所有事件
 
         try:
-            # 使用小狸的核心对话处理
-            import io
-            import contextlib
+            # 添加用户消息到历史
+            self.cli.shared_conversation_history.append({
+                "role": "user", "content": message
+            })
 
-            # 捕获输出
-            captured = io.StringIO()
-            with contextlib.redirect_stdout(captured):
-                # 构建系统提示词
-                liugin_prompts = self.cli.get_liugin_usage_prompts()
-                system_prompt = self.cli._build_system_prompt(liugin_prompts)
+            liugin_prompts = self.cli.get_liugin_usage_prompts()
+            system_prompt = self.cli._build_system_prompt(liugin_prompts)
 
-                # 生成响应
-                if self.cli.current_engine:
-                    response = self.cli.current_engine.generate_response(
-                        message,
-                        system_prompt=system_prompt
-                    )
-                else:
-                    response = "❌ 没有可用的 AI 引擎"
+            loop_count = 0
+            max_loops = 15
+            current_input = message
 
-            output = captured.getvalue()
-            return response or "(无响应)"
+            while loop_count < max_loops:
+                # 生成 AI 响应
+                if not self.cli.current_engine:
+                    return {"type": "error", "message": "没有可用的 AI 引擎"}
+
+                response = self.cli.current_engine.generate_response(
+                    current_input, system_prompt=system_prompt
+                )
+
+                if not response:
+                    return {"type": "reply", "message": "(无响应)"}
+
+                # 检查 FC 响应（Ollama Function Calling）
+                fc_result = self.cli._handle_fc_response(response, message)
+                if fc_result:
+                    # FC 工具已执行，结果作为下一轮输入
+                    results.append({"type": "fc_tool_done", "message": fc_result[:200]})
+                    current_input = fc_result
+                    loop_count += 1
+                    continue
+
+                # 解析混合响应（文本 + JSON 工具调用）
+                try:
+                    text_content, json_data = self.cli._parse_mixed_response(response)
+                except Exception:
+                    text_content, json_data = response, None
+
+                if json_data and isinstance(json_data, dict):
+                    if json_data.get('action') == 'use_tool':
+                        tool_name = json_data.get('tool', '')
+                        tool_args = json_data.get('args', '')
+                        results.append({"type": "tool_call", "name": tool_name, "args": tool_args[:200]})
+
+                        # 执行工具
+                        try:
+                            tool_result = self.cli._execute_tool_by_name(tool_name, tool_args)
+                        except Exception as e:
+                            tool_result = f"工具执行错误: {e}"
+
+                        results.append({"type": "tool_result", "name": tool_name, "result": str(tool_result)[:500]})
+
+                        # 把工具结果加入历史并继续循环
+                        self.cli.shared_conversation_history.append({
+                            "role": "tool", "content": str(tool_result),
+                            "name": tool_name
+                        })
+                        current_input = f"工具 {tool_name} 的执行结果:\n{tool_result}"
+                        loop_count += 1
+                        continue
+
+                    elif json_data.get('continue') or json_data.get('need_continue'):
+                        msg = json_data.get('message', text_content or '')
+                        if msg:
+                            results.append({"type": "partial_reply", "message": msg})
+                            self.cli.shared_conversation_history.append({"role": "assistant", "content": msg})
+                            current_input = "继续"
+                            loop_count += 1
+                            continue
+
+                    elif json_data.get('message'):
+                        final = json_data.get('message')
+                        self.cli.shared_conversation_history.append({"role": "assistant", "content": final})
+                        results.append({"type": "reply", "message": final})
+                        break
+
+                # 纯文本响应
+                display = text_content if text_content else response
+                self.cli.shared_conversation_history.append({"role": "assistant", "content": display})
+                results.append({"type": "reply", "message": display})
+                break
+
+            if not results:
+                results.append({"type": "reply", "message": response or "(无响应)"})
+
+            return {"type": "multi", "events": results}
 
         except Exception as e:
-            return f"❌ 错误: {e}"
+            return {"type": "error", "message": f"错误: {e}"}
 
     def execute_tool(self, tool_name: str, tool_args: str):
         """直接执行工具"""
@@ -195,15 +262,30 @@ async def ws_handler(websocket):
 
                     # 在线程中执行 AI 调用（避免阻塞事件循环）
                     loop = asyncio.get_event_loop()
-                    response = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         None, bridge.chat, user_msg
                     )
 
-                    # 发送回复
-                    await websocket.send(json.dumps({
-                        "type": "reply",
-                        "data": {"message": response},
-                    }, ensure_ascii=False))
+                    # 处理返回结果
+                    if isinstance(result, dict):
+                        if result.get("type") == "multi":
+                            # 多事件：逐个发送
+                            for event in result.get("events", []):
+                                await websocket.send(json.dumps({
+                                    "type": event.get("type", "reply"),
+                                    "data": event,
+                                }, ensure_ascii=False))
+                        else:
+                            await websocket.send(json.dumps({
+                                "type": result.get("type", "reply"),
+                                "data": result,
+                            }, ensure_ascii=False))
+                    else:
+                        # 兼容旧格式
+                        await websocket.send(json.dumps({
+                            "type": "reply",
+                            "data": {"message": str(result)},
+                        }, ensure_ascii=False))
 
                 elif msg_type == "tool":
                     # 直接工具调用

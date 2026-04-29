@@ -122,6 +122,13 @@ Ollama AI引擎插件帮助信息
             if not self.is_service_running:
                 return "错误:Ollama服务未运行,请启动Ollama服务后再使用此引擎."
 
+            # 检查模型是否已配置
+            if not self.model or not self.model.strip():
+                return ("错误:Ollama模型未配置。请执行以下操作:\n"
+                        "  1. /engine.ollama models  → 查看本地可用模型\n"
+                        "  2. /engine.ollama set <模型名>  → 设置要使用的模型\n"
+                        "  或编辑 config.json 中 api.engines.ollama.model 字段")
+
             # 如果有工具结果,将其作为上下文返回给AI处理
             if tool_results:
                 tool_result_text = f"工具执行结果: {tool_results.get('result', '无结果')}"

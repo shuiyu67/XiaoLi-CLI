@@ -62,8 +62,7 @@ if TEXTUAL_AVAILABLE:
         scrollbar-color: {_Theme.BORDER};
         scrollbar-color-hover: {_Theme.TEXT_MUTED};
         padding: 0 1;
-        /* 平滑滚动 */
-        scroll-behavior: smooth;
+
     }}
 
     /* ── 输入区域 ── */
