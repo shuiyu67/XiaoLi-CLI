@@ -357,6 +357,147 @@ class TestBrowserAuto:
 #  引擎加载测试
 # ══════════════════════════════════════
 
+class TestGuiAuto:
+    """gui_auto 功能测试"""
+
+    @pytest.fixture
+    def gui(self):
+        mod = load_module("gui_auto", os.path.join(PLUGINS_DIR, "gui_auto.py"))
+        return mod.Plugin()
+
+    def test_tool_info(self, gui):
+        info = gui.get_tool_info()
+        assert info["name"] == "gui_auto"
+        assert "GUI" in info["description"]
+        assert len(info["keywords"]) >= 5
+
+    def test_mcp_definition(self, gui):
+        mcp = gui.get_mcp_definition()
+        assert mcp["name"] == "gui_auto"
+        assert "inputSchema" in mcp
+        assert "operation" in mcp["inputSchema"]["properties"]
+
+    def test_convert_mcp_args(self, gui):
+        args = {"operation": "click", "target": "确定"}
+        result = gui.convert_mcp_args(args)
+        assert "click" in result
+        assert "确定" in result
+
+    def test_convert_mcp_args_xy(self, gui):
+        args = {"operation": "click", "x": 100, "y": 200}
+        result = gui.convert_mcp_args(args)
+        assert "--xy" in result
+        assert "100" in result
+
+    def test_convert_mcp_args_snapshot(self, gui):
+        args = {"operation": "snapshot", "depth": 3}
+        result = gui.convert_mcp_args(args)
+        assert "snapshot" in result
+        assert "3" in result
+
+    def test_empty_args(self, gui):
+        result = gui.handle("")
+        assert "错误" in result
+
+    def test_invalid_operation(self, gui):
+        result = gui.handle("nonexistent_op")
+        assert "不支持" in result
+
+    def test_click_no_args(self, gui):
+        result = gui.handle("click")
+        assert "错误" in result
+
+    def test_type_no_args(self, gui):
+        result = gui.handle("type")
+        assert "错误" in result
+
+    def test_type_missing_text(self, gui):
+        result = gui.handle("type 按钮")
+        assert "错误" in result
+
+    def test_find_no_args(self, gui):
+        result = gui.handle("find")
+        assert "错误" in result
+
+    def test_findall_no_args(self, gui):
+        result = gui.handle("findall")
+        assert "错误" in result
+
+    def test_info_no_args(self, gui):
+        result = gui.handle("info")
+        assert "错误" in result
+
+    def test_value_no_args(self, gui):
+        result = gui.handle("value")
+        assert "错误" in result
+
+    def test_tree_no_args(self, gui):
+        result = gui.handle("tree")
+        assert "错误" in result
+
+    def test_wait_no_args(self, gui):
+        result = gui.handle("wait")
+        assert "错误" in result
+
+    def test_exists_no_args(self, gui):
+        result = gui.handle("exists")
+        assert "错误" in result
+
+    def test_highlight_no_args(self, gui):
+        result = gui.handle("highlight")
+        assert "错误" in result
+
+    def test_state_no_args(self, gui):
+        result = gui.handle("state")
+        assert "错误" in result
+
+    def test_keys_no_args(self, gui):
+        result = gui.handle("keys")
+        assert "错误" in result
+
+    def test_focus_no_args(self, gui):
+        result = gui.handle("focus")
+        assert "错误" in result
+
+    def test_click_xy_format_error(self, gui):
+        result = gui.handle("click --xy abc")
+        assert "错误" in result
+
+    def test_format_element_info(self, gui):
+        el = {
+            "name": "测试按钮", "type": "Button", "class": "Button",
+            "automation_id": "btn_ok",
+            "bounds": {"left": 100, "top": 200, "width": 80, "height": 30,
+                       "right": 180, "bottom": 230},
+            "enabled": True, "focused": False
+        }
+        result = gui._format_element_info(el)
+        assert "测试按钮" in result
+        assert "Button" in result
+        assert "btn_ok" in result
+
+    def test_format_element_info_detailed(self, gui):
+        el = {
+            "name": "输入框", "type": "Edit", "class": "Edit",
+            "automation_id": "", "enabled": True, "focused": True,
+            "value": "hello",
+            "bounds": {"left": 0, "top": 0, "width": 200, "height": 25,
+                       "right": 200, "bottom": 25}
+        }
+        result = gui._format_element_info(el, detailed=True)
+        assert "输入框" in result
+        assert "hello" in result
+
+    def test_all_operations_route(self, gui):
+        """所有操作都能正确路由"""
+        for op in ["snapshot", "screenshot", "windows", "focus", "click",
+                    "rightclick", "doubleclick", "type", "clear", "keys",
+                    "scroll", "find", "findall", "info", "value", "tree",
+                    "wait", "exists", "highlight", "state"]:
+            result = gui.handle(f"{op} test")
+            assert isinstance(result, str)
+
+
 class TestSubAgent:
     """sub_agent 功能测试"""
 
