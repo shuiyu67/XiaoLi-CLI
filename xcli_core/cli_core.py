@@ -18,10 +18,11 @@ from .cli_tools import ToolMixin
 from .cli_code_exec import CodeExecMixin
 from .cli_display import DisplayMixin
 from .cli_history import HistoryMixin
+from .plugin_market import PluginMarketMixin
 from .notification import notify_task_complete, get_notification_manager
 
 
-class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, HistoryMixin):
+class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, HistoryMixin, PluginMarketMixin):
     """AI CLI主程序 - 组合所有 Mixin"""
 
     # ── 深度思考处理 ──
@@ -1018,6 +1019,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/chat list' 查看所有已保存的聊天记录{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/chat open <名称>' 加载聊天记录{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/remote' 查看远程连接帮助{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/plugin' 管理插件市场 (安装/卸载/搜索){Style.RESET_ALL}")
         current_engine_name = getattr(self.current_engine, 'name', '未设置') if self.current_engine else '未设置'
         print(f"{Fore.GREEN}当前使用的AI引擎: {current_engine_name}{Style.RESET_ALL}")
         loaded_engines = list(self.engines.keys())
@@ -1161,6 +1163,13 @@ multi 操作支持一次修改多处：
                     else:
                         print(f"{Fore.RED}未知的聊天命令.可用命令: save, list, open{Style.RESET_ALL}")
                         continue
+
+                if user_input.startswith('/plugin'):
+                    plugin_args = user_input[7:].strip()
+                    result = self.handle_plugin_command(plugin_args)
+                    if result:
+                        print(result)
+                    continue
 
                 if user_input.startswith('/remote'):
                     remote_command = user_input[7:].strip()

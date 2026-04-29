@@ -222,6 +222,54 @@ tool_search 浏览器      # 搜索浏览器相关工具
 
 ---
 
+## 插件市场
+
+通过 `/plugin` 命令管理插件，支持从远程仓库一键安装。
+
+### 查看可用插件
+
+```
+/plugin list                    # 列出所有可用插件（自动同步远程源）
+/plugin search 郊狼             # 搜索关键词
+/plugin info dglab              # 查看插件详情
+```
+
+### 安装插件
+
+```
+/plugin install dglab           # 通过插件码安装
+/plugin install https://example.com/my_plugin.py   # 从 URL 安装
+```
+
+安装后自动：
+- 下载插件文件到 `plugins/` 目录
+- 在 `plugins_config.py` 中启用
+- 尝试动态加载（无需重启）
+
+### 卸载插件
+
+```
+/plugin remove dglab_ws         # 卸载指定插件
+```
+
+### 更新插件
+
+```
+/plugin update dglab            # 重新下载更新
+```
+
+### 添加插件源
+
+```
+/plugin add-source https://example.com/registry.json   # 同步远程插件源
+```
+
+### 插件码注册表
+
+插件码是插件的唯一标识，映射到下载地址。注册表文件：`plugin_registry.json`
+
+---
+
 ## 聊天记录
 
 ```

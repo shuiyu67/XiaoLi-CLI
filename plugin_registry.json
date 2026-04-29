@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "小狸 CLI 插件码注册表 - 通过 /plugin install <插件码> 安装",
+  "plugins": {
+    "dglab": {
+      "name": "DG-Lab 郊狼 WebSocket 控制",
+      "description": "基于 DG-LAB-OPENSOURCE 官方 Socket V2 协议，支持郊狼 3.0 脉冲主机远程控制",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "dglab_ws.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/dglab_ws.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/README.md",
+      "deps": ["websocket-client"],
+      "optional_deps": ["qrcode"],
+      "keywords": ["dg-lab", "dglab", "郊狼", "coyote", "websocket", "脉冲"]
+    }
+  }
+}
