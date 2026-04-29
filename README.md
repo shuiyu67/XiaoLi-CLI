@@ -89,6 +89,8 @@ launcher.exe
 
 ##  插件列表 (19 个)
 
+> 💡 更多社区插件请访问 [xiaoli-cli-plugins](https://gitee.com/shuiyu1123/xiaoli-cli-plugins)，使用 `/plugin install <插件码>` 一键安装。
+
 ### 核心生产力
 
 | 插件 | 操作数 | 说明 |
@@ -348,6 +350,7 @@ class Plugin:  # 或 class Liugin
 ##  链接
 
 -  Gitee: https://gitee.com/shuiyu1123/xiaoli-cli
+-  插件仓库: https://gitee.com/shuiyu1123/xiaoli-cli-plugins
 -  [更新日志](CHANGELOG.md)
 -  [使用指南](HELP.md)
 -  [AI 编程助手横评](compare.html)
