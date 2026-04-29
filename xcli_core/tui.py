@@ -719,6 +719,7 @@ if TEXTUAL_AVAILABLE:
                 'tools': lambda: self._show_tools(),
                 'engines': lambda: self._show_engines(),
                 'tui': lambda: self._system("已在 TUI 模式中"),
+                'manual': lambda: self._handle_manual(args),
             }
 
             handler = cmds.get(name)
@@ -752,6 +753,24 @@ if TEXTUAL_AVAILABLE:
   F1         侧栏        Escape     取消生成
   Enter      换行        Tab        缩进"""
             self._system(help_text)
+
+        def _handle_manual(self, args):
+            """处理 /manual 命令"""
+            if 'manual' not in self.cli.engines:
+                self._error("manual 引擎未加载")
+                return
+            if not args:
+                # 切换到 manual 引擎
+                if self.bridge.switch_engine('manual'):
+                    self._system("已切换到 manual 引擎")
+                    self._update_sidebar()
+                else:
+                    self._error("切换失败")
+            else:
+                # 执行 manual 引擎子命令
+                result = self.cli.engines['manual'].handle_command(args)
+                if result:
+                    self._system(result)
 
         def _switch_cli(self):
             self._system("切换到命令行模式...")

@@ -1102,6 +1102,22 @@ multi 操作支持一次修改多处：
                         print(f"{Fore.RED}当前引擎不支持该命令或命令执行失败{Style.RESET_ALL}")
                     continue
 
+                # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
+                if user_input == '/manual' or user_input.startswith('/manual '):
+                    args = user_input[8:].strip() if user_input.startswith('/manual ') else ''
+                    if 'manual' not in self.engines:
+                        print(f"{Fore.RED}manual 引擎未加载{Style.RESET_ALL}")
+                    elif not args:
+                        # 无参数：切换到 manual 引擎
+                        self.switch_engine('manual')
+                        print(f"{Fore.GREEN}已切换到 manual 引擎{Style.RESET_ALL}")
+                    else:
+                        # 有参数：执行 manual 引擎命令（如 status, restart）
+                        result = self.engines['manual'].handle_command(args)
+                        if result:
+                            print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+                    continue
+
                 if user_input.startswith('/file.read '):
                     args = user_input[11:].strip()
                     parts = args.split(' ', 2)

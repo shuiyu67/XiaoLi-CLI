@@ -355,7 +355,19 @@ class BaseAICLI:
             engine.max_history = self.max_history
 
     def handle_engine_command(self, command):
-        """处理引擎特定命令"""
+        """处理引擎特定命令（支持跨引擎调用，如 /engine.manual status）"""
+        # 先检查是否指定了引擎名（如 "manual status" → 引擎=manual, 命令=status）
+        parts = command.split(' ', 1)
+        target_name = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+
+        # 如果目标名是某个已加载的引擎，直接调用该引擎
+        if target_name in self.engines:
+            target_engine = self.engines[target_name]
+            if hasattr(target_engine, 'handle_command'):
+                return target_engine.handle_command(rest)
+
+        # 否则当作当前引擎的命令
         if not hasattr(self.current_engine, 'handle_command'):
             return False
         engine_name = getattr(self.current_engine, 'name', '')
