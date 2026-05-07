@@ -1,96 +1,143 @@
 """
 统一工具管理器 - 协调 Liugin、Skill 和 MCP 三套协议
 自动判断并路由到正确的处理器
+
+集成插件内存管理: TTL 自动淘汰 + 懒加载
 """
 
 import os
 import json
+import logging
 import threading
 from typing import Dict, List, Any, Optional, Union, Callable
 from colorama import Fore, Style
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedToolManager:
     """
     统一工具管理器
-    
+
     协调三种协议:
     1. Liugin 协议 (plugins/) - 小狸自有协议
     2. Skill 协议 (skills/) - Agent Skills 开源协议
     3. MCP 协议 - Model Context Protocol (Anthropic/OpenAI 标准)
-    
+
     路由策略:
     - 优先使用 Skill 协议（如果存在同名技能）
     - 回退到 Liugin 协议
     - 支持强制指定协议
     - MCP 格式调用统一入口
+
+    内存管理:
+    - 空闲插件自动淘汰（TTL 机制）
+    - 调用时自动懒加载回来
+    - 核心插件可钉住不淘汰
     """
-    
-    def __init__(self, cli_instance=None):
+
+    # 内存管理默认配置
+    DEFAULT_PLUGIN_TTL = 300       # 5分钟
+    DEFAULT_MAX_IDLE_PLUGINS = 10  # 最多保留10个空闲插件
+    DEFAULT_CHECK_INTERVAL = 60    # 60秒检查一次
+    DEFAULT_PINNED_PLUGINS = ['tool_search']  # 默认钉住的插件
+
+    def __init__(self, cli_instance=None,
+                 plugin_ttl: int = None,
+                 max_idle_plugins: int = None,
+                 check_interval: int = None,
+                 pinned_plugins: list = None):
         self.cli = cli_instance
         self._lock = threading.RLock()
-        
+
         # 两个独立的加载器
         self._liugin_manager = None
         self._skill_loader = None
-        
+
         # 统一的工具注册表
         self._tools: Dict[str, Dict[str, Any]] = {}
-        
+
         # 协议映射: tool_name -> protocol_type
         self._protocol_map: Dict[str, str] = {}
-        
+
         # MCP 工具定义缓存
         self._mcp_tools_cache: Optional[List[Dict]] = None
+
+        # ── 原始文件路径缓存（用于懒加载） ──
+        self._plugin_paths: Dict[str, str] = {}   # name -> file_path
+        self._skill_dirs: Dict[str, str] = {}     # name -> skill_dir
+
+        # ── 插件内存管理器 ──
+        from xcli_core.plugin_memory_manager import PluginMemoryManager
+        self._memory_mgr = PluginMemoryManager(
+            plugin_ttl=plugin_ttl or self.DEFAULT_PLUGIN_TTL,
+            max_idle_plugins=max_idle_plugins or self.DEFAULT_MAX_IDLE_PLUGINS,
+            check_interval=check_interval or self.DEFAULT_CHECK_INTERVAL,
+            pinned_plugins=pinned_plugins or self.DEFAULT_PINNED_PLUGINS,
+        )
+        self._memory_mgr.set_callbacks(
+            load_fn=self._lazy_load_plugin,
+            unload_fn=self._unload_plugin,
+        )
     
     def initialize(self, plugins_dir: str = "plugins", skills_dir: str = "skills") -> None:
         """
         初始化并加载所有工具
-        
+
         Args:
             plugins_dir: Liugin 目录
             skills_dir: Skill 目录
         """
         # 加载 Liugins
+        self._plugins_dir = plugins_dir
+        self._skills_dir = skills_dir
         self._load_plugins(plugins_dir)
-        
+
         # 加载 Skills
         self._load_skills(skills_dir)
-        
+
         # 构建缓存
         self._build_mcp_cache()
-        
+
+        # 启动内存管理器
+        self._memory_mgr.start()
+
         print(f"{Fore.GREEN}[统一工具管理器] 加载完成: {len(self._tools)} 个工具{Style.RESET_ALL}")
         print(f"  - Liugin 协议: {sum(1 for p in self._protocol_map.values() if p == 'liugin')}")
         print(f"  - Skill 协议: {sum(1 for p in self._protocol_map.values() if p == 'skill')}")
+
+        # 打印内存管理状态
+        status = self._memory_mgr.get_status()
+        print(f"  - 内存管理: TTL={status['ttl']}s, 最大空闲={status['max_idle']}, "
+              f"钉住={status['pinned']}")
     
     def _load_plugins(self, plugins_dir: str) -> None:
-        """加载 Liugin 协议工具"""
+        """加载 Liugin 协议工具（并注册到内存管理器）"""
         import importlib.util
-        
+
         if not os.path.exists(plugins_dir):
             return
-        
+
         # 获取启用的插件列表
         enabled_plugins = self._get_enabled_plugins(plugins_dir)
-        
+
         for filename in os.listdir(plugins_dir):
             if not filename.endswith('.py') or filename == '__init__.py':
                 continue
-            
+
             plugin_name = filename[:-3]
-            
+
             # 检查是否启用
             if enabled_plugins is not None and plugin_name.lower() not in enabled_plugins:
                 continue
-            
+
             plugin_path = os.path.join(plugins_dir, filename)
-            
+
             try:
                 spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                
+
                 # 兼容 Plugin 和 Liugin 两种类名
                 plugin_class = None
                 if hasattr(module, 'Liugin'):
@@ -100,19 +147,19 @@ class UnifiedToolManager:
 
                 if plugin_class:
                     plugin_instance = plugin_class()
-                    
+
                     # 设置 CLI 引用
                     if hasattr(plugin_instance, 'set_cli') and self.cli:
                         plugin_instance.set_cli(self.cli)
-                    
+
                     tool_info = plugin_instance.get_tool_info()
                     tool_name = tool_info.get('name', plugin_name)
-                    
+
                     # 获取 MCP 工具定义（如果插件提供）
                     mcp_definition = None
                     if hasattr(plugin_instance, 'get_mcp_definition'):
                         mcp_definition = plugin_instance.get_mcp_definition()
-                    
+
                     # 注册到统一工具表
                     self._tools[tool_name] = {
                         'name': tool_name,
@@ -125,7 +172,23 @@ class UnifiedToolManager:
                         'mcp_definition': mcp_definition
                     }
                     self._protocol_map[tool_name] = 'liugin'
-                    
+
+                    # 记录路径（用于懒加载）
+                    self._plugin_paths[tool_name] = plugin_path
+
+                    # 注册到内存管理器
+                    self._memory_mgr.register(
+                        name=tool_name,
+                        path=plugin_path,
+                        protocol='liugin',
+                        info_cache={
+                            'name': tool_name,
+                            'description': tool_info.get('description', ''),
+                            'keywords': tool_info.get('keywords', []),
+                            'usage': tool_info.get('usage', ''),
+                        }
+                    )
+
             except Exception as e:
                 print(f"{Fore.RED}加载 Liugin '{plugin_name}' 失败: {e}{Style.RESET_ALL}")
     
@@ -169,7 +232,7 @@ class UnifiedToolManager:
                 # 判断技能格式
                 is_markdown = isinstance(skill, MarkdownSkill)
                 skill_format = "markdown" if is_markdown else "python"
-                
+
                 # 注册到统一工具表
                 self._tools[skill_name] = {
                     'name': skill_name,
@@ -185,6 +248,24 @@ class UnifiedToolManager:
                     'mcp_definition': tool_def  # Skill 的 OpenAI 格式就是 MCP 格式
                 }
                 self._protocol_map[skill_name] = 'skill'
+
+                # 记录路径（用于懒加载）
+                skill_path = os.path.join(skills_dir, skill_name)
+                self._skill_dirs[skill_name] = skill_path
+
+                # 注册到内存管理器
+                self._memory_mgr.register(
+                    name=skill_name,
+                    path=skill_path,
+                    protocol='skill',
+                    info_cache={
+                        'name': skill_name,
+                        'description': func_def.get('description', ''),
+                        'keywords': getattr(skill, 'tags', []),
+                        'format': skill_format,
+                    }
+                )
+
                 print(f"{Fore.GREEN}已加载 Skill ({skill_format}): {skill_name}{Style.RESET_ALL}")
                 
         except ImportError as e:
@@ -238,7 +319,168 @@ class UnifiedToolManager:
             return f"未知的技能类型: {type(skill)}"
         
         return handler
-    
+
+    # ==================== 懒加载/卸载 ====================
+
+    def _lazy_load_plugin(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        懒加载单个插件（由内存管理器回调）
+
+        Args:
+            name: 插件名
+
+        Returns:
+            tool_dict 如果成功，None 如果失败
+        """
+        import importlib.util
+
+        # ── 尝试 Liugin 插件 ──
+        plugin_path = self._plugin_paths.get(name)
+        if plugin_path and os.path.exists(plugin_path):
+            return self._load_single_plugin(name, plugin_path)
+
+        # ── 尝试 Skill ──
+        skill_dir = self._skill_dirs.get(name)
+        if skill_dir and os.path.exists(skill_dir):
+            return self._load_single_skill(name, skill_dir)
+
+        return None
+
+    def _load_single_plugin(self, name: str, plugin_path: str) -> Optional[Dict[str, Any]]:
+        """加载单个 Liugin 插件"""
+        import importlib.util
+
+        try:
+            plugin_name = os.path.splitext(os.path.basename(plugin_path))[0]
+            spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            plugin_class = getattr(module, 'Liugin', None) or getattr(module, 'Plugin', None)
+            if not plugin_class:
+                return None
+
+            plugin_instance = plugin_class()
+            if hasattr(plugin_instance, 'set_cli') and self.cli:
+                plugin_instance.set_cli(self.cli)
+
+            tool_info = plugin_instance.get_tool_info()
+            tool_name = tool_info.get('name', name)
+
+            mcp_definition = None
+            if hasattr(plugin_instance, 'get_mcp_definition'):
+                mcp_definition = plugin_instance.get_mcp_definition()
+
+            tool_dict = {
+                'name': tool_name,
+                'description': tool_info.get('description', ''),
+                'keywords': tool_info.get('keywords', []),
+                'usage': tool_info.get('usage', ''),
+                'handler': plugin_instance.handle,
+                'protocol': 'liugin',
+                'instance': plugin_instance,
+                'mcp_definition': mcp_definition
+            }
+
+            with self._lock:
+                self._tools[tool_name] = tool_dict
+                self._protocol_map[tool_name] = 'liugin'
+
+            return tool_dict
+
+        except Exception as e:
+            logger.error(f"懒加载插件 '{name}' 失败: {e}")
+            return None
+
+    def _load_single_skill(self, name: str, skill_dir: str) -> Optional[Dict[str, Any]]:
+        """加载单个 Skill"""
+        try:
+            from skills.base import SkillLoader, MarkdownSkill, Skill
+
+            loader = SkillLoader(os.path.dirname(skill_dir))
+            skill = loader.load_skill(skill_dir)
+
+            if not skill:
+                return None
+
+            if hasattr(skill, 'set_cli') and self.cli:
+                skill.set_cli(self.cli)
+
+            tool_def = skill.get_tool_definition()
+            func_def = tool_def.get('function', {})
+
+            is_markdown = isinstance(skill, MarkdownSkill)
+            skill_format = "markdown" if is_markdown else "python"
+
+            tool_dict = {
+                'name': name,
+                'description': func_def.get('description', ''),
+                'keywords': getattr(skill, 'tags', []),
+                'usage': getattr(skill, 'instructions', '')[:500] if is_markdown else getattr(skill, 'usage', ''),
+                'handler': self._create_skill_handler(skill),
+                'protocol': 'skill',
+                'format': skill_format,
+                'instance': skill,
+                'tool_definition': tool_def,
+                'anthropic_definition': skill.get_anthropic_tool_definition(),
+                'mcp_definition': tool_def
+            }
+
+            with self._lock:
+                self._tools[name] = tool_dict
+                self._protocol_map[name] = 'skill'
+
+            return tool_dict
+
+        except Exception as e:
+            logger.error(f"懒加载 Skill '{name}' 失败: {e}")
+            return None
+
+    def _unload_plugin(self, name: str) -> None:
+        """
+        卸载插件实例（由内存管理器回调）
+
+        从工具表中移除，释放实例引用，但保留路径缓存以便重新加载
+        """
+        with self._lock:
+            if name in self._tools:
+                tool = self._tools[name]
+                # 清理实例引用
+                instance = tool.get('instance')
+                if instance and hasattr(instance, 'cleanup'):
+                    try:
+                        instance.cleanup()
+                    except Exception:
+                        pass
+                del self._tools[name]
+                # 不删除 _protocol_map 和路径缓存，懒加载时需要
+
+        # 重建 MCP 缓存
+        self._build_mcp_cache()
+
+    def _ensure_loaded(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        确保插件已加载（调用入口统一使用）
+
+        如果插件已加载，更新使用时间戳并返回 tool_dict
+        如果插件已卸载，自动懒加载后返回 tool_dict
+        如果插件不存在，返回 None
+        """
+        # 先检查是否在工具表中
+        with self._lock:
+            tool = self._tools.get(name)
+            if tool:
+                self._memory_mgr.mark_used(name)
+                return tool
+
+        # 不在工具表中，可能是已卸载，尝试懒加载
+        result = self._memory_mgr.ensure_loaded(name)
+        if result:
+            self._memory_mgr.mark_used(name)
+            return result
+
+        return None
+
     def _get_enabled_plugins(self, plugins_dir: str) -> Optional[List[str]]:
         """获取启用的插件列表"""
         # 检查环境变量
@@ -347,10 +589,10 @@ class UnifiedToolManager:
     def tools(self) -> List[Dict[str, Any]]:
         """获取所有工具列表（兼容 LiuginManager 接口）"""
         return list(self._tools.values())
-    
+
     def get_tool(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取指定工具"""
-        return self._tools.get(name)
+        """获取指定工具（支持懒加载）"""
+        return self._ensure_loaded(name)
     
     def get_protocol(self, name: str) -> Optional[str]:
         """获取工具使用的协议"""
@@ -358,18 +600,18 @@ class UnifiedToolManager:
     
     def execute(self, tool_name: str, args: str = "", **kwargs) -> Dict[str, Any]:
         """
-        执行工具调用
-        
+        执行工具调用（支持懒加载）
+
         Args:
             tool_name: 工具名称
             args: 参数字符串（Plugin 格式）
             **kwargs: 关键字参数（Skill 格式或 MCP arguments）
-        
+
         Returns:
             {"result": "..."} 格式的结果
         """
-        tool = self._tools.get(tool_name)
-        
+        tool = self._ensure_loaded(tool_name)
+
         if not tool:
             return {"result": f"未找到工具: {tool_name}"}
         
@@ -418,14 +660,14 @@ class UnifiedToolManager:
     
     def mcp_call(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        MCP 格式的工具调用入口
-        
+        MCP 格式的工具调用入口（支持懒加载）
+
         这是 MCP 协议的主要调用接口，接收结构化参数并返回结果
-        
+
         Args:
             tool_name: 工具名称
             arguments: 结构化参数 (JSON对象)
-        
+
         Returns:
             MCP 标准响应格式:
             {
@@ -438,7 +680,7 @@ class UnifiedToolManager:
                 "isError": false
             }
         """
-        tool = self._tools.get(tool_name)
+        tool = self._ensure_loaded(tool_name)
         
         if not tool:
             return self._mcp_error(f"未找到工具: {tool_name}")
@@ -607,12 +849,12 @@ class UnifiedToolManager:
     
     def search_tools(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        搜索工具
-        
+        搜索工具（包括已卸载的插件，使用缓存信息）
+
         Args:
             query: 搜索关键词
             limit: 返回数量限制
-        
+
         Returns:
             匹配的工具列表
         """
@@ -620,44 +862,69 @@ class UnifiedToolManager:
         # 标准化：移除所有分隔符（连字符、下划线、空格）
         query_normalized = query_lower.replace('-', '').replace('_', '').replace(' ', '')
         matches = []
-        
+
+        # 搜索已加载的工具
         for tool in self._tools.values():
-            score = 0
-            name = tool['name'].lower()
-            name_normalized = name.replace('-', '').replace('_', '')
-            desc = tool['description'].lower()
-            keywords = [kw.lower() for kw in tool.get('keywords', [])]
-            
-            # 名称完全匹配（忽略分隔符差异）
-            if query_lower == name or query_normalized == name_normalized:
-                score += 100
-            # 名称包含（标准化后匹配）
-            elif query_normalized in name_normalized or query_lower in name:
-                score += 50
-            # 描述包含
-            if query_lower in desc:
-                score += 30
-            # 关键词匹配
-            for kw in keywords:
-                kw_normalized = kw.replace('-', '').replace('_', '')
-                if query_lower in kw or query_normalized in kw_normalized:
-                    score += 20
-                    break
-            
+            score = self._score_tool_match(tool, query_lower, query_normalized)
             if score > 0:
                 matches.append({
                     'name': tool['name'],
                     'description': tool['description'],
                     'usage': tool.get('usage', ''),
-                    'keywords': keywords,
+                    'keywords': [kw.lower() for kw in tool.get('keywords', [])],
                     'protocol': tool['protocol'],
                     'instance': tool.get('instance'),
                     'score': score
                 })
-        
+
+        # 搜索已卸载但注册的插件（使用缓存信息）
+        for name in self._memory_mgr.get_unloaded_names():
+            # 跳过已加载的（上面已搜索）
+            if name in self._tools:
+                continue
+            info = self._memory_mgr.get_info_cache(name)
+            if info:
+                score = self._score_tool_match(info, query_lower, query_normalized)
+                if score > 0:
+                    matches.append({
+                        'name': info.get('name', name),
+                        'description': info.get('description', ''),
+                        'usage': info.get('usage', ''),
+                        'keywords': info.get('keywords', []),
+                        'protocol': info.get('protocol', 'liugin'),
+                        'instance': None,
+                        'score': score,
+                        '_unloaded': True,  # 标记为已卸载
+                    })
+
         # 按分数排序
         matches.sort(key=lambda x: x['score'], reverse=True)
         return matches[:limit]
+
+    def _score_tool_match(self, tool: Dict, query_lower: str, query_normalized: str) -> int:
+        """计算工具匹配分数"""
+        score = 0
+        name = tool.get('name', '').lower()
+        name_normalized = name.replace('-', '').replace('_', '')
+        desc = tool.get('description', '').lower()
+        keywords = [kw.lower() for kw in tool.get('keywords', [])]
+
+        # 名称完全匹配（忽略分隔符差异）
+        if query_lower == name or query_normalized == name_normalized:
+            score += 100
+        # 名称包含（标准化后匹配）
+        elif query_normalized in name_normalized or query_lower in name:
+            score += 50
+        # 描述包含
+        if query_lower in desc:
+            score += 30
+        # 关键词匹配
+        for kw in keywords:
+            kw_normalized = kw.replace('-', '').replace('_', '')
+            if query_lower in kw or query_normalized in kw_normalized:
+                score += 20
+                break
+        return score
     
     def register_tool(self, name: str, handler: callable, description: str = "", 
                       protocol: str = "custom", mcp_definition: Dict = None, **kwargs) -> None:
@@ -695,10 +962,56 @@ class UnifiedToolManager:
             if name in self._tools:
                 del self._tools[name]
                 del self._protocol_map[name]
+                # 同时从内存管理器注销
+                if name in self._plugin_paths:
+                    del self._plugin_paths[name]
+                if name in self._skill_dirs:
+                    del self._skill_dirs[name]
                 # 重建缓存
                 self._build_mcp_cache()
                 return True
             return False
+
+    def get_all_tools_info(self) -> List[Dict[str, Any]]:
+        """
+        获取所有工具的简要信息（包括已卸载的）
+
+        用于系统提示词，让 AI 知道有哪些工具可用
+        已卸载的工具只有基本信息，调用时会自动加载
+        """
+        result = []
+        # 已加载的
+        for tool in self._tools.values():
+            result.append({
+                'name': tool['name'],
+                'description': tool.get('description', ''),
+                'keywords': tool.get('keywords', []),
+                'protocol': tool.get('protocol', ''),
+                'loaded': True,
+            })
+        # 已卸载的（从内存管理器缓存读取）
+        for name in self._memory_mgr.get_unloaded_names():
+            if name in self._tools:
+                continue
+            info = self._memory_mgr.get_info_cache(name)
+            if info:
+                result.append({
+                    'name': info.get('name', name),
+                    'description': info.get('description', ''),
+                    'keywords': info.get('keywords', []),
+                    'protocol': info.get('protocol', 'liugin'),
+                    'loaded': False,
+                })
+        return result
+
+    def get_tool_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """根据名称获取工具（兼容 LiuginManager 接口，支持懒加载）"""
+        return self._ensure_loaded(name)
+
+    @property
+    def memory_manager(self):
+        """获取内存管理器实例"""
+        return self._memory_mgr
     
     def get_skills_system_prompt(self) -> str:
         """

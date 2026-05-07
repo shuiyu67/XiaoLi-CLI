@@ -130,3 +130,7 @@ class LiuginManager:
             if tool.get('name', '').lower() == tool_name.lower():
                 return tool
         return None
+
+    def get_tool_info_only(self, tool_name):
+        """根据名称获取工具信息（不含 handler，用于搜索已卸载插件）"""
+        return self.get_tool_by_name(tool_name)
