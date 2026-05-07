@@ -9,7 +9,7 @@ import re
 from typing import List
 
 
-class Plugin:
+class Liugin:
     """JSON 工具箱 - 格式化/校验/查询/转换"""
 
     def __init__(self):
@@ -374,7 +374,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("JSON 工具箱测试:")
     print(plugin.handle('validate \'{"name": "test", "age": 25}\''))
     print(plugin.handle('format \'{"name":"test","items":[1,2,3]}\''))

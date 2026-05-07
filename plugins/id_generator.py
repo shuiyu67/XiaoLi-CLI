@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List
 
 
-class Plugin:
+class Liugin:
     """UUID / ID 生成器 - 多格式唯一标识符生成"""
 
     def __init__(self):
@@ -367,7 +367,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("ID 生成器测试:")
     print(plugin.handle('uuid'))
     print(plugin.handle('uuid -v 1 -n 3'))

@@ -543,7 +543,7 @@ if __name__ == "__main__":
 
 
 if __name__ == "__main__":
-    plugin = Plugin()
+    plugin = Liugin()
     print("语音识别插件")
     print(f"临时目录: {plugin.temp_dir}")
     print("\n" + plugin.usage)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List
 
 
-class Plugin:
+class Liugin:
     """文件管理器 - 文件和目录的增删改查"""
 
     def __init__(self):

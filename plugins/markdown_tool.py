@@ -9,7 +9,7 @@ import os
 from typing import List, Tuple
 
 
-class Plugin:
+class Liugin:
     """Markdown 工具 - TOC/渲染/格式转换/统计"""
 
     def __init__(self):
@@ -529,7 +529,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("Markdown 工具测试:")
     print(plugin.handle('headings "# Hello\\n## World\\n### Sub"'))
     print(plugin.handle('stats "# Hello\\n\\nThis is a test."'))

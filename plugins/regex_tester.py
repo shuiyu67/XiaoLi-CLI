@@ -9,7 +9,7 @@ import os
 from typing import List
 
 
-class Plugin:
+class Liugin:
     """正则表达式测试器 - 测试、调试、管理正则"""
 
     def __init__(self):
@@ -430,7 +430,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("正则表达式测试器测试:")
     print(plugin.handle('test "\\d+" "abc123def456"'))
     print(plugin.handle('match "[a-z]+" "hello world foo bar"'))

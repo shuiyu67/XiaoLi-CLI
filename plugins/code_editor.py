@@ -16,7 +16,7 @@ import threading
 from typing import Optional, Tuple, List
 
 
-class Plugin:
+class Liugin:
     """代码编辑与搜索 - 精准编辑 + 代码理解"""
 
     def __init__(self):

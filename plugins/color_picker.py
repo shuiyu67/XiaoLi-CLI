@@ -8,7 +8,7 @@ import colorsys
 from typing import List, Tuple
 
 
-class Plugin:
+class Liugin:
     """颜色工具 - 格式转换、调色板、对比度检查"""
 
     def __init__(self):
@@ -447,7 +447,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("颜色工具测试:")
     print(plugin.handle('convert "#3498db"'))
     print(plugin.handle('contrast "#FFFFFF" "#000000"'))

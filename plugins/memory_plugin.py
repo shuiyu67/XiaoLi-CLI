@@ -13,7 +13,7 @@ sys.path.insert(0, project_root)
 from xcli_core.memory import MemoryManager
 
 
-class Plugin:
+class Liugin:
     """持久化记忆系统 — AI 可写日记、搜索记忆、管理聊天记录"""
 
     def __init__(self):

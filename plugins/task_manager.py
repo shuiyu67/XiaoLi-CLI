@@ -258,7 +258,7 @@ JSON格式示例：
 # 测试函数
 def test_plugin():
     """测试插件功能"""
-    plugin = Plugin()
+    plugin = Liugin()
     print("任务管理插件测试:")
 
     print("\n1. 添加任务:")

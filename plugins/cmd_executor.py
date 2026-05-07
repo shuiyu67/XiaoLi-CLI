@@ -7,7 +7,7 @@ import subprocess
 import platform
 
 
-class Plugin:
+class Liugin:
     """Shell 命令执行器 - 跨平台命令行工具"""
 
     def __init__(self):

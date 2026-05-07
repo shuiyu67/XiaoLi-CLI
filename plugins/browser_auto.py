@@ -9,7 +9,7 @@ import time
 from typing import Optional
 
 
-class Plugin:
+class Liugin:
     """浏览器自动化 - 网页操控、表单填写、数据抓取、截图"""
 
     def __init__(self):

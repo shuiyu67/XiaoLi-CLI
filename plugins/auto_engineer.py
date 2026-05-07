@@ -10,7 +10,7 @@ import subprocess
 from typing import Tuple, List
 
 
-class Plugin:
+class Liugin:
     """工程化工具 - lint/format/test/build + 代码分析"""
 
     def __init__(self):

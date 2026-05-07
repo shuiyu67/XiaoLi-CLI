@@ -25,7 +25,7 @@ except ImportError:
     WEBSOCKET_AVAILABLE = False
 
 
-class Plugin:
+class Liugin:
     """AI 生图插件 - 调用 ai.2x.nz 接口生成图片"""
 
     BASE_URL = "https://ai.2x.nz"
@@ -587,4 +587,3 @@ class Plugin:
 
 
 # 兼容 Liugin 类名
-Liugin = Plugin

@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Optional
 
 
-class Plugin:
+class Liugin:
     """代码片段管理器 - 保存和复用代码片段"""
 
     def __init__(self):
@@ -416,7 +416,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("代码片段管理器测试:")
     print(plugin.handle('add hello -l python -c "print(\'Hello, World!\')" -t 示例,入门 -d 最简单的Python程序'))
     print(plugin.handle('add fib -l python -c "def fib(n): return n if n < 2 else fib(n-1)+fib(n-2)" -t 算法,递归'))

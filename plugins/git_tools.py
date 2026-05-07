@@ -8,7 +8,7 @@ import subprocess
 from typing import Tuple, Optional
 
 
-class Plugin:
+class Liugin:
     """Git 版本控制 - 基础操作 + 工作流自动化"""
 
     def __init__(self):

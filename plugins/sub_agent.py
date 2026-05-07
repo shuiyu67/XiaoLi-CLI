@@ -42,7 +42,7 @@ class SubAgent:
         }
 
 
-class Plugin:
+class Liugin:
     """子 Agent 系统 - 创建、管理、协作"""
 
     def __init__(self):

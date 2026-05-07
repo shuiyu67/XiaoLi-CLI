@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Optional
 
 
-class Plugin:
+class Liugin:
     """书签管理器 - 开发资源和链接管理"""
 
     def __init__(self):
@@ -477,7 +477,7 @@ class Plugin:
 
 
 def test_plugin():
-    plugin = Plugin()
+    plugin = Liugin()
     print("书签管理器测试:")
     print(plugin.handle('add https://github.com -n GitHub -c 开发 -t 代码,托管 -d 代码托管平台'))
     print(plugin.handle('add https://stackoverflow.com -n StackOverflow -c 学习 -t 问答,编程'))

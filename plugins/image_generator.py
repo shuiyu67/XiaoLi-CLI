@@ -10,7 +10,7 @@ import time
 from typing import Optional
 
 
-class Plugin:
+class Liugin:
     """图像生成工具 — 自然语言/Tag 生图，基于 ComfyUI 在线服务"""
 
     def __init__(self):

@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any
 IS_WINDOWS = sys.platform == "win32"
 
 
-class Plugin:
+class Liugin:
     """Windows GUI 自动化 - 屏幕元素识别、点击、输入、截图、元素树遍历"""
 
     def __init__(self):
