@@ -509,12 +509,12 @@ if TEXTUAL_AVAILABLE:
 
                 widget = Static(line, classes=cls)
                 scroll.mount(widget)
-                # 延迟显示每一行
-                delay = i * 0.1
+                # 延迟显示每一行（避免 delay=0 导致 Textual 除零错误）
+                delay = max(0.01, i * 0.1)
                 self.set_timer(delay, lambda w=widget: w.add_class("visible"))
 
             # 最后滚动到底部
-            self.set_timer(len(welcome_lines) * 0.1 + 0.1,
+            self.set_timer(max(0.01, len(welcome_lines) * 0.1 + 0.1),
                           lambda: scroll.scroll_end(animate=True, duration=0.3))
 
         def _render_welcome(self):
