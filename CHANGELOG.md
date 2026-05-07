@@ -4,6 +4,34 @@
 
 ---
 
+## v5.2.0 (2026-05-08)
+
+### ✨ 新增功能
+
+- **插件内存管理器** (`plugin_memory_manager.py`) — TTL 自动淘汰 + 懒加载机制
+  - 后台线程定期扫描空闲插件，超过 TTL（默认 5 分钟）自动从内存卸载，释放资源
+  - AI 调用已卸载的插件时自动重新加载（懒加载），对用户完全透明
+  - 核心插件（`tool_search`）可钉住永不淘汰，保障基础功能可用
+  - 可配置参数：TTL 时间、最大空闲插件数、扫描间隔、钉住列表
+  - `/status` 命令和 TUI 侧栏实时显示内存管理状态（已加载/已卸载/统计）
+  - `search_tools` 支持搜索已卸载插件（使用缓存的元数据，无需加载实例）
+
+###  TUI 修复
+
+- **修复消息分类失效** — `_write_raw` 中空字符串 `'' in msg` 永远为 True，导致所有消息显示为工具成功样式；替换为正确的 emoji 标记（✅/❌/🤖）
+- **修复侧栏切换失效** — Textual 无 `.visible` 布尔属性，改用 `has_class("hidden")` + CSS 类控制显隐
+- **修复侧栏隐藏动画** — CSS `display: none` 阻止过渡动画，改用 `width: 0` + `opacity: 0` 方案
+- **修复 TextArea 导入缺失** — `constants.py` 可用性检查未导入 `TextArea`、`Rule`
+- **修复 `set_timer(0)` 崩溃** — 欢迎动画首行延迟为 0.0 导致 Textual 8.x 除零错误（`ZeroDivisionError`），使用 `max(0.01, delay)` 修复
+
+###  改进
+
+- `UnifiedToolManager` 重构：集成 `PluginMemoryManager`，所有工具访问统一走 `_ensure_loaded` 路径
+- 新增 `get_all_tools_info()` 方法，系统提示词可列出所有注册工具（含已卸载）
+- 新增 `get_tool_by_name()` / `memory_manager` 属性，兼容旧 `LiuginManager` 接口
+
+---
+
 ## v5.1.4 (2026-04-29)
 
 ###  新增功能
