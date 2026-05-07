@@ -102,7 +102,7 @@ except ImportError:
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-    from textual.widgets import Header, Footer, Input, RichLog, Static, Button, Tree
+    from textual.widgets import Header, Footer, Input, RichLog, Static, Button, Tree, TextArea, Rule
     from textual.widgets.tree import TreeNode
     from textual.binding import Binding
     from textual.events import Mount

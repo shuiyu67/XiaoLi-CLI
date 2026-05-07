@@ -143,10 +143,11 @@ if TEXTUAL_AVAILABLE:
     }}
 
     #sidebar.hidden {{
-        display: none;
         width: 0;
         min-width: 0;
         opacity: 0;
+        border: none;
+        overflow: hidden;
     }}
 
     .sidebar-header {{
@@ -845,11 +846,11 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(self._update_sidebar)
 
         def _write_raw(self, msg):
-            if '' in msg or 'OK 工具' in msg:
+            if '✅' in msg or 'OK 工具' in msg:
                 self._add(f"  {msg}", "msg-tool-ok")
-            elif '' in msg or 'X 工具' in msg or '错误' in msg:
+            elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
                 self._add(f"  {msg}", "msg-tool-err")
-            elif '' in msg:
+            elif '🤖' in msg:
                 self._add(f"  {msg}", "msg-ai")
             elif '工具' in msg and ('调用' in msg or '执行' in msg):
                 self._add(f"  {msg}", "msg-tool-ok")
@@ -870,12 +871,13 @@ if TEXTUAL_AVAILABLE:
 
         def action_toggle_sidebar(self):
             sidebar = self.query_one("#sidebar")
-            sidebar.visible = not sidebar.visible
-            # 动画：侧栏切换时平滑过渡
-            if sidebar.visible:
+            # 通过 CSS 类控制侧栏显隐
+            if sidebar.has_class("hidden"):
                 sidebar.remove_class("hidden")
+                self.sidebar_visible = True
             else:
                 sidebar.add_class("hidden")
+                self.sidebar_visible = False
 
         def action_cancel(self):
             if self.is_generating:
