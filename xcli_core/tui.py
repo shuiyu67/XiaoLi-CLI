@@ -562,13 +562,9 @@ if TEXTUAL_AVAILABLE:
             status_container.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
             status_container.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
 
-            # 内存管理状态
-            if hasattr(self.cli, 'liugin_manager') and hasattr(self.cli.liugin_manager, 'memory_manager'):
-                mgr = self.cli.liugin_manager.memory_manager
-                s = mgr.get_status()
-                status_container.mount(Static(f"  已加载: {s['loaded']}", classes="tool-item"))
-                if s['unloaded'] > 0:
-                    status_container.mount(Static(f"  已卸载: {s['unloaded']}", classes="tool-item"))
+            # 工具数
+            if hasattr(self.cli, 'liugin_manager'):
+                status_container.mount(Static(f"  工具: {len(self.cli.liugin_manager.tools)} 个", classes="tool-item"))
 
         def _update_status(self, text: str):
             bar = self.query_one("#status-bar")
@@ -822,10 +818,7 @@ if TEXTUAL_AVAILABLE:
                 f"  工具数: {len(self.bridge.tools())}",
                 f"  对话数: {len(self.bridge.history())}",
             ]
-            # 内存管理状态
-            if hasattr(self.cli, 'liugin_manager') and hasattr(self.cli.liugin_manager, 'memory_manager'):
-                mgr = self.cli.liugin_manager.memory_manager
-                status_lines.append(mgr.format_status())
+
             self._system('\n'.join(status_lines))
 
         # ── AI 生成 ──

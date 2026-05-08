@@ -1,0 +1,31 @@
+# 示例工作流 - 代码质量检查与构建
+name: code-quality
+description: 代码质量检查、测试、构建的自动化流程
+
+steps:
+  - name: info
+    type: echo
+    message: "🚀 开始代码质量检查流程"
+
+  - name: lint
+    type: shell
+    command: "echo '✓ 代码风格检查通过'"
+    continue_on_error: true
+
+  - name: test
+    type: shell
+    command: "echo '✓ 单元测试通过 (42/42)'"
+    continue_on_error: true
+
+  - name: check_results
+    type: echo
+    message: "Lint: {{lint.output}} | Test: {{test.output}}"
+
+  - name: build
+    type: shell
+    command: "echo '✓ 构建完成 → dist/'"
+    if: "{{lint.exit_code}} == 0"
+
+  - name: done
+    type: echo
+    message: "✅ 流程完成，构建产物: {{build.output}}"
