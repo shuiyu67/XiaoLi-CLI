@@ -20,6 +20,7 @@ from .cli_display import DisplayMixin
 from .cli_history import HistoryMixin
 from .plugin_market import PluginMarketMixin
 from .notification import notify_task_complete, get_notification_manager
+from .process_protection import get_protection_status
 
 
 class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, HistoryMixin, PluginMarketMixin):
@@ -1020,12 +1021,22 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/chat open <名称>' 加载聊天记录{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/remote' 查看远程连接帮助{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/plugin' 管理插件市场 (安装/卸载/搜索){Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/protect' 查看进程保护状态{Style.RESET_ALL}")
         current_engine_name = getattr(self.current_engine, 'name', '未设置') if self.current_engine else '未设置'
         print(f"{Fore.GREEN}当前使用的AI引擎: {current_engine_name}{Style.RESET_ALL}")
         loaded_engines = list(self.engines.keys())
         if len(loaded_engines) > 1:
             print(f"{Fore.GREEN}已加载的AI引擎: {', '.join(loaded_engines)}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}{'-' * 50}{Style.RESET_ALL}")
+
+        # 显示进程保护状态
+        if hasattr(self, 'protection_results') and self.protection_results:
+            r = self.protection_results
+            si_icon = '' if r.get('single_instance') else ''
+            prio_icon = '' if r.get('priority') else ''
+            ppl_icon = '' if r.get('ppl_protection') else ''
+            wd_icon = '' if r.get('watchdog') else ''
+            print(f"{Fore.CYAN}  进程保护: {si_icon}单实例 {prio_icon}优先级 {ppl_icon}PPL保护 {wd_icon}看门狗{Style.RESET_ALL}")
 
         # 询问 diff 弹窗模式
         self._ask_diff_popup_mode()
@@ -1169,6 +1180,29 @@ multi 操作支持一次修改多处：
                     result = self.handle_plugin_command(plugin_args)
                     if result:
                         print(result)
+                    continue
+
+                if user_input.startswith('/protect'):
+                    parts = user_input.split()
+                    if len(parts) > 1 and parts[1] == 'test':
+                        # 重新测试所有保护
+                        from .process_protection import enable_process_protection
+                        results = enable_process_protection()
+                        print(f"\n{Fore.CYAN}  进程保护测试结果:{Style.RESET_ALL}")
+                        for key, val in results.items():
+                            icon = '' if val else ''
+                            print(f"    {icon} {key}: {val}")
+                    else:
+                        status = get_protection_status()
+                        print(f"\n{Fore.CYAN}  进程保护状态:{Style.RESET_ALL}")
+                        print(f"    平台: {status.get('platform', '未知')}")
+                        icon = '' if status.get('is_protected') else ''
+                        print(f"    {icon} 保护已启用: {status.get('is_protected', False)}")
+                        icon = '' if status.get('single_instance_held') else ''
+                        print(f"    {icon} 单实例锁: {status.get('single_instance_held', False)}")
+                        icon = '' if status.get('watchdog_running') else ''
+                        print(f"    {icon} 看门狗: {status.get('watchdog_running', False)}")
+                        print(f"      关闭钩子: {status.get('shutdown_hooks_count', 0)} 个")
                     continue
 
                 if user_input.startswith('/remote'):

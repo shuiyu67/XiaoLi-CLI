@@ -11,6 +11,7 @@ from .constants import (
 )
 from .config import get_system_config, set_system_config, logger
 from .plugin_manager import LiuginManager
+from .process_protection import get_protection, enable_process_protection
 
 # 可选导入
 try:
@@ -30,6 +31,14 @@ class BaseAICLI:
     def __init__(self):
         # 初始化colorama
         init(autoreset=True)
+
+        # 初始化进程保护（单实例 + 优先级 + PPL保护 + 看门狗）
+        self.protection_results = enable_process_protection(
+            priority_level="above_normal",
+            watchdog=True,
+            restart_on_crash=False,
+        )
+        self._protection = get_protection()
 
         # 确保插件管理器使用正确的路径
         project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,6 +123,12 @@ class BaseAICLI:
     def cleanup_resources(self):
         """清理资源，确保在程序退出时正确关闭所有资源"""
         print(f"{Fore.YELLOW}正在清理资源...{Style.RESET_ALL}")
+        # 清理进程保护
+        if hasattr(self, '_protection') and self._protection:
+            try:
+                self._protection.disable_all()
+            except Exception:
+                pass
         self._stop_clawli_monitor()
         if CLAWLI_SERVER_AVAILABLE and clawli_server:
             clawli_server.stop_server()

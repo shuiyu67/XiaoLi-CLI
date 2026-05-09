@@ -122,3 +122,78 @@ def get_config_directory():
         return os.path.join(os.path.expanduser("~"), 'Library', 'Application Support', 'Xiaoli Pro-CLI 3')
     else:  # Linux
         return os.path.join(os.path.expanduser('~'), '.config', 'xiaoli-pro-cli-3')
+
+def is_process_running(pid):
+    """检查指定 PID 的进程是否在运行"""
+    platform = get_platform()
+    
+    try:
+        if platform == 'windows':
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            os.kill(pid, 0)
+            return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def get_process_priority():
+    """获取当前进程优先级"""
+    platform = get_platform()
+    
+    try:
+        if platform == 'windows':
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetCurrentProcess()
+            return kernel32.GetPriorityClass(handle)
+        else:
+            import resource
+            return resource.getpriority(resource.PRIO_PROCESS, 0)
+    except Exception:
+        return None
+
+
+def set_process_priority(level="above_normal"):
+    """
+    设置进程优先级
+    
+    Args:
+        level: "below_normal" | "normal" | "above_normal" | "high"
+    
+    Returns:
+        是否设置成功
+    """
+    platform = get_platform()
+    
+    try:
+        if platform == 'windows':
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            priority_map = {
+                "below_normal": 0x00004000,
+                "normal": 0x00000020,
+                "above_normal": 0x00008000,
+                "high": 0x00000080,
+            }
+            priority = priority_map.get(level, 0x00008000)
+            handle = kernel32.GetCurrentProcess()
+            return bool(kernel32.SetPriorityClass(handle, priority))
+        else:
+            nice_map = {
+                "below_normal": 10,
+                "normal": 0,
+                "above_normal": -10,
+                "high": -15,
+            }
+            nice_val = nice_map.get(level, -10)
+            os.nice(nice_val)
+            return True
+    except Exception:
+        return False

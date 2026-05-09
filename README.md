@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.2.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.3.0-blue" alt="version">
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-150+%20passed-brightgreen" alt="tests">
@@ -35,6 +35,7 @@
 - **定时任务** — 支持相对时间、绝对时间、重复任务，到期自动激活 AI
 - **系统通知** — 跨平台任务完成通知（Windows / macOS / Linux）
 - **MCP 协议** — 19 个插件全部实现 MCP 定义，支持 Function Calling 原生调用
+- **进程保护** — 跨平台单实例保护 + 进程优先级提升 + Windows PPL 风格保护 + 看门狗监控 + 优雅关闭
 - **19 个插件 161+ 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、图像生成、记忆等
 - **三模式界面** — TUI 图形化 + 传统命令行 + Web UI 浏览器界面
 - **150+ 个自动化测试** — pytest 覆盖全部插件和核心模块

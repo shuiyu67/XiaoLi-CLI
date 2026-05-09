@@ -4,6 +4,28 @@
 
 ---
 
+## v5.3.0 (2026-05-09)
+
+### ✨ 新增功能
+
+- **跨平台进程保护模块** (`xcli_core/process_protection.py`)
+  - **单实例保护** — 防止重复启动，Windows 使用命名 Mutex，macOS/Linux 使用 fcntl 文件锁（自动清理残留锁文件）
+  - **进程优先级提升** — Windows: `SetPriorityClass` (ABOVE_NORMAL/HIGH/REALTIME)，macOS/Linux: `os.nice()` + `renice`
+  - **Windows PPL 风格保护** — `SetErrorMode` 抑制系统错误弹窗 (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX)、`faulthandler` 崩溃堆栈捕获
+  - **POSIX 信号保护** — macOS/Linux 忽略 SIGHUP（终端关闭不退出）、注册 SIGTERM 优雅关闭、macOS 忽略 SIGPIPE
+  - **看门狗监控** — 后台线程监控父进程状态，父进程退出时自动清理并退出
+  - **关闭钩子系统** — 注册自定义清理函数，进程退出时自动执行
+  - **一键启用** — `enable_process_protection()` 单函数调用启用全部保护
+  - **`/protect` 命令** — CLI 中查看保护状态，`/protect test` 重新测试所有保护
+
+###  改进
+
+- `platform_utils.py` 新增 `is_process_running()`、`get_process_priority()`、`set_process_priority()` 跨平台工具函数
+- `cli_base.py` 启动时自动初始化进程保护，退出时自动清理
+- `cli_core.py` 启动 banner 显示保护状态图标（单实例/优先级/PPL/看门狗）
+
+---
+
 ## v5.2.0 (2026-05-08)
 
 ### ✨ 新增功能
