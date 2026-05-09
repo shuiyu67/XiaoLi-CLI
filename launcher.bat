@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul 2>&1
-title 小狸 Pro-CLI v5.1.2
+title 小狸 Pro-CLI v5.4.0
 
 echo.
 echo   ╔══════════════════════════════════════╗
-echo   ║   小狸 Pro-CLI 启动器 v5.1.2       ║
+echo   ║   小狸 Pro-CLI 启动器 v5.4.0       ║
 echo   ║   正在检测环境...                   ║
 echo   ╚══════════════════════════════════════╝
 echo.

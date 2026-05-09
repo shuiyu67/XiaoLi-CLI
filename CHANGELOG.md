@@ -4,7 +4,7 @@
 
 ---
 
-## v5.3.0 (2026-05-09)
+## v5.4.0 (2026-05-09) — Release
 
 ### ✨ 新增功能
 
@@ -23,6 +23,7 @@
 - `platform_utils.py` 新增 `is_process_running()`、`get_process_priority()`、`set_process_priority()` 跨平台工具函数
 - `cli_base.py` 启动时自动初始化进程保护，退出时自动清理
 - `cli_core.py` 启动 banner 显示保护状态图标（单实例/优先级/PPL/看门狗）
+- 全版本号统一更新至 v5.4.0
 
 ---
 
