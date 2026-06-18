@@ -18,16 +18,6 @@ MODE_NAMES = {
     MODE_MANUAL: "人工确认",
 }
 
-# ── 始终需要人工确认的指令（无论模式） ──
-ALWAYS_CONFIRM = {
-    ("cmd_executor", "run rm"),
-    ("cmd_executor", "run chmod"),
-    ("cmd_executor", "run chown"),
-    ("file_manager", "delete"),
-    ("git_tools", "checkout -b"),
-}
-
-
 class SafetyLayer:
     """统一安全检查层"""
 
@@ -64,17 +54,6 @@ class SafetyLayer:
         # 无限制模式：直接放行
         if self.mode == MODE_UNRESTRICTED:
             return True, ""
-
-        # 检查是否是始终需要确认的指令
-        args_lower = tool_args.strip().lower()
-        for (t, pattern) in ALWAYS_CONFIRM:
-            if tool_name == t and args_lower.startswith(pattern.split(" ", 1)[1] if " " in pattern else ""):
-                return self._ask_user_confirm(
-                    tool_name, tool_args,
-                    risk_level="高",
-                    impact="此操作始终需要人工确认",
-                    reason="敏感指令"
-                )
 
         # 人工确认模式：所有指令都确认
         if self.mode == MODE_MANUAL:

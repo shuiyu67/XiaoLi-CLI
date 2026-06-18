@@ -684,13 +684,15 @@ else:
         thin_sep = '─' * 70
 
         # ANSI 颜色
-        R = '\033[31m'   # 红
-        G = '\033[32m'   # 绿
+        R = '\033[31m'   # 红字
+        G = '\033[32m'   # 绿字
         C = '\033[36m'   # 青
         B = '\033[1m'    # 粗体
         D = '\033[2m'    # 暗
         W = '\033[37m'   # 白
         N = '\033[0m'    # 重置
+        RBG = '\033[41m\033[97m'  # 红底白字
+        GBG = '\033[42m\033[97m'  # 绿底白字
 
         # 构建带颜色的 diff
         diff_colored_lines = []
@@ -700,9 +702,9 @@ else:
             elif line.startswith('+++') or line.startswith('---'):
                 diff_colored_lines.append(f"{B}{line}{N}")
             elif line.startswith('+'):
-                diff_colored_lines.append(f"{G}{line}{N}")
+                diff_colored_lines.append(f"{GBG} {line} {N}")
             elif line.startswith('-'):
-                diff_colored_lines.append(f"{R}{line}{N}")
+                diff_colored_lines.append(f"{RBG} {line} {N}")
             else:
                 diff_colored_lines.append(line)
         diff_colored = '\n'.join(diff_colored_lines) if diff_colored_lines else '  (无差异)'
@@ -845,9 +847,9 @@ else:
                 elif line.startswith('+++') or line.startswith('---'):
                     output(f"[bold]{line}[/]")
                 elif line.startswith('+'):
-                    output(f"[green]{line}[/]")
+                    output(f"[white on green] {line} [/]")
                 elif line.startswith('-'):
-                    output(f"[red]{line}[/]")
+                    output(f"[white on red] {line} [/]")
                 else:
                     output(line)
 
@@ -871,9 +873,9 @@ else:
                 elif line.startswith('+++') or line.startswith('---'):
                     _out(f"{Style.BRIGHT}{line}{Style.RESET_ALL}")
                 elif line.startswith('+'):
-                    _out(f"{Fore.GREEN}{line}{Style.RESET_ALL}")
+                    _out(f"\033[42m\033[97m {line} {Style.RESET_ALL}")
                 elif line.startswith('-'):
-                    _out(f"{Fore.RED}{line}{Style.RESET_ALL}")
+                    _out(f"\033[41m\033[97m {line} {Style.RESET_ALL}")
                 else:
                     _out(line)
 

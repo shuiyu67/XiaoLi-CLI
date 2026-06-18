@@ -774,7 +774,7 @@ multi 操作支持一次修改多处：
                 tool_args = tc.get("args", "")
                 call_id = tc.get("id", "")
 
-                print(f"\n{Fore.GREEN}  FC 调用: {tool_name}({tool_args[:60]}){Style.RESET_ALL}")
+                self._output(f"[green]  FC 调用: {tool_name}({tool_args[:60]})[/]")
 
                 # 通过插件管理器执行
                 result = self._execute_tool_by_name(tool_name, tool_args)
@@ -842,11 +842,6 @@ multi 操作支持一次修改多处：
             except Exception:
                 pass
             response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=fc_tools)
-            if response and self.shared_conversation_history is not None:
-                self.shared_conversation_history.append({
-                    "role": "assistant",
-                    "content": response
-                })
             return response
 
         # CLI 模式：带动画和跨平台 ESC 取消

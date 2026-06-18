@@ -26,7 +26,7 @@ class SubAgent:
         self.created_at = datetime.now().strftime("%H:%M:%S")
         self.finished_at = None
         self.steps = 0                # 已执行步数
-        self.max_steps = 20
+        self.max_steps = float('inf')  # 不限制步数
 
     def to_dict(self):
         return {
@@ -238,7 +238,7 @@ class Liugin:
 
             if agent.status == "running":
                 agent.status = "done"
-                agent.result = "已达到最大步数限制，任务暂停。"
+                agent.result = "任务执行结束。"
 
         except Exception as e:
             agent.status = "failed"
@@ -369,7 +369,7 @@ class Liugin:
             f"  名称: {agent.name}",
             f"  任务: {agent.task}",
             f"  状态: {agent.status}",
-            f"  步骤: {agent.steps}/{agent.max_steps}",
+            f"  步骤: {agent.steps}",
             f"  创建: {agent.created_at}",
         ]
         if agent.finished_at:
@@ -395,7 +395,7 @@ class Liugin:
                 return f"错误：未找到 Agent '{agent_id}'"
 
         if agent.status == "running":
-            return f"Agent {agent.id} 仍在运行中 (步骤 {agent.steps}/{agent.max_steps})"
+            return f"Agent {agent.id} 仍在运行中 (步骤 {agent.steps})"
 
         if agent.status == "failed":
             return f"Agent {agent.id} 执行失败: {agent.error}"

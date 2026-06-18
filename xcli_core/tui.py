@@ -407,6 +407,23 @@ if TEXTUAL_AVAILABLE:
 
 
     # ═══════════════════════════════════════════════════
+    #  自定义 TextArea：回车发送，Shift+回车换行
+    # ═══════════════════════════════════════════════════
+
+    class SendTextArea(TextArea):
+        """回车发送消息，Shift+回车换行的输入框"""
+        async def _on_key(self, event):
+            if event.key in ("enter", "\r", "\n"):
+                # prevent_default 阻止父类 TextArea._on_key 执行
+                event.prevent_default()
+                try:
+                    self.app.action_send_message()
+                except Exception:
+                    pass
+                return
+            # 其他键正常处理
+
+    # ═══════════════════════════════════════════════════
     #  TUI 主应用
     # ═══════════════════════════════════════════════════
 
@@ -420,7 +437,8 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+c", "quit", "退出", show=True),
             Binding("ctrl+l", "clear", "清屏", show=True),
             Binding("ctrl+n", "new_chat", "新对话", show=True),
-            Binding("ctrl+enter", "send_message", "发送", show=True),
+            Binding("ctrl+enter", "send_message", "发送", show=False),
+            Binding("shift+enter", "newline", "换行", show=False),
             Binding("f1", "toggle_sidebar", "侧栏", show=True),
             Binding("escape", "cancel", "取消", show=False),
         ]
@@ -442,14 +460,14 @@ if TEXTUAL_AVAILABLE:
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
                         with Container(id="input-wrapper"):
-                            yield TextArea(
-                                placeholder="输入消息... (Ctrl+Enter 发送, Enter 换行)",
+                            yield SendTextArea(
+                                placeholder="输入消息... (回车发送, Shift+回车换行)",
                                 id="user-input",
                                 soft_wrap=True,
                                 tab_behavior="indent",
                             )
                         yield Static(
-                            "  Ctrl+Enter 发送 | ↑↓ 历史 | Ctrl+L 清屏 | F1 侧栏 | Tab 缩进",
+                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏",
                             id="input-hint"
                         )
                 with Vertical(id="sidebar"):
@@ -488,7 +506,7 @@ if TEXTUAL_AVAILABLE:
                 "   代码编辑 · 代码搜索 · Git 集成 · 多引擎",
                 "   输入 /help 查看命令 | /model 切换引擎",
                 f"   当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个",
-                "   支持多行输入 — Ctrl+Enter 发送",
+                "   支持多行输入 — Shift+回车换行",
                 "",
             ]
 
@@ -532,7 +550,7 @@ if TEXTUAL_AVAILABLE:
                 ("   代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
                 ("   输入 /help 查看命令 | /model 切换引擎", "msg-system"),
                 (f"   当前引擎: {self.bridge.current_engine()} | 工具: {len(self.bridge.tools())} 个", "msg-system"),
-                ("   支持多行输入 — Ctrl+Enter 发送", "msg-system"),
+                ("   支持多行输入 — Shift+回车换行", "msg-system"),
                 ("", "msg-dim"),
             ]
             for text, cls in lines:
@@ -670,8 +688,14 @@ if TEXTUAL_AVAILABLE:
 
         # ── 多行输入处理 ──
 
+        def action_newline(self):
+            """Shift+Enter 在输入框插入换行"""
+            text_area = self.query_one("#user-input")
+            if text_area.has_focus:
+                text_area.action_edit_insert_newline()
+
         def action_send_message(self):
-            """Ctrl+Enter 发送消息"""
+            """回车发送消息"""
             text_area = self.query_one("#user-input")
             text = text_area.text.strip()
             if not text:
@@ -754,9 +778,9 @@ if TEXTUAL_AVAILABLE:
 
   ⌨  快捷键:
   Ctrl+C     退出        Ctrl+L     清屏
-  Ctrl+N     新对话      Ctrl+Enter 发送消息
-  F1         侧栏        Escape     取消生成
-  Enter      换行        Tab        缩进"""
+  Ctrl+N     新对话      回车       发送消息
+  Shift+回车 换行        F1         侧栏
+  Escape     取消生成    Tab        缩进"""
             self._system(help_text)
 
         def _handle_manual(self, args):
