@@ -5,9 +5,14 @@
 import os
 import json
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List
+
+# 添加项目根目录到 path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from xcli_core.tool_result import ToolResult, ErrorCode
 
 
 class Liugin:
@@ -70,11 +75,11 @@ class Liugin:
         path = arguments.get("path", "")
         return f"{op} {path}".strip()
 
-    def handle(self, args: str) -> str:
+    def handle(self, args: str):
         try:
             parts = self._parse_args(args)
             if not parts:
-                return "错误：请提供操作类型"
+                return ToolResult.missing("操作类型")
 
             operation = parts[0].lower()
             handlers = {
@@ -92,7 +97,7 @@ class Liugin:
 
             handler = handlers.get(operation)
             if not handler:
-                return f"错误：不支持的操作 '{operation}'"
+                return ToolResult.fail(f"不支持的操作 '{operation}'", ErrorCode.UNSUPPORTED_OP)
             return handler(parts[1:])
 
         except Exception as e:
@@ -115,7 +120,7 @@ class Liugin:
             parts.append(current)
         return parts
 
-    def _op_list(self, args: List[str]) -> str:
+    def _op_list(self, args: List[str]):
         path, pattern = ".", None
         i = 0
         while i < len(args):
@@ -127,7 +132,7 @@ class Liugin:
 
         path = os.path.abspath(path)
         if not os.path.isdir(path):
-            return f"错误：不是目录: {path}"
+            return ToolResult.not_found(f"目录: {path}")
 
         items = []
         try:
@@ -153,13 +158,13 @@ class Liugin:
                 result.append(f"  ... 还有 {len(items) - 100} 项")
             result.append("─" * 50)
             result.append(f"共 {dirs} 个文件夹, {files} 个文件")
-            return '\n'.join(result)
+            return ToolResult.ok('\n'.join(result), tool_name="file_manager")
         except Exception as e:
-            return f"列出目录失败: {e}"
+            return ToolResult.fail(str(e), ErrorCode.EXEC_FAILED, tool_name="file_manager")
 
-    def _op_read(self, args: List[str]) -> str:
+    def _op_read(self, args: List[str]):
         if not args:
-            return "错误：请提供文件路径"
+            return ToolResult.missing("文件路径")
         file_path = os.path.abspath(args[0])
         max_lines = None
         i = 1
@@ -168,16 +173,16 @@ class Liugin:
                 try:
                     max_lines = int(args[i + 1])
                 except ValueError:
-                    return "错误：行数必须是整数"
+                    return ToolResult.fail("行数必须是整数", ErrorCode.INVALID_ARGS)
                 i += 1
             i += 1
 
         if not os.path.isfile(file_path):
-            return f"错误：文件不存在: {file_path}"
+            return ToolResult.not_found(f"文件: {file_path}")
 
         size = os.path.getsize(file_path)
         if size > 10 * 1024 * 1024:
-            return f"文件过大 ({size/1024/1024:.1f}MB)，请用 -n 限制行数"
+            return ToolResult.fail(f"文件过大 ({size/1024/1024:.1f}MB)，请用 -n 限制行数", ErrorCode.INVALID_ARGS)
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -195,13 +200,13 @@ class Liugin:
                     content = '\n'.join(f"{i+1:4d} | {l.rstrip()}" for i, l in enumerate(all_lines))
                     header = f" {file_path} ({size}B, {len(all_lines)} 行)"
 
-            return f"{header}\n{'─' * 50}\n{content}"
+            return ToolResult.ok(f"{header}\n{'─' * 50}\n{content}", tool_name="file_manager")
         except UnicodeDecodeError:
-            return "错误：无法解码（可能是二进制文件）"
+            return ToolResult.fail("无法解码（可能是二进制文件）", ErrorCode.DECODE_ERROR)
 
-    def _op_write(self, args: List[str]) -> str:
+    def _op_write(self, args: List[str]):
         if len(args) < 2:
-            return "错误：格式: write <文件> -c <内容>"
+            return ToolResult.fail("格式: write <文件> -c <内容>", ErrorCode.MISSING_ARGS)
         fp = os.path.abspath(args[0])
         content = None
         i = 1
@@ -210,15 +215,15 @@ class Liugin:
                 content = args[i + 1]; i += 1
             i += 1
         if content is None:
-            return "错误：请用 -c 提供内容"
+            return ToolResult.missing("内容 (-c 参数)")
         os.makedirs(os.path.dirname(fp) or ".", exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f" 已写入: {fp} ({len(content)} 字符)"
+        return ToolResult.ok(f"已写入: {fp} ({len(content)} 字符)", tool_name="file_manager")
 
-    def _op_append(self, args: List[str]) -> str:
+    def _op_append(self, args: List[str]):
         if len(args) < 2:
-            return "错误：格式: append <文件> -c <内容>"
+            return ToolResult.fail("格式: append <文件> -c <内容>", ErrorCode.MISSING_ARGS)
         fp = os.path.abspath(args[0])
         content = None
         i = 1
@@ -227,59 +232,59 @@ class Liugin:
                 content = args[i + 1]; i += 1
             i += 1
         if content is None:
-            return "错误：请用 -c 提供内容"
+            return ToolResult.missing("内容 (-c 参数)")
         if not os.path.isfile(fp):
-            return f"错误：文件不存在: {fp}"
+            return ToolResult.not_found(f"文件: {fp}")
         with open(fp, 'a', encoding='utf-8') as f:
             f.write(content)
-        return f" 已追加: {fp}"
+        return ToolResult.ok(f"已追加: {fp}", tool_name="file_manager")
 
-    def _op_copy(self, args: List[str]) -> str:
+    def _op_copy(self, args: List[str]):
         if len(args) < 2:
-            return "错误：请提供源和目标路径"
+            return ToolResult.missing("源和目标路径")
         src, dst = os.path.abspath(args[0]), os.path.abspath(args[1])
         if not os.path.exists(src):
-            return f"错误：源不存在: {src}"
+            return ToolResult.not_found(f"源: {src}")
         os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
         if os.path.isfile(src):
             shutil.copy2(src, dst)
         else:
             shutil.copytree(src, dst, dirs_exist_ok=True)
-        return f" 已复制:\n  {src}\n  → {dst}"
+        return ToolResult.ok(f"已复制:\n  {src}\n  → {dst}", tool_name="file_manager")
 
-    def _op_move(self, args: List[str]) -> str:
+    def _op_move(self, args: List[str]):
         if len(args) < 2:
-            return "错误：请提供源和目标路径"
+            return ToolResult.missing("源和目标路径")
         src, dst = os.path.abspath(args[0]), os.path.abspath(args[1])
         if not os.path.exists(src):
-            return f"错误：源不存在: {src}"
+            return ToolResult.not_found(f"源: {src}")
         os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
         shutil.move(src, dst)
-        return f" 已移动:\n  {src}\n  → {dst}"
+        return ToolResult.ok(f"已移动:\n  {src}\n  → {dst}", tool_name="file_manager")
 
-    def _op_delete(self, args: List[str]) -> str:
+    def _op_delete(self, args: List[str]):
         if not args:
-            return "错误：请提供路径"
+            return ToolResult.missing("路径")
         path = os.path.abspath(args[0])
         recursive = "-r" in args
         if not os.path.exists(path):
-            return f"错误：不存在: {path}"
+            return ToolResult.not_found(f"路径: {path}")
         if os.path.isfile(path):
             os.remove(path)
-            return f" 已删除文件: {path}"
+            return ToolResult.ok(f"已删除文件: {path}", tool_name="file_manager")
         elif os.path.isdir(path):
             if recursive:
                 shutil.rmtree(path)
-                return f" 已删除目录: {path}"
+                return ToolResult.ok(f"已删除目录: {path}", tool_name="file_manager")
             elif not os.listdir(path):
                 os.rmdir(path)
-                return f" 已删除空目录: {path}"
+                return ToolResult.ok(f"已删除空目录: {path}", tool_name="file_manager")
             else:
-                return "错误：目录不为空，用 -r 递归删除"
+                return ToolResult.fail("目录不为空，用 -r 递归删除", ErrorCode.INVALID_ARGS)
 
-    def _op_search(self, args: List[str]) -> str:
+    def _op_search(self, args: List[str]):
         if not args:
-            return "错误：请提供搜索目录"
+            return ToolResult.missing("搜索目录")
         directory = os.path.abspath(args[0])
         pattern, content_search = None, None
         i = 1
@@ -291,7 +296,7 @@ class Liugin:
             i += 1
 
         if not os.path.isdir(directory):
-            return f"错误：目录不存在: {directory}"
+            return ToolResult.not_found(f"目录: {directory}")
 
         results = []
         for root, dirs, files in os.walk(directory):
@@ -317,14 +322,14 @@ class Liugin:
             if len(results) >= 50:
                 break
 
-        return f"搜索结果 ({len(results)}):\n" + '\n'.join(results) if results else "未找到匹配"
+        return ToolResult.ok(f"搜索结果 ({len(results)}):\n" + '\n'.join(results), tool_name="file_manager") if results else ToolResult.ok("未找到匹配", tool_name="file_manager")
 
-    def _op_info(self, args: List[str]) -> str:
+    def _op_info(self, args: List[str]):
         if not args:
-            return "错误：请提供路径"
+            return ToolResult.missing("路径")
         path = os.path.abspath(args[0])
         if not os.path.exists(path):
-            return f"错误：不存在: {path}"
+            return ToolResult.not_found(f"路径: {path}")
 
         stat = os.stat(path)
         result = [
@@ -337,13 +342,13 @@ class Liugin:
         if os.path.isfile(path):
             ext = os.path.splitext(path)[1]
             result.append(f"扩展名: {ext or '无'}")
-        return '\n'.join(result)
+        return ToolResult.ok('\n'.join(result), tool_name="file_manager")
 
-    def _op_mkdir(self, args: List[str]) -> str:
+    def _op_mkdir(self, args: List[str]):
         if not args:
-            return "错误：请提供目录路径"
+            return ToolResult.missing("目录路径")
         path = os.path.abspath(args[0])
         if os.path.exists(path):
-            return f"错误：已存在: {path}"
+            return ToolResult.fail(f"已存在: {path}", ErrorCode.INVALID_ARGS)
         os.makedirs(path, exist_ok=True)
-        return f" 已创建: {path}"
+        return ToolResult.ok(f"已创建: {path}", tool_name="file_manager")

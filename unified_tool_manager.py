@@ -9,6 +9,7 @@ import logging
 import threading
 from typing import Dict, List, Any, Optional, Union, Callable
 from colorama import Fore, Style
+from xcli_core.tool_result import ToolResult, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,8 @@ class UnifiedToolManager:
         """为 Skill 创建兼容 Plugin 的 handler"""
         from skills.base import MarkdownSkill, Skill
 
-        def handler(args: str) -> str:
+        def handler(args: str):
+            """Skill handler - 返回 ToolResult"""
             kwargs = {}
 
             args = args.strip()
@@ -212,16 +214,16 @@ class UnifiedToolManager:
                 kwargs = {'operation': args}
 
             if isinstance(skill, MarkdownSkill):
-                return f"[Skill: {skill.name}]\n{skill.instructions}"
+                return ToolResult.ok(f"[Skill: {skill.name}]\n{skill.instructions}")
 
             if hasattr(skill, 'run'):
                 result = skill.run(**kwargs)
                 if result.success:
-                    return result.message or str(result.data)
+                    return ToolResult.ok(result.message or str(result.data))
                 else:
-                    return f"错误: {result.error}"
+                    return ToolResult.fail(str(result.error), ErrorCode.EXEC_FAILED)
 
-            return f"未知的技能类型: {type(skill)}"
+            return ToolResult.fail(f"未知的技能类型: {type(skill)}", ErrorCode.NOT_IMPLEMENTED)
 
         return handler
 
@@ -312,12 +314,13 @@ class UnifiedToolManager:
         """获取工具使用的协议"""
         return self._protocol_map.get(name)
 
-    def execute(self, tool_name: str, args: str = "", **kwargs) -> Dict[str, Any]:
-        """执行工具调用"""
-        tool = self._tools.get(tool_name)
+    def execute(self, tool_name: str, args: str = "", **kwargs) -> ToolResult:
+        """执行工具调用，返回 ToolResult"""
+        with self._lock:
+            tool = self._tools.get(tool_name)
 
         if not tool:
-            return {"result": f"未找到工具: {tool_name}"}
+            return ToolResult.fail(f"未找到工具: {tool_name}", ErrorCode.NOT_FOUND, tool_name=tool_name)
 
         try:
             handler = tool['handler']
@@ -327,7 +330,10 @@ class UnifiedToolManager:
             if protocol == 'skill' and kwargs:
                 skill = tool['instance']
                 result = skill.run(**kwargs)
-                return {"result": result.message or str(result.data) if result.success else f"错误: {result.error}"}
+                if result.success:
+                    return ToolResult.ok(result.message or str(result.data), tool_name=tool_name)
+                else:
+                    return ToolResult.fail(str(result.error), ErrorCode.EXEC_FAILED, tool_name=tool_name)
 
             elif protocol == 'liugin' and kwargs and not args:
                 if instance and hasattr(instance, 'convert_mcp_args'):
@@ -336,10 +342,19 @@ class UnifiedToolManager:
                     args = self._convert_mcp_args_to_plugin_args(tool_name, kwargs, instance)
 
             result = handler(args)
-            return {"result": result if result is not None else "无结果"}
+            # 兼容：handler 可能返回 ToolResult 或字符串
+            if isinstance(result, ToolResult):
+                result.tool_name = tool_name
+                return result
+            return ToolResult.ok(result if result is not None else "执行完成", tool_name=tool_name)
 
         except Exception as e:
-            return {"result": f"工具执行错误: {e}"}
+            logger.exception(f"工具 {tool_name} 执行异常")
+            return ToolResult.fail(str(e), ErrorCode.INTERNAL_ERROR, tool_name=tool_name)
+
+    def execute_dict(self, tool_name: str, args: str = "", **kwargs) -> Dict[str, Any]:
+        """执行工具调用，返回 dict（兼容旧接口）"""
+        return self.execute(tool_name, args, **kwargs).to_dict()
 
     # ==================== MCP 协议支持 ====================
 
@@ -355,7 +370,7 @@ class UnifiedToolManager:
         tool = self._tools.get(tool_name)
 
         if not tool:
-            return self._mcp_error(f"未找到工具: {tool_name}")
+            return ToolResult.fail(f"未找到工具: {tool_name}", ErrorCode.NOT_FOUND, tool_name=tool_name).to_mcp()
 
         try:
             protocol = tool['protocol']
@@ -364,25 +379,30 @@ class UnifiedToolManager:
             if protocol == 'liugin':
                 args = self._convert_mcp_args_to_plugin_args(tool_name, arguments, instance)
                 result = tool['handler'](args)
-                return self._mcp_success(result if result else "执行完成")
+                # 兼容：handler 可能返回 ToolResult 或字符串
+                if isinstance(result, ToolResult):
+                    result.tool_name = tool_name
+                    return result.to_mcp()
+                return ToolResult.ok(result or "执行完成", tool_name=tool_name).to_mcp()
 
             elif protocol == 'skill':
                 from skills.base import MarkdownSkill
 
                 if isinstance(instance, MarkdownSkill):
-                    return self._mcp_success(f"[Skill: {instance.name}]\n{instance.instructions}")
+                    return ToolResult.ok(f"[Skill: {instance.name}]\n{instance.instructions}", tool_name=tool_name).to_mcp()
 
                 if hasattr(instance, 'run'):
                     result = instance.run(**arguments)
                     if result.success:
-                        return self._mcp_success(result.message or str(result.data))
+                        return ToolResult.ok(result.message or str(result.data), tool_name=tool_name).to_mcp()
                     else:
-                        return self._mcp_error(f"执行失败: {result.error}")
+                        return ToolResult.fail(str(result.error), ErrorCode.EXEC_FAILED, tool_name=tool_name).to_mcp()
 
-            return self._mcp_error(f"未知协议类型: {protocol}")
+            return ToolResult.fail(f"未知协议类型: {protocol}", ErrorCode.INTERNAL_ERROR, tool_name=tool_name).to_mcp()
 
         except Exception as e:
-            return self._mcp_error(f"工具执行错误: {str(e)}")
+            logger.exception(f"MCP 调用 {tool_name} 异常")
+            return ToolResult.fail(str(e), ErrorCode.INTERNAL_ERROR, tool_name=tool_name).to_mcp()
 
     def _convert_mcp_args_to_plugin_args(self, tool_name: str, arguments: Dict[str, Any],
                                           instance: Any) -> str:
@@ -423,10 +443,12 @@ class UnifiedToolManager:
         return s
 
     def _mcp_success(self, text: str) -> Dict[str, Any]:
-        return {"content": [{"type": "text", "text": text}], "isError": False}
+        """MCP 成功响应（兼容旧接口，推荐用 ToolResult.ok().to_mcp()）"""
+        return ToolResult.ok(text).to_mcp()
 
     def _mcp_error(self, error_msg: str) -> Dict[str, Any]:
-        return {"content": [{"type": "text", "text": error_msg}], "isError": True}
+        """MCP 错误响应（兼容旧接口，推荐用 ToolResult.fail().to_mcp()）"""
+        return ToolResult.fail(error_msg).to_mcp()
 
     # ==================== 兼容性 API ====================
 

@@ -5,6 +5,11 @@ import os
 import re
 import subprocess
 import platform
+import sys
+
+# 添加项目根目录到 path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from xcli_core.tool_result import ToolResult, ErrorCode
 
 
 class Liugin:
@@ -68,18 +73,18 @@ class Liugin:
         ':(){ :|:& };:', 'chmod -R 777 /', 'mv / ', 'wget http',
     }
 
-    def handle(self, args: str) -> str:
+    def handle(self, args: str):
         try:
             parts = args.strip().split(maxsplit=1)
             if not parts:
-                return "错误：请提供操作。可用: run <命令>"
+                return ToolResult.missing("操作。可用: run <命令>")
 
             operation = parts[0].lower()
             if operation != "run":
-                return f"错误：不支持的操作 '{operation}'。可用: run"
+                return ToolResult.fail(f"不支持的操作 '{operation}'。可用: run", ErrorCode.UNSUPPORTED_OP)
 
             if len(parts) < 2:
-                return "错误：请提供要执行的命令"
+                return ToolResult.missing("要执行的命令")
 
             rest = parts[1]
 
@@ -91,21 +96,20 @@ class Liugin:
                 rest = re.sub(r'--timeout\s+\d+', '', rest).strip()
 
             if not rest:
-                return "错误：请提供要执行的命令"
+                return ToolResult.missing("要执行的命令")
 
             # 安全检查
             for blocked in self.BLOCKED:
                 if blocked in rest:
-                    return f" 安全拦截: 检测到危险命令模式 '{blocked}'"
+                    return ToolResult.fail(f"安全拦截: 检测到危险命令模式 '{blocked}'", ErrorCode.PERMISSION_DENIED)
 
             return self._execute(rest, timeout)
 
         except Exception as e:
-            return f"命令执行错误: {str(e)}"
+            return ToolResult.fail(str(e), ErrorCode.INTERNAL_ERROR, tool_name="cmd_executor")
 
-    def _execute(self, command: str, timeout: int) -> str:
+    def _execute(self, command: str, timeout: int):
         try:
-            # Windows 下用 shell=True，Unix 下直接执行
             use_shell = platform.system() == 'Windows'
 
             result = subprocess.run(
@@ -136,9 +140,11 @@ class Liugin:
             if len(output) > 5000:
                 output = output[:5000] + f"\n... (截断，超时: {timeout}s)"
 
-            return output.strip()
+            if rc != 0:
+                return ToolResult.fail(output.strip(), ErrorCode.EXEC_FAILED, tool_name="cmd_executor")
+            return ToolResult.ok(output.strip(), tool_name="cmd_executor")
 
         except subprocess.TimeoutExpired:
-            return f" 命令超时 ({timeout}s): {command}"
+            return ToolResult.timeout(timeout, tool_name="cmd_executor")
         except Exception as e:
-            return f"执行失败: {str(e)}"
+            return ToolResult.fail(str(e), ErrorCode.EXEC_FAILED, tool_name="cmd_executor")
