@@ -37,9 +37,18 @@ import zipfile
 import sqlite3
 import traceback
 import inspect
+import importlib
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union, Callable
+
+# 导入 Android 兼容层
+_ANDROID_COMPAT_AVAILABLE = False
+try:
+    import android_compat
+    _ANDROID_COMPAT_AVAILABLE = True
+except ImportError:
+    android_compat = None
 
 # ── 第三方依赖（可选导入） ──
 try:
@@ -1246,6 +1255,22 @@ class OperitScriptLoader:
             "requests": requests, "httpx": httpx,
         }
 
+        # 注入 Android 兼容层（如果可用）
+        if _ANDROID_COMPAT_AVAILABLE and android_compat:
+            android_globals = android_compat.get_android_compat_globals()
+            script_globals.update(android_globals)
+            # 特别注入 context 和 service 实例
+            script_globals["androidContext"] = android_compat.application_context
+        else:
+            # 没有 android_compat 时提供空桩
+            script_globals["Java"] = type("Java", (), {"type": staticmethod(
+                lambda cls: type("Stub", (), {
+                    "__getattr__": lambda s, n: s,
+                    "__call__": lambda s, *a, **kw: s,
+                    "toString": lambda s: "[Android-only]",
+                })())
+            })
+
         try:
             with open(script_path, "r", encoding="utf-8") as f:
                 code = f.read()
@@ -1416,6 +1441,22 @@ if __name__ == "__main__":
     print(f"  脚本目录: {loader.scripts_dir}")
     print(f"  平台: {platform.system()} {platform.release()}")
     print(f"  Python: {sys.version.split()[0]}")
+
+    # Android 兼容层状态
+    try:
+        import android_compat as _ac
+        ag = _ac.get_android_compat_globals()
+        print(f"  Android兼容层: 已加载 ({len(ag)} 个 API)")
+        print(f"      ├─ Android核心API: Intent, Context, Uri, ContentResolver, 等")
+        print(f"      ├─ Android系统服务: ActivityManager, PackageManager, 等")
+        print(f"      ├─ Android图形API: Bitmap, Canvas, Color, Paint, PdfRenderer")
+        print(f"      ├─ Android视图体系: View, TextView, UINode, AccessibilityNodeInfo")
+        print(f"      ├─ Android媒体/定位/通信: MediaPlayer, LocationManager, TelephonyManager")
+        print(f"      ├─ Java桥接: Java.type() - 直接调用Java类 (需jpype)")
+        print(f"      ├─ java.io兼容: File, FileInputStream, FileOutputStream")
+        print(f"      └─ 路径映射: /sdcard → {_ac._sdcard_root}")
+    except Exception as _e:
+        print(f"  Android兼容层: 未安装 (android_compat.py 不可用, {_e})")
 
     # 如果脚本目录存在，扫描加载
     if os.path.isdir(loader.scripts_dir):
