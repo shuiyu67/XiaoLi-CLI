@@ -13,12 +13,6 @@
   - `last [N]` 只看最近 N 行，避免上下文爆炸
   - 纯标准库，零外部依赖，全平台
 
-- **operit_bridge** (Operit 双向工具桥接)：兼容 Operit AI 生态
-  - 自动扫描 plugins/operit/ 加载 Operit 脚本
-  - 解析 47 个真实 Operit 脚本，288 个工具
-  - 兼容标准 JSON + HJSON（自研逐字符解析器）
-  - 双向格式转换：Operit METADATA ↔ MCP ↔ FC
-
 - **image_reader** (图片读取)：从图片中提取文字
   - OCR 文字识别（Tesseract / Windows PowerShell）
   - ASCII 字符画、图片信息、Base64、哈希
