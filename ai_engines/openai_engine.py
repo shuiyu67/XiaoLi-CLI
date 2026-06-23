@@ -359,17 +359,19 @@ OpenAI 兼容格式引擎帮助信息
         """
         根据模型类型注入深度思考参数。
         支持：
-          - DeepSeek: enable_thinking + reasoning_content
-          - OpenAI o-series: reasoning_effort
-          - 通用: 尝试 reasoning_effort
+          - DeepSeek / MiMo: enable_thinking + reasoning_content
+          - OpenAI o-series: reasoning.effort
+          - 通用: reasoning_effort
         """
         model = (self.model or "").lower()
 
-        # DeepSeek 系列
-        if "deepseek" in model:
+        # DeepSeek / MiMo 系列（格式相同）
+        if "deepseek" in model or "mimo" in model:
             body["enable_thinking"] = True
-            # DeepSeek 要求 temperature 在思考模式下不设置或设为 1.0
             body.pop("temperature", None)
+            # reasoning_effort 也支持
+            if self.reasoning_effort:
+                body["reasoning_effort"] = self.reasoning_effort
             return body
 
         # OpenAI o-series (o1, o3, o4-mini 等)
@@ -377,7 +379,7 @@ OpenAI 兼容格式引擎帮助信息
             body["reasoning"] = {"effort": self.reasoning_effort}
             return body
 
-        # 通用：尝试 reasoning_effort
+        # 通用
         body["reasoning_effort"] = self.reasoning_effort
         return body
 
