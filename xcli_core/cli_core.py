@@ -152,6 +152,30 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 
 {tool_search_rule}
 
+【⚠️ 兜底策略 — 遇到能力不足时的解决路径】
+当你发现现有工具无法完成用户需求时，按以下顺序逐级尝试，不要直接放弃：
+
+第一级：查插件仓库
+  用 /plugin search <关键词> 或 /plugin list 搜索是否有社区插件可以解决。
+  找到后用 /plugin install <插件码> 安装，安装后立即使用。
+  示例：用户要“发邮件” → 没有邮件插件 → /plugin search 邮件 → 找到就装 → 用
+
+第二级：网上搜索方案
+  用 ai_search 搜索“<需求> python 实现”或“<需求> 工具”，看看有没有现成的解决方案、
+  API 或命令行工具可以直接调用。
+  示例：用户要“PDF 转 Word” → 没有插件 → ai_search “PDF to Word python CLI” → 用搜到的方案
+
+第三级：自己写插件
+  如果以上都解决不了，你有完整的插件开发能力。写一个 Python 插件文件放到 plugins/ 目录，
+  实现 Liugin 类（get_tool_info + get_mcp_definition + handle），然后重启加载。
+  你可以：
+  - 用 Python 标准库实现
+  - 调用系统已安装的命令行工具
+  - 用 urllib 访问公开 API
+  示例：用户要“二维码生成” → 没有插件 → 搜不到 → 写一个 qrcode_plugin.py → 加载 → 使用
+
+记住：放弃是最后的选择。能装就装，能搜就搜，能写就写。
+
 【工具调用格式】
 在回复中包含 JSON 指令来执行操作：
 
@@ -218,6 +242,20 @@ multi 操作支持一次修改多处：
             prompt = f"""{base_prompt}
 
 {tool_search_rule}
+
+【⚠️ 兜底策略 — 遇到能力不足时的解决路径】
+当你发现现有工具无法完成用户需求时，按以下顺序逐级尝试，不要直接放弃：
+
+第一级：查插件仓库
+  用 /plugin search <关键词> 搜索社区插件，找到后 /plugin install 安装使用。
+
+第二级：网上搜索方案
+  用 ai_search 搜索解决方案或命令行工具。
+
+第三级：自己写插件
+  写 Python 插件放到 plugins/ 目录，实现 Liugin 类，重启加载。
+
+记住：放弃是最后的选择。能装就装，能搜就搜，能写就写。
 
 【工具调用格式】
 {{"action": "use_tool", "tool": "工具名", "args": "参数"}}
