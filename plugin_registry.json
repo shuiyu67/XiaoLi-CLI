@@ -14,6 +14,18 @@
       "optional_deps": ["qrcode"],
       "keywords": ["dg-lab", "dglab", "郊狼", "coyote", "websocket", "脉冲"]
     },
+    "operit_bridge": {
+      "name": "Operit Bridge 双向工具桥接",
+      "description": "让 xiaoli-cli 兼容 Operit AI 的第三方工具格式，支持解析/加载/导出 Operit METADATA 脚本",
+      "author": "xiaoli-cli",
+      "version": "1.0.0",
+      "file": "operit_bridge.py",
+      "url": "",
+      "docs": "",
+      "deps": [],
+      "optional_deps": [],
+      "keywords": ["operit", "bridge", "桥接", "兼容", "格式转换", "METADATA", "插件互通"]
+    },
     "onebot": {
       "name": "OneBot v11 QQ 机器人",
       "description": "让 xiaoli-cli 成为 QQ 机器人，连接 go-cqhttp/Lagrange/LLOneBot 等 OneBot 实现",
