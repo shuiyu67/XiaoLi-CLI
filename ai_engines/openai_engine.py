@@ -163,8 +163,19 @@ OpenAI 兼容格式引擎帮助信息
             }
 
             # ── 深度思考模式 ──
+            self._inject_thinking_prompt = None  # 清除标记
             if self.deep_think:
                 body = self._apply_deep_think(body)
+                # 不支持原生思考的模型，注入提示词
+                if self._inject_thinking_prompt:
+                    thinking_hint = self._get_thinking_prompt(self._inject_thinking_prompt)
+                    if thinking_hint and messages:
+                        # 追加到系统提示词末尾
+                        if messages[0].get("role") == "system":
+                            messages[0]["content"] += thinking_hint
+                        else:
+                            messages.insert(0, {"role": "system", "content": thinking_hint})
+                        body["messages"] = messages
 
             # ── Function Calling: 注入工具定义 ──
             if tools:
@@ -357,31 +368,90 @@ OpenAI 兼容格式引擎帮助信息
 
     def _apply_deep_think(self, body: dict) -> dict:
         """
-        根据模型类型注入深度思考参数。
-        支持：
-          - DeepSeek / MiMo: enable_thinking + reasoning_content
-          - OpenAI o-series: reasoning.effort
-          - 通用: reasoning_effort
+        通用深度思考适配。
+        原生支持的模型用 API 参数，不支持的用提示词模拟。
         """
         model = (self.model or "").lower()
+        effort = self.reasoning_effort  # low / medium / high
 
-        # DeepSeek / MiMo 系列（格式相同）
+        # ── 原生支持：API 参数 ──
+
+        # DeepSeek / MiMo
         if "deepseek" in model or "mimo" in model:
             body["enable_thinking"] = True
             body.pop("temperature", None)
-            # reasoning_effort 也支持
-            if self.reasoning_effort:
-                body["reasoning_effort"] = self.reasoning_effort
+            if effort:
+                body["reasoning_effort"] = effort
             return body
 
         # OpenAI o-series (o1, o3, o4-mini 等)
         if model.startswith("o") and (model[1:2].isdigit() or model[1:3] in ("1-", "3-", "4-")):
-            body["reasoning"] = {"effort": self.reasoning_effort}
+            body["reasoning"] = {"effort": effort}
             return body
 
-        # 通用
-        body["reasoning_effort"] = self.reasoning_effort
+        # Anthropic Claude (通过 OpenAI 兼容层)
+        if "claude" in model or "anthropic" in model:
+            body["thinking"] = {"type": "enabled", "budget_tokens": self._thinking_budget(effort)}
+            return body
+
+        # Grok
+        if "grok" in model:
+            body["thinking"] = {"enabled": True}
+            return body
+
+        # Gemini thinking 模型
+        if "gemini" in model and "thinking" in model:
+            return body  # 模型名自带 thinking，不需要额外参数
+
+        # ── 不支持原生思考：用提示词模拟 ──
+        self._inject_thinking_prompt = effort
         return body
+
+    @staticmethod
+    def _thinking_budget(effort: str) -> int:
+        """思考 token 预算"""
+        return {"low": 2048, "medium": 8192, "high": 32768}.get(effort, 8192)
+
+    def _get_thinking_prompt(self, effort: str) -> str:
+        """根据思考等级生成提示词（注入系统提示词末尾）"""
+        if effort == "low":
+            return ""
+
+        if effort == "medium":
+            return (
+                "\n\n【思考模式：中等】\n"
+                "回答前请先逐步思考：\n"
+                "1. 分析用户的核心需求\n"
+                "2. 列出关键因素和约束\n"
+                "3. 考虑可能的方案\n"
+                "4. 选择最优方案并解释理由\n"
+                "然后再给出最终回答。"
+            )
+
+        # high
+        return (
+            "\n\n【思考模式：深度推理】\n"
+            "你必须使用结构化深度推理框架回答问题。严格遵循以下步骤：\n\n"
+            "## 第一步：问题分解\n"
+            "- 将问题拆解为子问题\n"
+            "- 识别关键约束和边界条件\n"
+            "- 明确输入输出要求\n\n"
+            "## 第二步：多角度分析\n"
+            "- 从至少 3 个不同角度分析问题\n"
+            "- 评估每种方案的优缺点\n"
+            "- 考虑边界情况和异常场景\n\n"
+            "## 第三步：方案设计\n"
+            "- 选择最优方案并详细说明理由\n"
+            "- 给出具体的实现步骤\n"
+            "- 预判可能的问题并给出预防措施\n\n"
+            "## 第四步：验证与优化\n"
+            "- 检验方案是否满足所有约束\n"
+            "- 考虑是否有更优解\n"
+            "- 给出最终答案和注意事项\n\n"
+            "## 输出格式\n"
+            "先输出推理过程（用 [思考] 标记），再输出最终答案。\n"
+            "推理过程要详细但不啰嗦，最终答案要简洁明确。"
+        )
 
     def set_model(self, model_name):
         """设置模型"""
