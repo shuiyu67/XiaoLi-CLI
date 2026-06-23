@@ -52,7 +52,7 @@
 
 - 删除图像类插件：ai_image、image_generator、send_image
 - 移至插件仓库：audio_player、bookmark_manager、color_picker
-- 主仓库保留 25 个必备生产力插件
+- 主仓库保留 24 个必备生产力插件
 
 ### 配置更新
 
@@ -75,19 +75,7 @@
   - Windows/Linux/macOS 全平台，零外部依赖
   - 13 个单元测试
 
-- **operit_bridge** (Operit 双向工具桥接)：让 xiaoli-cli 兼容 Operit AI 第三方工具格式
-  - 自动扫描 `plugins/operit/` 目录，解析 47 个真实 Operit 脚本，加载 288 个工具
-  - 兼容标准 JSON + HJSON（无引号键名、单引号、三引号、嵌套引号、// 注释）
-  - 双向格式转换：Operit METADATA ↔ MCP ↔ OpenAI FC
-  - 可将 xiaoli-cli 插件导出为 Operit 格式 `.js` 文件
-  - 逐字符 HJSON 解析器，覆盖 Operit 官方全部 47 个示例脚本
-  - 12 个单元测试
-
 **其他变更：**
-
-- 更新 `plugin_registry.json` 添加 operit_bridge 注册
-- 更新 `plugins_config.py` 启用 terminal 和 operit_bridge
-- `plugins/operit/` 存放 47 个 Operit 官方脚本（来自 GitHub AAswordman/Operit）
 
 所有重要更改都记录在此文件中。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 

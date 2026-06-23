@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-150+%20passed-brightgreen" alt="tests">
-  <img src="https://img.shields.io/badge/plugins-25-blueviolet" alt="plugins">
+  <img src="https://img.shields.io/badge/plugins-24-blueviolet" alt="plugins">
 </p>
 
 ---
@@ -34,9 +34,9 @@
 - **远程通信** — PC 与手机 WebSocket 双向通信
 - **定时任务** — 支持相对时间、绝对时间、重复任务，到期自动激活 AI
 - **系统通知** — 跨平台任务完成通知（Windows / macOS / Linux）
-- **MCP 协议** — 19 个插件全部实现 MCP 定义，支持 Function Calling 原生调用
+- **MCP 协议** — 18 个插件全部实现 MCP 定义，支持 Function Calling 原生调用
 - **进程保护** — 跨平台单实例保护 + 进程优先级提升 + Windows PPL 风格保护 + 看门狗监控 + 优雅关闭
-- **19 个插件 161+ 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、图像生成、记忆等
+- **18 个插件 161+ 个操作** — 代码编辑、Git、浏览器、工程化、文件管理、图像生成、记忆等
 - **三模式界面** — TUI 图形化 + 传统命令行 + Web UI 浏览器界面
 - **150+ 个自动化测试** — pytest 覆盖全部插件和核心模块
 
@@ -94,7 +94,7 @@ launcher.exe
 }
 ```
 
-## 插件列表 (24 个)
+## 插件列表 (23 个)
 
 > 更多社区插件请访问 [xiaoli-cli-plugins](https://gitee.com/shuiyu1123/xiaoli-cli-plugins)，使用 `/plugin install <插件码>` 一键安装。
 
@@ -115,7 +115,6 @@ launcher.exe
 |------|--------|------|
 | `sub_agent` | 8 | 子 Agent 系统。spawn/list/status/result/send/kill，多 Agent 并行协作 |
 | `terminal` | 8 | 终端模拟器。AI 的虚拟键盘和屏幕，打字/按键/看屏幕，支持 Python REPL |
-| `operit_bridge` | — | Operit 双向工具桥接。解析 47 个 Operit 脚本，288 个工具，格式转换 |
 
 ### 辅助工具
 
@@ -199,7 +198,7 @@ memory_plugin chat_search 图像生成
 
 ## MCP 协议支持
 
-所有 19 个插件均实现 MCP (Model Context Protocol) 定义，支持三种工具调用协议：
+所有 18 个插件均实现 MCP (Model Context Protocol) 定义，支持三种工具调用协议：
 
 | 协议 | 说明 |
 |------|------|
@@ -270,7 +269,7 @@ xiaoli-cli/
 ├── ai_engines/                 # AI 引擎
 │   ├── ollama_engine.py
 │   └── openai_engine.py
-├── plugins/                    # 插件 (19 个)
+├── plugins/                    # 插件 (18 个)
 │   ├── code_editor.py
 │   ├── git_tools.py
 │   ├── cmd_executor.py
@@ -289,8 +288,7 @@ xiaoli-cli/
 │   ├── ai_search.py
 │   ├── frontend_tester.py
 │   ├── speech_recognition.py
-│   ├── terminal.py
-│   └── operit_bridge.py
+│   └── terminal.py
 ├── skills/                     # 技能
 ├── image_engine/               # 图像识别引擎
 ├── tests/                      # 测试套件 (150+ 用例)
