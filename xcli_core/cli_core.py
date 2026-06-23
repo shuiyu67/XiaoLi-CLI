@@ -12,7 +12,7 @@ from colorama import Fore, Style
 from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY
 from .config import get_system_config, logger
 from .cli_base import BaseAICLI
-from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
+from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL, MODE_PLAN
 from .cli_clawli import ClawliMixin
 from .cli_tools import ToolMixin
 from .cli_code_exec import CodeExecMixin
@@ -526,7 +526,16 @@ multi 操作支持一次修改多处：
         max_loops = 20
 
         while loop_count < max_loops:
-            response = self._generate_response_with_animation(current_input, liugin_prompts=liugin_prompts)
+            # ── 计划模式：带引擎错误处理的响应生成 ──
+            safety = get_safety()
+            if safety.is_plan_mode():
+                response = self._plan_generate(current_input, liugin_prompts)
+                if response is None:
+                    # 所有引擎都失败，退出循环
+                    self._display_response("[计划模式] 所有引擎均不可用，任务中断。")
+                    break
+            else:
+                response = self._generate_response_with_animation(current_input, liugin_prompts=liugin_prompts)
             processed_response = self.process_thinking_response(response)
             processed_response = self._process_code_blocks(processed_response)
 
@@ -865,6 +874,83 @@ multi 操作支持一次修改多处：
 
         return f"未找到工具: {tool_name}"
 
+    # ── 计划模式：带重试和引擎切换的响应生成 ──
+
+    def _plan_generate(self, current_input: str, liugin_prompts=None) -> Optional[str]:
+        """
+        计划模式专用响应生成。
+        - 自动重试
+        - 引擎错误 10 次自动切换
+        - 无其他引擎时继续重试但不污染上下文
+        """
+        safety = get_safety()
+        max_retries = 5
+
+        for attempt in range(max_retries):
+            try:
+                response = self._generate_response_with_animation(current_input, liugin_prompts=liugin_prompts)
+
+                # 检查是否是引擎错误（空响应或明确错误）
+                if response and not response.startswith("错误") and not response.startswith("API 调用失败"):
+                    safety.reset_engine_errors()
+                    return response
+
+                # 引擎返回错误
+                is_fatal = safety.record_engine_error()
+
+                if is_fatal:
+                    new_engine = safety.try_switch_engine()
+                    if new_engine:
+                        print(f"[计划模式] 引擎连续错误 {safety.plan_engine_error_limit} 次，已切换到 {new_engine}")
+                        continue  # 用新引擎重试
+                    else:
+                        # 无其他引擎，继续重试但不把错误加入上下文
+                        print(f"[计划模式] 无其他引擎可用，继续重试...")
+                        time.sleep(2)
+                        continue
+
+                # 未达阈值，重试
+                continue
+
+            except Exception as e:
+                is_fatal = safety.record_engine_error()
+                if is_fatal:
+                    new_engine = safety.try_switch_engine()
+                    if new_engine:
+                        print(f"[计划模式] 引擎异常，已切换到 {new_engine}")
+                        continue
+                continue
+
+        return "[计划模式] 重试次数已用完。"
+
+    def _plan_review(self, task_description: str, task_result: str):
+        """
+        计划模式：任务完成后自动审查。
+        """
+        safety = get_safety()
+        review_prompt = safety.get_review_prompt(task_result)
+
+        print(f"  [计划模式] 自动审查中...")
+
+        try:
+            review = self._generate_response_with_animation(review_prompt)
+            if review:
+                # 检查审查结果是否发现问题
+                review_lower = review.lower()
+                has_issue = any(w in review_lower for w in [
+                    '问题', '错误', '失败', '遗漏', '修正', '重新', 'issue', 'error', 'fail',
+                    'bug', 'wrong', 'missing', 'fix', 'retry'
+                ])
+                if has_issue:
+                    print(f"  [计划模式] 审查发现问题，自动重试...")
+                    return True  # 需要重试
+                else:
+                    print(f"  [计划模式] 审查通过。")
+                    return False
+        except Exception:
+            pass
+        return False
+
     def _generate_response_with_animation(self, current_input, liugin_prompts=None):
         """生成AI响应并显示等待动画 — 支持 ESC 跨平台取消"""
         # TUI 模式：不做动画
@@ -1041,7 +1127,7 @@ multi 操作支持一次修改多处：
         print(f"{Fore.GREEN}输入 '/tui' 切换到 TUI 模式{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/engine list' 查看可用AI引擎{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/engine switch <引擎名>' 切换AI引擎{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
+        print(f"{Fore.GREEN}输入 '/safe' 或 '/mode' 切换工作模式 (普通→人工→无限制→计划){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/notify' 切换任务完成通知 (开/关){Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/scheduler' 或 '/remind' 管理定时任务{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/memory' 管理记忆系统 (日记/搜索/聊天记录){Style.RESET_ALL}")
@@ -1253,7 +1339,7 @@ multi 操作支持一次修改多处：
                     print(f"{Fore.CYAN}已从 TUI 模式返回 CLI 模式{Style.RESET_ALL}")
                     continue
 
-                if user_input.startswith('/safe'):
+                if user_input.startswith('/safe') or user_input.startswith('/mode'):
                     parts = user_input.split()
                     safety = get_safety()
                     if len(parts) > 1:
@@ -1264,16 +1350,18 @@ multi 操作支持一次修改多处：
                             safety.set_mode(MODE_NORMAL)
                         elif mode_arg in ('manual', '人工', 'all'):
                             safety.set_mode(MODE_MANUAL)
+                        elif mode_arg in ('plan', '计划', 'auto'):
+                            safety.set_mode(MODE_PLAN)
                         else:
-                            print(f"{Fore.RED}用法: /safe [off|on|manual]{Style.RESET_ALL}")
+                            print(f"{Fore.RED}用法: /mode [off|on|manual|plan]{Style.RESET_ALL}")
                             continue
                     else:
-                        # 无参数：循环切换
                         safety.cycle_mode()
                     mode_name = safety.get_mode_name()
-                    icons = {"无限制": "", "普通": "", "人工确认": ""}
-                    icon = icons.get(mode_name, "")
-                    print(f"{icon} 安全模式: {mode_name}")
+                    icon = safety.get_mode_icon()
+                    print(f"{icon} 工作模式: {mode_name}")
+                    if mode_name == "计划模式":
+                        print(f"  {Fore.CYAN}全自动执行 | 任务审查 | 自动重试 | 引擎故障切换{Style.RESET_ALL}")
                     continue
 
                 if user_input.startswith('/notify'):
