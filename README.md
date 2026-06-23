@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.4.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-6.0.0-blue" alt="version">
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-150+%20passed-brightgreen" alt="tests">
-  <img src="https://img.shields.io/badge/plugins-19-blueviolet" alt="plugins">
+  <img src="https://img.shields.io/badge/plugins-25-blueviolet" alt="plugins">
 </p>
 
 ---

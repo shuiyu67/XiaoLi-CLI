@@ -1,5 +1,67 @@
 # 更新日志
 
+## v6.0.0 (2026-06-23)
+
+**重大更新：插件生态 + 深度思考 + 工作模式**
+
+### 新增插件
+
+- **terminal** (终端模拟器 v2)：AI 的虚拟键盘和屏幕
+  - 极简接口：open / type / key / read / last / wait
+  - 持久 Shell 会话，环境变量跨命令保持
+  - Python REPL 交互，多会话并行
+  - `last [N]` 只看最近 N 行，避免上下文爆炸
+  - 纯标准库，零外部依赖，全平台
+
+- **operit_bridge** (Operit 双向工具桥接)：兼容 Operit AI 生态
+  - 自动扫描 plugins/operit/ 加载 Operit 脚本
+  - 解析 47 个真实 Operit 脚本，288 个工具
+  - 兼容标准 JSON + HJSON（自研逐字符解析器）
+  - 双向格式转换：Operit METADATA ↔ MCP ↔ FC
+
+- **image_reader** (图片读取)：从图片中提取文字
+  - OCR 文字识别（Tesseract / Windows PowerShell）
+  - ASCII 字符画、图片信息、Base64、哈希
+
+### 深度思考
+
+- OpenAI 引擎支持 `/engine.openai think [on|off|low|medium|high]`
+- 原生支持：DeepSeek、MiMo、OpenAI o-series、Claude、Grok、Gemini thinking
+- 提示词兜底：不支持原生的模型自动注入思考提示词
+  - low: 无额外提示词
+  - medium: 逐步思考提示
+  - high: 工程级深度推理框架
+
+### 工作模式
+
+- `/mode` 或 `/safe` 切换四种工作模式
+- 普通：AI 识别风险，有风险才确认
+- 人工确认：所有指令都需确认
+- 无限制：直接执行
+- **计划模式（新增）**：全自动 + 审查 + 重试 + 引擎切换
+  - 引擎错误 10 次自动切换引擎
+  - 无其他引擎继续重试，错误不入上下文
+  - 任务完成后自动审查，发现问题自动重试
+
+### 系统提示词
+
+- 新增兜底策略：插件仓库 → 网上搜索 → 自己写插件
+- 放弃是最后的选择
+
+### 插件整理
+
+- 删除图像类插件：ai_image、image_generator、send_image
+- 移至插件仓库：audio_player、bookmark_manager、color_picker
+- 主仓库保留 25 个必备生产力插件
+
+### 配置更新
+
+- config.json.example 新增 deep_think / reasoning_effort 配置
+- plugins_config.py 重写，统一启用所有核心插件
+- plugin_registry.json 同步更新
+
+---
+
 ## v5.4.2 (2026-06-23)
 
 **新增插件：**
