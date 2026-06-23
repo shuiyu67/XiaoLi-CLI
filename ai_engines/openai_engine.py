@@ -57,6 +57,10 @@ OpenAI 兼容格式引擎帮助信息
   /engine.openai models       - 列出可用模型（需要服务端支持）
   /engine.openai set <模型名> - 切换模型
   /engine.openai info         - 显示当前配置信息
+  /engine.openai think        - 查看深度思考状态
+  /engine.openai think on     - 开启深度思考
+  /engine.openai think off    - 关闭深度思考
+  /engine.openai think high   - 开启并设置推理强度 (low/medium/high)
 
 使用说明:
 1. 在 config.json 中配置 api_key、base_url、model
@@ -84,12 +88,17 @@ OpenAI 兼容格式引擎帮助信息
                 self.base_url = engine_config.get("base_url", "").rstrip('/')
                 self.model = engine_config.get("model", "")
                 self.max_history = config.get("system", {}).get("max_history", 10)
+                # 深度思考配置
+                self.deep_think = engine_config.get("deep_think", False)
+                self.reasoning_effort = engine_config.get("reasoning_effort", "medium")
         except Exception as e:
             logger.warning(f"读取配置文件失败: {e}")
             self.api_key = ""
             self.base_url = ""
             self.model = ""
             self.max_history = 10
+            self.deep_think = False
+            self.reasoning_effort = "medium"
 
         # 初始化对话历史
         self.conversation_history = []
@@ -153,6 +162,10 @@ OpenAI 兼容格式引擎帮助信息
                 "stream": False
             }
 
+            # ── 深度思考模式 ──
+            if self.deep_think:
+                body = self._apply_deep_think(body)
+
             # ── Function Calling: 注入工具定义 ──
             if tools:
                 body["tools"] = tools
@@ -188,11 +201,16 @@ OpenAI 兼容格式引擎帮助信息
 
                     # 普通文本响应
                     ai_response = message.get("content", "")
+                    reasoning = message.get("reasoning_content", "")
                     if ai_response:
                         # 清理无效的 UTF-8 代理字符
                         ai_response = ai_response.encode('utf-8', 'replace').decode('utf-8')
-                        # 处理思考内容
+                        # 处理思考内容（从 <think> 标签中提取）
                         ai_response = self._process_thinking_content(ai_response)
+                    # 显示思维链
+                    if reasoning:
+                        reasoning = reasoning.encode('utf-8', 'replace').decode('utf-8')
+                        print(f"{Fore.LIGHTBLACK_EX}[深度思考: {reasoning[:500]}{'...' if len(reasoning) > 500 else ''}]{Style.RESET_ALL}")
                     return ai_response or ""
                 else:
                     return f"API 返回格式错误: {response_data}"
@@ -337,6 +355,32 @@ OpenAI 兼容格式引擎帮助信息
 
         return response
 
+    def _apply_deep_think(self, body: dict) -> dict:
+        """
+        根据模型类型注入深度思考参数。
+        支持：
+          - DeepSeek: enable_thinking + reasoning_content
+          - OpenAI o-series: reasoning_effort
+          - 通用: 尝试 reasoning_effort
+        """
+        model = (self.model or "").lower()
+
+        # DeepSeek 系列
+        if "deepseek" in model:
+            body["enable_thinking"] = True
+            # DeepSeek 要求 temperature 在思考模式下不设置或设为 1.0
+            body.pop("temperature", None)
+            return body
+
+        # OpenAI o-series (o1, o3, o4-mini 等)
+        if model.startswith("o") and (model[1:2].isdigit() or model[1:3] in ("1-", "3-", "4-")):
+            body["reasoning"] = {"effort": self.reasoning_effort}
+            return body
+
+        # 通用：尝试 reasoning_effort
+        body["reasoning_effort"] = self.reasoning_effort
+        return body
+
     def set_model(self, model_name):
         """设置模型"""
         self.model = model_name
@@ -392,11 +436,31 @@ OpenAI 兼容格式引擎帮助信息
 
         elif command == "info":
             print(f"{Fore.GREEN}OpenAI 兼容引擎配置:{Style.RESET_ALL}")
-            print(f"  base_url: {self.base_url}")
-            print(f"  model:    {self.model}")
-            print(f"  api_key:  {'已设置' if self.api_key else '未设置'}")
+            print(f"  base_url:      {self.base_url}")
+            print(f"  model:         {self.model}")
+            print(f"  api_key:       {'已设置' if self.api_key else '未设置'}")
+            print(f"  deep_think:    {'开启' if self.deep_think else '关闭'}")
+            if self.deep_think:
+                print(f"  reasoning:     {self.reasoning_effort}")
+            return True
+
+        elif command.startswith("think"):
+            # /engine.openai think [on|off|low|medium|high]
+            arg = command.replace("think", "").strip().lower()
+            if arg in ("off", "0", "false"):
+                self.deep_think = False
+                print(f"{Fore.YELLOW}深度思考已关闭{Style.RESET_ALL}")
+            elif arg in ("on", "1", "true", ""):
+                self.deep_think = True
+                print(f"{Fore.GREEN}深度思考已开启 (reasoning_effort: {self.reasoning_effort}){Style.RESET_ALL}")
+            elif arg in ("low", "medium", "high"):
+                self.deep_think = True
+                self.reasoning_effort = arg
+                print(f"{Fore.GREEN}深度思考已开启 (reasoning_effort: {arg}){Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}用法: /engine.openai think [on|off|low|medium|high]{Style.RESET_ALL}")
             return True
 
         else:
-            print(f"{Fore.RED}未知命令. 可用命令: models, set, info{Style.RESET_ALL}")
+            print(f"{Fore.RED}未知命令. 可用: models, set, info, think{Style.RESET_ALL}")
             return False

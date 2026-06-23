@@ -9,7 +9,9 @@
       "openai": {
         "api_key": "your-api-key-here",
         "base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-chat"
+        "model": "deepseek-chat",
+        "deep_think": false,
+        "reasoning_effort": "medium"
       }
     }
   },
