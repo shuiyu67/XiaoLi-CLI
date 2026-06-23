@@ -10,9 +10,20 @@
       "file": "dglab_ws.py",
       "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/dglab_ws.py",
       "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/README.md",
-      "deps": ["websocket-client"],
-      "optional_deps": ["qrcode"],
-      "keywords": ["dg-lab", "dglab", "郊狼", "coyote", "websocket", "脉冲"]
+      "deps": [
+        "websocket-client"
+      ],
+      "optional_deps": [
+        "qrcode"
+      ],
+      "keywords": [
+        "dg-lab",
+        "dglab",
+        "郊狼",
+        "coyote",
+        "websocket",
+        "脉冲"
+      ]
     },
     "operit_bridge": {
       "name": "Operit Bridge 双向工具桥接",
@@ -24,7 +35,15 @@
       "docs": "",
       "deps": [],
       "optional_deps": [],
-      "keywords": ["operit", "bridge", "桥接", "兼容", "格式转换", "METADATA", "插件互通"]
+      "keywords": [
+        "operit",
+        "bridge",
+        "桥接",
+        "兼容",
+        "格式转换",
+        "METADATA",
+        "插件互通"
+      ]
     },
     "onebot": {
       "name": "OneBot v11 QQ 机器人",
@@ -34,9 +53,20 @@
       "file": "onebot.py",
       "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/onebot.py",
       "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/README.md",
-      "deps": ["websocket-client"],
+      "deps": [
+        "websocket-client"
+      ],
       "optional_deps": [],
-      "keywords": ["onebot", "qq", "机器人", "bot", "go-cqhttp", "lagrange", "群聊", "私聊"]
+      "keywords": [
+        "onebot",
+        "qq",
+        "机器人",
+        "bot",
+        "go-cqhttp",
+        "lagrange",
+        "群聊",
+        "私聊"
+      ]
     }
   }
 }

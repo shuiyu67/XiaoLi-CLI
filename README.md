@@ -94,7 +94,7 @@ launcher.exe
 }
 ```
 
-## 插件列表 (19 个)
+## 插件列表 (24 个)
 
 > 更多社区插件请访问 [xiaoli-cli-plugins](https://gitee.com/shuiyu1123/xiaoli-cli-plugins)，使用 `/plugin install <插件码>` 一键安装。
 
@@ -114,24 +114,28 @@ launcher.exe
 | 插件 | 操作数 | 说明 |
 |------|--------|------|
 | `sub_agent` | 8 | 子 Agent 系统。spawn/list/status/result/send/kill，多 Agent 并行协作 |
-| `browser_auto` | 28 | 浏览器自动化。导航/点击/填写/截图/JS执行/PDF/cookies（基于 Playwright） |
-| `gui_auto` | 20 | 桌面 GUI 自动化。基于 Windows UIA，屏幕元素识别/点击/输入/截图（仅 Windows） |
-| `ai_image` | — | AI 生图。基于 ai.2x.nz 自然语言生图，异步生成 + WebSocket 进度推送 |
-| `image_generator` | 7 | 图像生成。基于 ComfyUI 在线服务，自然语言/Tag 双模式，28 个角色工作流 |
-| `memory_plugin` | 11 | 记忆系统。AI 写日记/搜索记忆/管理聊天记录/长期记忆 |
-| `scheduler` | 4 | 定时任务。支持相对时间/绝对时间/重复任务，到期自动激活 AI |
-| `tool_search` | — | 工具搜索。按关键词发现可用插件 |
+| `terminal` | 8 | 终端模拟器。AI 的虚拟键盘和屏幕，打字/按键/看屏幕，支持 Python REPL |
+| `operit_bridge` | — | Operit 双向工具桥接。解析 47 个 Operit 脚本，288 个工具，格式转换 |
 
 ### 辅助工具
 
 | 插件 | 说明 |
 |------|------|
+| `browser_auto` | 浏览器自动化。导航/点击/填写/截图/JS执行（基于 Playwright） |
+| `gui_auto` | 桌面 GUI 自动化。Windows UIA 元素识别/点击/输入（仅 Windows） |
+| `memory_plugin` | 记忆系统。AI 写日记/搜索记忆/管理聊天记录 |
+| `scheduler` | 定时任务。支持相对/绝对/重复任务，到期自动激活 AI |
+| `tool_search` | 工具搜索。按关键词发现可用插件 |
+| `workflow` | 工作流引擎。YAML 多步骤自动化，变量传递，条件分支 |
 | `network_tools` | 网络工具。ping/get/status/headers/ip |
 | `ai_search` | AI 搜索。jina.ai 智能搜索 + 网页内容提取 |
 | `frontend_tester` | 前端测试。HTML/CSS/JS 语法检查、响应式验证 |
 | `speech_recognition` | 语音识别。录音 + 语音转文字（Whisper） |
-| `audio_player` | 音频播放 |
-| `send_image` | 远程模式下发图片到手机 |
+| `json_toolkit` | JSON 工具箱。格式化/压缩/校验/路径查询/差异比较 |
+| `regex_tester` | 正则表达式测试器。匹配/提取/替换/解释 |
+| `snippet_manager` | 代码片段管理器。保存/搜索/复用常用代码 |
+| `markdown_tool` | Markdown 工具。TOC/统计/表格生成/待办提取 |
+| `id_generator` | ID 生成器。UUID/NanoID/短ID/雪花ID/ULID |
 
 ## 记忆系统
 
@@ -285,7 +289,8 @@ xiaoli-cli/
 │   ├── ai_search.py
 │   ├── frontend_tester.py
 │   ├── speech_recognition.py
-│   └── send_image.py
+│   ├── terminal.py
+│   └── operit_bridge.py
 ├── skills/                     # 技能
 ├── image_engine/               # 图像识别引擎
 ├── tests/                      # 测试套件 (150+ 用例)
