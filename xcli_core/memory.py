@@ -17,13 +17,71 @@ from typing import List, Dict, Optional, Tuple
 class MemoryManager:
     """持久化记忆管理器"""
 
+    # 记忆模式常量
+    MODE_COMPANION = "companion"  # 陪伴模式（长期记忆）
+    MODE_WORK = "work"  # 工作模式（短期记忆）
+
     def __init__(self, project_dir: str):
         self.project_dir = project_dir
         self.memory_dir = os.path.join(project_dir, "memory")
         self.memory_file = os.path.join(project_dir, "MEMORY.md")
         self.chat_dir = os.path.join(project_dir, "chat_history")
+        self.config_file = os.path.join(project_dir, "config.json")
         self.compress_threshold = 50  # 超过 50 条消息触发压缩
         self._ensure_dirs()
+        self._memory_mode = self._load_memory_mode()
+
+    def _load_memory_mode(self) -> str:
+        """加载记忆模式配置"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                return config.get("system", {}).get("memory_mode", "")
+        except Exception:
+            pass
+        return ""
+
+    def _save_memory_mode(self, mode: str):
+        """保存记忆模式配置"""
+        try:
+            config = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            if "system" not in config:
+                config["system"] = {}
+            config["system"]["memory_mode"] = mode
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            self._memory_mode = mode
+        except Exception as e:
+            print(f"保存记忆模式配置失败: {e}")
+
+    def get_memory_mode(self) -> str:
+        """获取当前记忆模式"""
+        return self._memory_mode
+
+    def is_mode_selected(self) -> bool:
+        """检查是否已选择记忆模式"""
+        return self._memory_mode in [self.MODE_COMPANION, self.MODE_WORK]
+
+    def select_mode(self, mode: str) -> bool:
+        """选择记忆模式（只能选择一次）"""
+        if self.is_mode_selected():
+            return False  # 已经选择过，不能更改
+        if mode not in [self.MODE_COMPANION, self.MODE_WORK]:
+            return False  # 无效的模式
+        self._save_memory_mode(mode)
+        return True
+
+    def get_mode_description(self) -> str:
+        """获取当前模式的描述"""
+        if self._memory_mode == self.MODE_COMPANION:
+            return "陪伴模式（长期记忆）：拥有成熟的记忆功能，记住用户的偏好、习惯、历史对话等"
+        elif self._memory_mode == self.MODE_WORK:
+            return "工作模式（短期记忆）：每次对话是独立的短期记忆，可通过指令手动存储聊天记录"
+        return "未选择模式"
 
     def _ensure_dirs(self):
         """确保目录存在"""
@@ -522,6 +580,44 @@ class MemoryManager:
 #  记忆插件（注册到插件系统）
 # ══════════════════════════════════════════════
 
+    def save_conversation_by_mode(self, conversation: list, label: str = ""):
+        """根据模式保存对话"""
+        if self._memory_mode == self.MODE_COMPANION:
+            # 陪伴模式：自动保存到长期记忆
+            self.auto_save_chat(conversation, label)
+            # 提取关键信息保存到MEMORY.md
+            self._extract_and_save_key_info(conversation)
+        elif self._memory_mode == self.MODE_WORK:
+            # 工作模式：自动保存聊天记录
+            self.auto_save_chat(conversation, label)
+
+
+    def _extract_and_save_key_info(self, conversation: list):
+        """从对话中提取关键信息保存到MEMORY.md（陪伴模式专用）"""
+        # 这里可以添加AI提取关键信息的逻辑
+        # 暂时简单实现：保存最后一条助手消息
+        for msg in reversed(conversation):
+            if msg.get("role") == "assistant":
+                content = msg.get("content", "")
+                if content and len(content) > 20:
+                    self.append_memory("对话记录", f"- {content[:200]}")
+                    break
+
+
+    def load_context_by_mode(self, conversation: list) -> list:
+        """根据模式加载上下文"""
+        if self._memory_mode == self.MODE_COMPANION:
+            # 陪伴模式：加载长期记忆作为上下文
+            memory_content = self.load_memory()
+            if memory_content:
+                context_msg = {"role": "system", "content": f"长期记忆：{memory_content}"}
+                return [context_msg] + conversation
+            return conversation
+        elif self._memory_mode == self.MODE_WORK:
+            # 工作模式：只返回当前对话
+            return conversation
+        return conversation
+
 class Liugin:
     """记忆系统插件 — AI 可读写记忆、搜索历史"""
 
@@ -596,3 +692,7 @@ JSON格式示例：
                 "required": ["action"]
             }
         }
+    # ══════════════════════════════════════════════
+    #  模式特定的方法
+    # ══════════════════════════════════════════════
+

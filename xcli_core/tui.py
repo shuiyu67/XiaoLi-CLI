@@ -379,7 +379,8 @@ if TEXTUAL_AVAILABLE:
             self.styles.opacity = 0
 
         def on_mount(self):
-            self.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
+            # 使用 styles.animate 来动画化样式属性
+            self.styles.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
 
 
     class TypingIndicator(Static):
@@ -411,17 +412,7 @@ if TEXTUAL_AVAILABLE:
     # ═══════════════════════════════════════════════════
 
     class SendTextArea(TextArea):
-        """回车发送消息，Shift+回车换行的输入框"""
-        async def _on_key(self, event):
-            if event.key in ("enter", "\r", "\n"):
-                # prevent_default 阻止父类 TextArea._on_key 执行
-                event.prevent_default()
-                try:
-                    self.app.action_send_message()
-                except Exception:
-                    pass
-                return
-            # 其他键正常处理
+        """多行输入框，Ctrl+Enter发送消息"""
 
     # ═══════════════════════════════════════════════════
     #  TUI 主应用
@@ -460,9 +451,8 @@ if TEXTUAL_AVAILABLE:
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
                         with Container(id="input-wrapper"):
-                            yield SendTextArea(
-                                placeholder="输入消息... (回车发送, Shift+回车换行)",
-                                id="user-input",
+                                                    yield SendTextArea(
+                                                        placeholder="输入消息... (Ctrl+Enter 发送, Enter 换行)",                                id="user-input",
                                 soft_wrap=True,
                                 tab_behavior="indent",
                             )
@@ -498,7 +488,7 @@ if TEXTUAL_AVAILABLE:
                 "",
                 "  ╔══════════════════════════════════════════════╗",
                 "  ║                                              ║",
-                "  ║    小狸 Pro-CLI v5.4.1                        ║",
+                "  ║    小狸 Pro-CLI v6.0                          ║",
                 "  ║    智能编程助手 · 动画增强版                  ║",
                 "  ║                                              ║",
                 "  ╚══════════════════════════════════════════════╝",
@@ -542,7 +532,7 @@ if TEXTUAL_AVAILABLE:
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║    小狸 Pro-CLI v5.4.1                        ║", "msg-welcome"),
+                ("  ║    小狸 Pro-CLI v6.0                          ║", "msg-welcome"),
                 ("  ║    智能编程助手 · 动画增强版                  ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
@@ -743,7 +733,7 @@ if TEXTUAL_AVAILABLE:
                 'cls': lambda: self.action_clear(),
                 'model': lambda: self._switch_model(args),
                 'engine': lambda: self._switch_model(args),
-                'about': lambda: self._system(" 小狸 Pro-CLI v5.4.1 - 智能编程助手"),
+                'about': lambda: self._system(" 小狸 Pro-CLI v6.0 - 智能编程助手"),
                 'status': lambda: self._show_status(),
                 'tools': lambda: self._show_tools(),
                 'engines': lambda: self._show_engines(),
@@ -878,7 +868,10 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(self._update_sidebar)
 
         def _write_raw(self, msg):
-            if '✅' in msg or 'OK 工具' in msg:
+            # 检查是否是AI回复（包含Rich标记前缀）
+            if msg.startswith('[cyan]>[/]') or msg.startswith('[yellow]>[/]'):
+                self._add(f"  {msg}", "msg-ai")
+            elif '✅' in msg or 'OK 工具' in msg:
                 self._add(f"  {msg}", "msg-tool-ok")
             elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
                 self._add(f"  {msg}", "msg-tool-err")

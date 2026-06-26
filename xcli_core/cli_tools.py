@@ -105,6 +105,9 @@ class ToolMixin:
                     result = self.liugin_manager.execute(tool_name, args, **arguments)
                 else:
                     result = self.liugin_manager.execute(tool_name, args)
+                # 将 ToolResult 对象转换为字典格式，兼容旧接口
+                if hasattr(result, 'to_dict'):
+                    return result.to_dict()
                 return result
 
             # 回退：直接调用 handler（旧逻辑）
@@ -212,8 +215,10 @@ class ToolMixin:
         else:
             tool_args_display = tool_args
 
-        # TUI 模式下不做延迟和 ESC 检测
-        if not self.tui_output_callback:
+        # TUI 模式下显示工具执行状态
+        if self.tui_output_callback:
+            self._output(f"   正在执行工具: {tool_name} {tool_args_display}")
+        else:
             try:
                 import msvcrt
                 canceled = False

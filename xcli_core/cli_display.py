@@ -45,13 +45,12 @@ class DisplayMixin:
         response_lines = content.split('\n')
         if self.tui_output_callback:
             for i, line in enumerate(response_lines):
-                if i == 0:
-                    prefix = "[yellow]>[/] " if is_continue else "[cyan]>[/] "
-                    line = prefix + line
+                # 为每一行都添加前缀，确保整个AI回复都使用正确的样式
+                prefix = "[yellow]>[/] " if is_continue else "[cyan]>[/] "
                 if i == len(response_lines) - 1:
-                    self._output(f"{line} {user_id_display}")
+                    self._output(f"{prefix}{line} {user_id_display}")
                 else:
-                    self._output(line)
+                    self._output(f"{prefix}{line}")
             self._output("")
         else:
             for i, line in enumerate(response_lines):
