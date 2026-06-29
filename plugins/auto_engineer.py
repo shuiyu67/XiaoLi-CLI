@@ -368,8 +368,16 @@ class Liugin:
         if not test_files and len(py_files) > 5:
             suggestions.append(" 添加单元测试")
 
-        uses_print = sum(1 for f in py_files if 'print(' in open(f, errors='ignore').read())
-        uses_log = sum(1 for f in py_files if 'logging' in open(f, errors='ignore').read())
+        uses_print = 0
+        uses_log = 0
+        for f in py_files:
+            with open(f, errors='ignore') as fh:
+                content = fh.read()
+            if 'print(' in content:
+                uses_print += 1
+            if 'logging' in content:
+                uses_log += 1
+
         if uses_print > uses_log and uses_print > 3:
             suggestions.append(" 考虑用 logging 替代 print")
 

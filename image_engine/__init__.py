@@ -106,7 +106,7 @@ class ImageEngineManager:
         
         for filename in os.listdir(engine_dir):
             if filename.endswith('_engine.py') and filename != '__init__.py':
-                engine_name = filename[:-11]  # 移除 _engine.py
+                engine_name = filename[:-10]  # 移除 _engine.py
                 try:
                     # 动态导入模块
                     module_path = os.path.join(engine_dir, filename)

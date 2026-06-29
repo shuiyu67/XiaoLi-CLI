@@ -96,6 +96,7 @@ class ClawliMixin:
             tool_calls = self._extract_tool_calls(json_data)
 
             if tool_calls:
+                all_results = []
                 for tool_data in tool_calls:
                     tool_name = tool_data.get('tool', '未知工具')
                     tool_args = tool_data.get('args', '')
@@ -105,6 +106,7 @@ class ClawliMixin:
 
                     result = self.process_tool_call(tool_data)
                     result_text = result.get('result', '无结果')
+                    all_results.append(result_text)
 
                     if CLAWLI_SERVER_AVAILABLE and clawli_server:
                         clawli_server.send_tool_status(tool_name, tool_args, "success", result_text)
@@ -114,7 +116,7 @@ class ClawliMixin:
                     "content": response
                 })
 
-                tool_result_str = "\n".join([f"工具执行结果: {r}" for r in [result.get('result', '')]])
+                tool_result_str = "\n".join(f"工具执行结果: {r}" for r in all_results)
                 self._process_clawli_user_message(f"{tool_result_str}\n请根据工具执行结果继续回答。")
                 return
 
@@ -134,16 +136,13 @@ class ClawliMixin:
             image_engine = getattr(self, 'image_engine', None)
             if not image_engine:
                 try:
-                    from image_engine import get_image_engine
-                    image_engine = get_image_engine()
+                    from image_engine import get_engine_manager
+                    image_engine = get_engine_manager()
                 except:
                     image_engine = None
 
             if image_engine:
-                with open(image_path, 'rb') as f:
-                    image_data = f.read()
-
-                result = image_engine.analyze(image_data, text or "请描述这张图片")
+                result = image_engine.analyze(image_path, text or "请描述这张图片")
                 self._process_clawli_user_message(f"@{image_path}\n图片内容: {result}\n\n{text}")
             else:
                 self._process_clawli_user_message(f"@{image_path}\n{text}")

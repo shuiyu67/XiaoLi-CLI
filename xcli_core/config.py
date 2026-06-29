@@ -42,6 +42,60 @@ def set_system_config(key, value):
     save_config(config)
 
 
+# ── 引擎配置档案管理 ──
+# 存储结构: config["engine_profiles"][engine_name] = [ {name, base_url, api_key, model}, ... ]
+
+def get_profiles(engine_name):
+    """获取指定引擎的所有配置档案"""
+    config = load_config()
+    return config.get("engine_profiles", {}).get(engine_name, [])
+
+
+def save_profile(engine_name, profile):
+    """保存/更新一个配置档案（按 name 去重，已存在则覆盖）"""
+    config = load_config()
+    if "engine_profiles" not in config:
+        config["engine_profiles"] = {}
+    profiles = config["engine_profiles"].setdefault(engine_name, [])
+    # 按 name 去重
+    for i, p in enumerate(profiles):
+        if p.get("name") == profile.get("name"):
+            profiles[i] = profile
+            break
+    else:
+        profiles.append(profile)
+    config["engine_profiles"][engine_name] = profiles
+    save_config(config)
+
+
+def delete_profile(engine_name, profile_name):
+    """删除指定引擎的一个配置档案"""
+    config = load_config()
+    profiles = config.get("engine_profiles", {}).get(engine_name, [])
+    profiles = [p for p in profiles if p.get("name") != profile_name]
+    if "engine_profiles" not in config:
+        config["engine_profiles"] = {}
+    config["engine_profiles"][engine_name] = profiles
+    save_config(config)
+
+
+def apply_profile(engine_name, profile):
+    """将档案应用到 config.json 的 api.engines 节点（下次启动或重载时生效）"""
+    config = load_config()
+    if "api" not in config:
+        config["api"] = {}
+    if "engines" not in config["api"]:
+        config["api"]["engines"] = {}
+    engine_cfg = config["api"]["engines"].setdefault(engine_name, {})
+    if "base_url" in profile:
+        engine_cfg["base_url"] = profile["base_url"]
+    if "api_key" in profile:
+        engine_cfg["api_key"] = profile["api_key"]
+    if "model" in profile:
+        engine_cfg["model"] = profile["model"]
+    save_config(config)
+
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,

@@ -95,8 +95,8 @@ class BaseAICLI:
         self.load_liugins(liugins_dir, skills_dir)
         # 初始化共享对话历史
         self.shared_conversation_history = []
-        # 设置最大历史记录数
-        self.max_history = DEFAULT_MAX_HISTORY
+        # 设置最大历史记录数 — 从 config 读取，未配置则用默认值
+        self.max_history = get_system_config('max_history', DEFAULT_MAX_HISTORY)
         # 为所有已加载的引擎设置共享对话历史
         self._set_shared_conversation_history()
         # 初始化代码执行相关功能
@@ -115,6 +115,14 @@ class BaseAICLI:
         self._clawli_monitor_running = False
         # TUI 输出回调（用于 TUI 模式下的实时输出）
         self.tui_output_callback = None
+        # TUI 流式回调（用于 TUI 模式下逐字流式输出）
+        self.tui_stream_callback = None
+        # TUI 思考回调（用于 TUI 模式下深度思考内容单独显示）
+        self.tui_thinking_callback = None
+        # TUI 钩子：每次调用 AI 前触发（重新显示思考指示器等）
+        self.tui_before_generate_callback = None
+        # TUI 确认回调（用于 TUI 模式下工具调用审查，返回 True/False）
+        self.tui_confirm_callback = None
         # 初始化用户ID（基于机器硬件动态生成）
         self.user_id = str(uuid.getnode())
 
@@ -319,6 +327,13 @@ class BaseAICLI:
         """获取插件管理器"""
         return self.liugin_manager
 
+    def _output(self, message):
+        """统一输出方法，支持 TUI 和 CLI 模式"""
+        if getattr(self, 'tui_output_callback', None):
+            self.tui_output_callback(message)
+        else:
+            print(message)
+
     def switch_engine(self, engine_name):
         """切换AI引擎"""
         if engine_name in self.engines:
@@ -333,35 +348,24 @@ class BaseAICLI:
                 self.current_engine.max_history = self.max_history
 
             if old_engine != self.current_engine and self.shared_conversation_history:
-                print(f"{Fore.CYAN}已切换到AI引擎: {engine_name}，正在传递对话历史...{Style.RESET_ALL}")
+                self._output(f"{Fore.CYAN}已切换到AI引擎: {engine_name}，正在传递对话历史...{Style.RESET_ALL}")
 
                 context_message = {
                     "role": "system",
                     "content": f"引擎切换通知：现在由{engine_name}引擎继续之前的对话。以下是之前的对话历史：\n"
                 }
+                self.shared_conversation_history.append(context_message)
 
-                if self.shared_conversation_history:
-                    print(f"{Fore.YELLOW}当前对话历史已传递给新引擎:{Style.RESET_ALL}")
-                    for msg in self.shared_conversation_history[-self.max_history:]:
-                        if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                            role = msg["role"]
-                            content = msg["content"]
-                            if role == "user":
-                                print(f"{Fore.CYAN}用户: {content}{Style.RESET_ALL}")
-                            elif role == "assistant":
-                                print(f"{Fore.GREEN}AI: {content}{Style.RESET_ALL}")
-                            elif role == "tool":
-                                print(f"{Fore.MAGENTA}工具结果: {content}{Style.RESET_ALL}")
+                self._output(f"{Fore.GREEN}已切换到AI引擎: {engine_name}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.GREEN}已切换到AI引擎: {engine_name}{Style.RESET_ALL}")
+                self._output(f"{Fore.GREEN}已切换到AI引擎: {engine_name}{Style.RESET_ALL}")
 
             try:
                 set_system_config('default_engine', engine_name)
-                print(f"{Fore.CYAN}已将 {engine_name} 设置为默认引擎{Style.RESET_ALL}")
             except Exception as e:
-                print(f"{Fore.YELLOW}警告: 保存默认引擎配置失败: {e}{Style.RESET_ALL}")
+                self._output(f"{Fore.YELLOW}警告: 保存默认引擎配置失败: {e}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.RED}未找到AI引擎: {engine_name}{Style.RESET_ALL}")
+            self._output(f"{Fore.RED}未找到AI引擎: {engine_name}{Style.RESET_ALL}")
 
     def _set_shared_conversation_history(self):
         """为所有引擎设置共享对话历史"""

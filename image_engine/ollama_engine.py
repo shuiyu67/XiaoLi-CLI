@@ -14,6 +14,14 @@ except ImportError:
     OLLAMA_AVAILABLE = False
 
 
+def _safe_get(obj, key, default=None):
+    """兼容 dict 和 pydantic 对象的安全取值"""
+    try:
+        return obj[key]
+    except (KeyError, AttributeError, TypeError):
+        return default
+
+
 class OllamaImageEngine(BaseImageEngine):
     """Ollama 视觉引擎"""
     
@@ -69,7 +77,7 @@ class OllamaImageEngine(BaseImageEngine):
         
         try:
             result = ollama.list()
-            self.installed_models = [m['model'] for m in result.get('models', [])]
+            self.installed_models = [m['model'] for m in _safe_get(result, 'models', [])]
         except:
             self.installed_models = []
     
@@ -137,7 +145,7 @@ class OllamaImageEngine(BaseImageEngine):
                     'images': [image_path]
                 }]
             )
-            return response.get('message', {}).get('content', '')
+            return _safe_get(_safe_get(response, 'message', {}), 'content', '')
         except Exception as e:
             raise Exception(f"Ollama识别失败: {str(e)}")
     
@@ -168,7 +176,7 @@ class OllamaImageEngine(BaseImageEngine):
                 stream=False
             )
             
-            content = response.get('message', {}).get('content', '')
+            content = _safe_get(_safe_get(response, 'message', {}), 'content', '')
             if content:
                 yield content
             else:

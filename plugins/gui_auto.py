@@ -324,7 +324,7 @@ class Liugin:
             lines.append(f"{indent}{prefix}{type_part} {name_part}{id_part}{bounds_part}{state_str}")
 
             children = element.FindAll(
-                self._uia.CreatePropertyCondition(30000, 0),  # TreeScope_Children
+                2,  # TreeScope_Children
                 self._uia.CreateTrueCondition()
             )
             if children:
@@ -570,7 +570,7 @@ class Liugin:
 
         try:
             children = self._root.FindAll(
-                self._uia.CreatePropertyCondition(30000, 2),
+                2,  # TreeScope_Children
                 self._uia.CreateTrueCondition()
             )
 

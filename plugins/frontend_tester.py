@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import subprocess
 from colorama import Fore, Style
 
@@ -317,7 +318,7 @@ JSON格式示例：
                     "message": "使用了var声明，建议使用let或const"
                 })
 
-            if '==' in content and '!==' not in content:
+            if re.search(r'(?<![=!])==(?!=)', content):
                 issues.append({
                     "level": "warning",
                     "message": "使用了==比较，建议使用===严格相等"

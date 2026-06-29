@@ -319,18 +319,29 @@ class Liugin:
 
         return None
 
+    def _find_agent(self, agent_id: str):
+        """线程安全地查找 Agent（精确匹配 + 模糊匹配）"""
+        with self._lock:
+            agent = self.agents.get(agent_id)
+            if not agent:
+                matches = [a for a in self.agents.values() if agent_id in a.id or agent_id == a.name]
+                if matches:
+                    agent = matches[0]
+        return agent
+
     def _list(self, args: str) -> str:
         """列出所有子 Agent"""
         with self._lock:
             if not self.agents:
                 return "没有子 Agent"
+            agents_list = list(self.agents.values())
 
-        result = [f"子 Agent 列表 ({len(self.agents)} 个):\n"]
+        result = [f"子 Agent 列表 ({len(agents_list)} 个):\n"]
 
         # 按状态分组
-        running = [a for a in self.agents.values() if a.status == "running"]
-        done = [a for a in self.agents.values() if a.status == "done"]
-        failed = [a for a in self.agents.values() if a.status == "failed"]
+        running = [a for a in agents_list if a.status == "running"]
+        done = [a for a in agents_list if a.status == "done"]
+        failed = [a for a in agents_list if a.status == "failed"]
 
         if running:
             result.append(f" 运行中 ({len(running)}):")
@@ -355,14 +366,9 @@ class Liugin:
         if not agent_id:
             return "错误：请提供 Agent ID"
 
-        agent = self.agents.get(agent_id)
+        agent = self._find_agent(agent_id)
         if not agent:
-            # 模糊匹配
-            matches = [a for a in self.agents.values() if agent_id in a.id or agent_id == a.name]
-            if matches:
-                agent = matches[0]
-            else:
-                return f"错误：未找到 Agent '{agent_id}'"
+            return f"错误：未找到 Agent '{agent_id}'"
 
         lines = [
             f"Agent: {agent.id}",
@@ -386,13 +392,9 @@ class Liugin:
         if not agent_id:
             return "错误：请提供 Agent ID"
 
-        agent = self.agents.get(agent_id)
+        agent = self._find_agent(agent_id)
         if not agent:
-            matches = [a for a in self.agents.values() if agent_id in a.id or agent_id == a.name]
-            if matches:
-                agent = matches[0]
-            else:
-                return f"错误：未找到 Agent '{agent_id}'"
+            return f"错误：未找到 Agent '{agent_id}'"
 
         if agent.status == "running":
             return f"Agent {agent.id} 仍在运行中 (步骤 {agent.steps})"
@@ -417,13 +419,9 @@ class Liugin:
         agent_id = parts[0]
         message = parts[1]
 
-        agent = self.agents.get(agent_id)
+        agent = self._find_agent(agent_id)
         if not agent:
-            matches = [a for a in self.agents.values() if agent_id in a.id or agent_id == a.name]
-            if matches:
-                agent = matches[0]
-            else:
-                return f"错误：未找到 Agent '{agent_id}'"
+            return f"错误：未找到 Agent '{agent_id}'"
 
         if agent.status != "running":
             return f"Agent {agent.id} 未在运行 (状态: {agent.status})"
@@ -467,17 +465,15 @@ class Liugin:
 
         except Exception as e:
             agent.error = str(e)
+            agent.status = "failed"
+            agent.finished_at = datetime.now().strftime("%H:%M:%S")
 
     def _kill(self, args: str) -> str:
         """终止子 Agent"""
         agent_id = args.strip()
-        agent = self.agents.get(agent_id)
+        agent = self._find_agent(agent_id)
         if not agent:
-            matches = [a for a in self.agents.values() if agent_id in a.id or agent_id == a.name]
-            if matches:
-                agent = matches[0]
-            else:
-                return f"错误：未找到 Agent '{agent_id}'"
+            return f"错误：未找到 Agent '{agent_id}'"
 
         agent.status = "failed"
         agent.error = "被主 Agent 终止"

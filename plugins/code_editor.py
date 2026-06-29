@@ -1158,8 +1158,10 @@ else:
     def _op_diff(self, path: str, rest: str) -> str:
         if not path:
             return "错误：请提供第一个文件路径"
+        if not rest.strip():
+            return "错误：请提供第二个文件路径"
         f1 = self._norm(path)
-        f2 = self._norm(rest.split()[0] if rest.strip() else "")
+        f2 = self._norm(rest.split()[0])
         if not os.path.exists(f1):
             return f"错误：文件不存在: {f1}"
         if not os.path.exists(f2):

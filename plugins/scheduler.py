@@ -295,17 +295,37 @@ JSON格式示例：
         except Exception:
             pass
 
-        # 打印醒目提醒
-        print()
-        print(f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}  ⏰ 定时任务提醒 #{task_id}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}{'─' * 50}{Style.RESET_ALL}")
-        print(f"  {Fore.CYAN}任务:{Style.RESET_ALL} {message}")
-        print(f"  {Fore.CYAN}时间:{Style.RESET_ALL} {now.strftime('%H:%M:%S')}")
-        if is_repeat:
-            next_str = (now + timedelta(seconds=repeat_seconds)).strftime("%Y-%m-%d %H:%M:%S")
-            print(f"  {Fore.CYAN}下次:{Style.RESET_ALL} {next_str}")
-        print(f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}")
+        # 打印醒目提醒（TUI 兼容）
+        is_tui = self.cli and getattr(self.cli, 'tui_output_callback', None)
+        is_generating = self.cli and getattr(self.cli, 'tui_stream_callback', None)
+
+        if is_tui and not is_generating:
+            # TUI 模式且未在生成中：通过回调输出
+            lines = [
+                "",
+                f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}  ⏰ 定时任务提醒 #{task_id}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}{'─' * 50}{Style.RESET_ALL}",
+                f"  {Fore.CYAN}任务:{Style.RESET_ALL} {message}",
+                f"  {Fore.CYAN}时间:{Style.RESET_ALL} {now.strftime('%H:%M:%S')}",
+            ]
+            if is_repeat:
+                next_str = (now + timedelta(seconds=repeat_seconds)).strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"  {Fore.CYAN}下次:{Style.RESET_ALL} {next_str}")
+            lines.append(f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}")
+            self.cli.tui_output_callback("\n".join(lines))
+        elif not is_generating:
+            # CLI 模式
+            print()
+            print(f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}  ⏰ 定时任务提醒 #{task_id}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}{'─' * 50}{Style.RESET_ALL}")
+            print(f"  {Fore.CYAN}任务:{Style.RESET_ALL} {message}")
+            print(f"  {Fore.CYAN}时间:{Style.RESET_ALL} {now.strftime('%H:%M:%S')}")
+            if is_repeat:
+                next_str = (now + timedelta(seconds=repeat_seconds)).strftime("%Y-%m-%d %H:%M:%S")
+                print(f"  {Fore.CYAN}下次:{Style.RESET_ALL} {next_str}")
+            print(f"{Fore.YELLOW}{'═' * 50}{Style.RESET_ALL}")
 
         # 自动激活 AI — 将提醒注入对话
         self._activate_ai(task_id, message)

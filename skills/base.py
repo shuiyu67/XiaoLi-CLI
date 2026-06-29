@@ -380,17 +380,3 @@ class SkillLoader:
             else:
                 definitions.append(skill.get_tool_definition())
         return definitions
-    
-    def get_skill(self, name: str) -> Optional[Union[Skill, MarkdownSkill]]:
-        """获取已加载的技能"""
-        return self._skills.get(name)
-    
-    def get_all_tool_definitions(self, format: str = "openai") -> List[Dict]:
-        """获取所有技能的工具定义"""
-        definitions = []
-        for skill in self._skills.values():
-            if format == "anthropic":
-                definitions.append(skill.get_anthropic_tool_definition())
-            else:
-                definitions.append(skill.get_tool_definition())
-        return definitions

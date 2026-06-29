@@ -355,7 +355,7 @@ class Liugin:
         if output:
             # 提取纯ID保存到文件
             ids = [line.strip().lstrip(' ') for line in result.split('\n')
-                   if line.strip() and not any(c in line for c in [' ', '️', '', '❄️', ''])]
+                   if line.strip() and not any(c in line for c in [' ', '️', '❄️'])]
             try:
                 with open(output, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(ids))

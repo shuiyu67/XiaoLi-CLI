@@ -109,17 +109,8 @@ class NotificationManager:
             pass
 
     def _notify_windows(self, title: str, message: str):
-        """Windows 通知 — 优先使用 win10toast，降级到 PowerShell"""
-        # 方法1: win10toast (pip install win10toast)
-        try:
-            from win10toast import ToastNotifier
-            toaster = ToastNotifier()
-            toaster.show_toast(title, message, duration=3, threaded=True)
-            return
-        except ImportError:
-            pass
-
-        # 方法2: PowerShell BurntToast 模块
+        """Windows 通知 — 使用 PowerShell（win10toast 在 Python 3.12+ 上不兼容）"""
+        # 方法1: PowerShell BurntToast 模块
         try:
             ps_script = f'''
             [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
@@ -138,7 +129,7 @@ class NotificationManager:
         except Exception:
             pass
 
-        # 方法3: PowerShell 简单弹窗 (最后降级)
+        # 方法2: PowerShell 简单弹窗 (最后降级)
         try:
             escaped_msg = message.replace("'", "''")
             escaped_title = title.replace("'", "''")

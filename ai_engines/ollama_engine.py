@@ -22,6 +22,26 @@ project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
 
+def _safe_get(obj, key, default=None):
+    """兼容 dict 和 pydantic 对象的安全取值（新版 ollama 返回 pydantic 模型，不支持 .get()）"""
+    if obj is None:
+        return default
+    # 1. 先尝试 dict 访问
+    try:
+        return obj[key]
+    except (KeyError, TypeError):
+        pass
+    # 2. 尝试属性访问（pydantic 模型）
+    val = getattr(obj, key, None)
+    if val is not None:
+        return val
+    # 3. 尝试 model_dump 后的 dict 访问
+    try:
+        return obj.model_dump()[key]
+    except (AttributeError, KeyError, TypeError):
+        return default
+
+
 class OllamaAI:
     """基于Ollama的本地AI引擎"""
     requires_api_key = False  # Ollama是本地引擎，不需要API密钥
@@ -80,7 +100,10 @@ Ollama AI引擎插件帮助信息
         
         # 共享对话历史引用（由CLI设置）
         self.shared_conversation_history = None
-        
+
+        # 取消标志
+        self._cancelled = False
+
         # 直接启用思考标记，由主程序自动处理深度思考模型的响应
         self.thinking_start_marker = "<thinking>"
         self.thinking_end_marker = "</thinking>"
@@ -93,6 +116,33 @@ Ollama AI引擎插件帮助信息
         else:
             print(f"{Fore.RED}Ollama服务未运行,引擎将不可用{Style.RESET_ALL}")
     
+    def cancel(self):
+        """取消正在进行的请求"""
+        self._cancelled = True
+
+    def apply_config(self, base_url=None, api_key=None, model=None):
+        """应用新配置到当前引擎实例（内存），并持久化到 config.json"""
+        if base_url is not None:
+            self.base_url = base_url.rstrip('/')
+        if api_key is not None:
+            self.api_key = api_key
+        if model is not None:
+            self.model = model
+        # 持久化到 config.json
+        try:
+            import os, json
+            config_file = os.path.join(project_root, "config.json")
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            engine_cfg = config.setdefault("api", {}).setdefault("engines", {}).setdefault("ollama", {})
+            engine_cfg["base_url"] = self.base_url
+            engine_cfg["api_key"] = self.api_key
+            engine_cfg["model"] = self.model
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"持久化引擎配置失败: {e}")
+
     def check_ollama_service(self):
         """检测Ollama服务是否运行"""
         # 检查 ollama 库是否可用
@@ -107,7 +157,7 @@ Ollama AI引擎插件帮助信息
             # 如果出现异常,说明服务未运行
             return False
     
-    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
+    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None, stream_start_event=None):
         """
         生成AI响应 - 使用Ollama API
 
@@ -137,10 +187,20 @@ Ollama AI引擎插件帮助信息
                 messages = self._build_messages_with_history(system_prompt, user_input)
 
             # 构建调用参数
+            # 重置取消标志
+            self._cancelled = False
+            # 获取流式回调
+            stream_cb = None
+            thinking_cb = None
+            if self.cli and hasattr(self.cli, 'tui_stream_callback'):
+                stream_cb = self.cli.tui_stream_callback
+            if self.cli and hasattr(self.cli, 'tui_thinking_callback'):
+                thinking_cb = self.cli.tui_thinking_callback
+
             kwargs = {
                 "model": self.model,
                 "messages": messages,
-                "stream": False
+                "stream": True if stream_cb else False
             }
 
             # ── Function Calling: 注入工具定义 ──
@@ -150,16 +210,45 @@ Ollama AI引擎插件帮助信息
             # 使用Ollama Python库调用API
             response = ollama_client.chat(**kwargs)
 
+            # ── 流式模式：逐块读取 ──
+            if stream_cb:
+                full_content = ""
+                reasoning_content = ""
+                for chunk in response:
+                    if self._cancelled:
+                        break
+                    msg = _safe_get(chunk, "message", {})
+                    # 检查 tool_calls
+                    tc_raw = _safe_get(msg, "tool_calls")
+                    if tc_raw:
+                        # 工具调用 — 走原逻辑
+                        message = msg
+                        tool_calls_raw = tc_raw
+                        break
+                    # 深度思考（Ollama thinking 字段）
+                    rc = _safe_get(msg, "thinking", "")
+                    if rc and thinking_cb:
+                        reasoning_content += rc
+                        thinking_cb(rc)
+                    content = _safe_get(msg, "content", "")
+                    if content:
+                        full_content += content
+                        stream_cb(content)
+                else:
+                    # 流式完成，无工具调用
+                    return full_content.encode('utf-8', 'replace').decode('utf-8')
+            else:
+                message = _safe_get(response, "message", {})
+                tool_calls_raw = _safe_get(message, "tool_calls")
+
             # ── Function Calling: 检查 tool_calls ──
-            message = response.get("message", {})
-            tool_calls_raw = message.get("tool_calls")
             if tool_calls_raw:
                 # Ollama 的 tool_calls 格式: [{"function": {"name": ..., "arguments": {...}}}]
                 fc_calls = []
                 for i, tc in enumerate(tool_calls_raw):
-                    func = tc.get("function", {})
-                    name = func.get("name", "")
-                    args = func.get("arguments", {})
+                    func = _safe_get(tc, "function", {})
+                    name = _safe_get(func, "name", "")
+                    args = _safe_get(func, "arguments", {})
                     call_id = f"call_{name}_{i}"
 
                     # 统一为小狸内部格式
@@ -189,7 +278,7 @@ Ollama AI引擎插件帮助信息
                     }, ensure_ascii=False)
 
             # 普通文本响应
-            content = message.get("content", "")
+            content = _safe_get(message, "content", "")
             # 清理无效的 UTF-8 代理字符
             content = content.encode('utf-8', 'replace').decode('utf-8')
             return content
@@ -306,11 +395,16 @@ Ollama AI引擎插件帮助信息
         """列出本地可用的模型"""
         if not self.is_service_running:
             return ["错误:Ollama服务未运行"]
-        
+
         try:
             response = ollama_client.list()
-            models = [model["name"] for model in response["models"]]
-            return models
+            models_list = _safe_get(response, "models", [])
+            result = []
+            for model in models_list:
+                name = _safe_get(model, "model", "") or _safe_get(model, "name", "")
+                if name:
+                    result.append(name)
+            return result if result else ["未找到本地模型"]
         except Exception as e:
             return [f"获取模型列表失败: {str(e)}"]
     
@@ -392,12 +486,14 @@ Ollama AI引擎插件帮助信息
             
             # 逐块处理响应
             for part in response:
-                if 'status' in part:
-                    status = part['status']
+                status = _safe_get(part, "status", None)
+                if status:
                     print(f"{Fore.YELLOW}{status}{Style.RESET_ALL}")
                     # 检查是否完成
-                    if 'completed' in part and 'total' in part:
-                        if part['completed'] == part['total']:
+                    completed = _safe_get(part, "completed", None)
+                    total = _safe_get(part, "total", None)
+                    if completed is not None and total is not None:
+                        if completed == total:
                             print(f"{Fore.GREEN}模型 {model_name} 拉取完成!{Style.RESET_ALL}")
             
             print(f"{Fore.GREEN}模型 {model_name} 拉取成功!{Style.RESET_ALL}")

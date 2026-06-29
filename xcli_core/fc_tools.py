@@ -162,6 +162,10 @@ def parse_fc_response(response_data: dict) -> Optional[List[Dict]]:
         except json.JSONDecodeError:
             args = {"raw": args_str}
 
+        # 确保 args 是 dict（LLM 可能返回非对象 JSON）
+        if not isinstance(args, dict):
+            args = {"raw": args}
+
         # 统一为小狸内部格式: {"action": "use_tool", "tool": name, "args": "..." }
         # 如果 args 里有 args 字段，直接用；否则把整个 args 序列化
         if "args" in args and isinstance(args["args"], str):

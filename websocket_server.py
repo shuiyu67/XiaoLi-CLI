@@ -417,21 +417,17 @@ class LocalServer:
             image_engine = getattr(self.cli, 'image_engine', None)
             if not image_engine:
                 try:
-                    from image_engine import get_image_engine
-                    image_engine = get_image_engine()
+                    from image_engine import get_engine_manager
+                    image_engine = get_engine_manager()
                 except:
                     return f"@{file_path}"  # 没有图像引擎，直接返回路径
             
             if websocket:
                 await self._send_tool_status(websocket, "图像识别", text or "分析图片", "calling")
             
-            # 读取图片
-            with open(file_path, 'rb') as f:
-                image_data = f.read()
-            
             # 调用图像识别
             try:
-                result = image_engine.analyze(image_data, text or "请描述这张图片")
+                result = image_engine.analyze(file_path, text or "请描述这张图片")
                 
                 if websocket:
                     await self._send_tool_status(websocket, "图像识别", text or "分析图片", "success", result[:200] if result else "无结果")
@@ -638,9 +634,13 @@ class LocalServer:
         from colorama import Fore, Style
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            except:
+                local_ip = "未知"
+            finally:
+                s.close()
         except:
             local_ip = "未知"
         
@@ -657,9 +657,13 @@ class LocalServer:
     def get_status(self) -> dict:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            except:
+                local_ip = "未知"
+            finally:
+                s.close()
         except:
             local_ip = "未知"
         return {
@@ -817,15 +821,12 @@ class ProxyClient:
             image_engine = getattr(self.cli, 'image_engine', None)
             if not image_engine:
                 try:
-                    from image_engine import get_image_engine
-                    image_engine = get_image_engine()
+                    from image_engine import get_engine_manager
+                    image_engine = get_engine_manager()
                 except:
                     return f"@{file_path}"
             
-            with open(file_path, 'rb') as f:
-                image_data = f.read()
-            
-            result = image_engine.analyze(image_data, text or "请描述这张图片")
+            result = image_engine.analyze(file_path, text or "请描述这张图片")
             return await self._process_message(f"@{file_path}", [], f"图片内容: {result}\n\n{text}" if text else f"图片内容: {result}")
             
         except Exception as e:
@@ -1133,8 +1134,6 @@ def start_proxy_client(cli_instance, server_host: str, server_port: int,
         websocket_server = None
     
     return result
-    
-    return _proxy_client.start(server_host, server_port, server_password, pc_port, pc_password)
 
 
 def stop_all():

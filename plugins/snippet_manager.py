@@ -83,7 +83,24 @@ class Liugin:
     def convert_mcp_args(self, arguments):
         op = arguments.get("operation", "")
         name = arguments.get("name", "")
-        return f"{op} {name}".strip()
+        parts = [op]
+        if name:
+            parts.append(name)
+        if arguments.get("keyword"):
+            parts.append(arguments["keyword"])
+        if arguments.get("file"):
+            parts.append(arguments["file"])
+        if arguments.get("count"):
+            parts.append(str(arguments["count"]))
+        if arguments.get("language"):
+            parts.extend(["-l", arguments["language"]])
+        if arguments.get("code"):
+            parts.extend(["-c", f'"{arguments["code"]}"'])
+        if arguments.get("tags"):
+            parts.extend(["-t", arguments["tags"]])
+        if arguments.get("description"):
+            parts.extend(["-d", f'"{arguments["description"]}"'])
+        return " ".join(parts)
 
     def _load_snippets(self):
         try:

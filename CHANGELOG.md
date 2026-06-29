@@ -1,5 +1,27 @@
 # 更新日志
 
+## v6.1.0 (2026-06-28)
+
+**TUI 体验全面升级 + 背景自定义**
+
+### TUI 界面改进
+
+- **全面中文化** — CommandPalette（命令搜索面板）子选项、placeholder、系统命令名全部汉化；HelpPanel 帮助页面、Footer、Chatbox 边框标题、错误前缀、辅助中心面板等所有用户可见英文汉化
+- **辅助中心**（Ctrl+P / F9）— 原"设置"页面重命名为"辅助中心"，含 6 项可切换设置（主题/引擎/历史/安全/预设背景/自定义背景）
+- **独立帮助浮层**（? 键）— 重写帮助页面逻辑，独立浮层替代原 Textual HelpPanel 侧边栏，全中文内容，带滑入淡入动画
+- **背景切换** — 辅助中心 [5] 切换 4 种预设背景色（墨黑/深蓝灰/深紫/深蓝），[6] 自定义背景；新增 `/bg` 命令支持用图片提取主色调作为背景
+- **换行修复** — Ctrl+J 作为主推换行键（Windows 终端不区分 Shift+Enter），同时保留 shift+enter/alt+enter 兼容
+- **引擎切换修复** — 解决 `call_from_thread` 在主线程崩溃的 RuntimeError，主线程直接调用，工作线程才走 call_from_thread
+
+### 技术改进
+
+- **文本工具调用解析** — 新增 `_handle_text_tool_call` 方法，检测模型在文本响应中用 `<tool_call>` 标签返回的工具调用（非标准 Function Calling API），解析并执行
+- **网络工具优化** — network_tools.py 和 ai_search.py 改进请求头、重试机制、编码处理
+- **流式输出修复** — Chatbox.append_chunk 和 ThinkingBox.append_chunk 的 refresh 改为 layout=True，修复流式只显示首行
+- **取消响应修复** — 引擎层增加 `_cancelled` 标志和 cancel() 方法，TUI 层跟踪 worker 身份，action_cancel 直接调用 _finish_cancel
+
+---
+
 ## v6.0.0 (2026-06-23)
 
 **重大更新：插件生态 + 深度思考 + 工作模式**

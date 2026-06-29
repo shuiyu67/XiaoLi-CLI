@@ -354,7 +354,7 @@ class Liugin:
 
     def _auto_commit_message(self, status: str) -> str:
         lines = status.strip().split('\n')
-        added = len([l for l in lines if l.startswith('A ') or l.startswith('A') and l[1] == ' '])
+        added = len([l for l in lines if l.startswith('A ') or (len(l) > 1 and l.startswith('A') and l[1] == ' ')])
         modified = len([l for l in lines if l.startswith('M ') or (len(l) > 1 and l[1] == 'M')])
         deleted = len([l for l in lines if l.startswith('D ') or (len(l) > 1 and l[1] == 'D')])
 

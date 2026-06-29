@@ -1,11 +1,20 @@
 import subprocess
 import json
+import time
 from urllib.parse import quote
 import requests
 
 
 class Liugin:
     """AI搜索插件 - 使用jina.ai进行智能搜索"""
+
+    # 统一 User-Agent（模拟浏览器，避免被反爬拦截）
+    _UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    _HEADERS = {
+        'User-Agent': _UA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    }
 
     def __init__(self):
         self.usage = """AI搜索工具使用方法：/r
@@ -27,6 +36,7 @@ ai_search <操作> <参数>/r
 """
         self.cli = None  # CLI实例引用
         self.timeout = 30  # 请求超时时间（秒）
+        self.max_retries = 2  # 最大重试次数
 
     def set_cli(self, cli):
         """设置CLI实例引用"""
@@ -162,34 +172,50 @@ JSON格式示例：
             return f"网络搜索错误: {str(e)}"
 
     def _execute_curl(self, url):
-        """使用 requests 库获取内容（替代 curl 命令）"""
-        try:
-            # 使用 requests 库发送请求
-            response = requests.get(
-                url,
-                timeout=self.timeout,
-                headers={'User-Agent': 'Mozilla/5.0 (compatible; AI-Search-Bot)'}
-            )
-            
-            # 检查状态码
-            if response.status_code != 200:
-                return f"错误：HTTP请求失败，状态码: {response.status_code}"
+        """使用 requests 库获取内容（带重试、UA、编码处理）"""
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.get(
+                    url,
+                    timeout=self.timeout,
+                    headers=self._HEADERS,
+                    allow_redirects=True
+                )
 
-            # 获取内容
-            content = response.text.strip()
+                # 检查状态码
+                if response.status_code != 200:
+                    return f"错误：HTTP请求失败，状态码: {response.status_code}"
 
-            if not content:
-                return "错误：未获取到任何内容"
+                # 显式编码处理：避免 ISO-8859-1 默认导致中文乱码
+                if not response.encoding or response.encoding.lower() == 'iso-8859-1':
+                    response.encoding = response.apparent_encoding or 'utf-8'
 
-            # 限制输出长度以避免过长输出
-            if len(content) > 5000:
-                content = content[:5000] + f"\n\n... (内容已截断，完整内容共{len(content)}字符)"
+                # 获取内容
+                content = response.text.strip()
 
-            return content
+                if not content:
+                    return "错误：未获取到任何内容"
 
-        except requests.Timeout:
-            return f"错误：请求超时 (>{self.timeout}秒)"
-        except requests.ConnectionError:
-            return "错误：网络连接失败，请检查网络"
-        except Exception as e:
-            return f"错误：请求时发生错误: {str(e)}"
+                # 限制输出长度以避免过长输出
+                if len(content) > 5000:
+                    content = content[:5000] + f"\n\n... (内容已截断，完整内容共{len(content)}字符)"
+
+                return content
+
+            except requests.exceptions.Timeout:
+                last_error = f"请求超时 (>{self.timeout}秒)"
+                if attempt < self.max_retries:
+                    time.sleep(1)
+            except requests.exceptions.ConnectionError:
+                last_error = "网络连接失败，请检查网络"
+                if attempt < self.max_retries:
+                    time.sleep(1)
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                break
+            except Exception as e:
+                last_error = str(e)
+                break
+
+        return f"错误：请求时发生错误: {last_error}"

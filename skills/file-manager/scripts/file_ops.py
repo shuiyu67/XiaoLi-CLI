@@ -90,7 +90,8 @@ def read_file(file_path: str, encoding: str = "utf-8", lines: int = None) -> str
                         break
                     content_lines.append(line.rstrip('\n\r'))
                 content = '\n'.join(content_lines)
-                total_lines = sum(1 for _ in open(file_path, 'r', encoding=encoding))
+                with open(file_path, 'r', encoding=encoding) as f2:
+                    total_lines = sum(1 for _ in f2)
             else:
                 content = f.read()
                 total_lines = content.count('\n') + 1

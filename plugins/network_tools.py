@@ -8,7 +8,15 @@ from colorama import Fore, Style
 
 class Liugin:
     """网络工具插件"""
-    
+
+    # 统一 User-Agent（模拟浏览器，避免被反爬拦截）
+    _UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    _HEADERS = {
+        'User-Agent': _UA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    }
+
     def __init__(self):
         self.usage = """网络工具使用方法：/r
 network_tools <操作> <参数>/r
@@ -35,6 +43,7 @@ network_tools <操作> <参数>/r
 """
         self.cli = None  # CLI实例引用
         self.timeout = 10  # 请求超时时间（秒）
+        self.max_retries = 2  # 最大重试次数
     
     def set_cli(self, cli):
         """设置CLI实例引用"""
@@ -161,128 +170,137 @@ JSON格式示例：
         except Exception as e:
             return f"网络工具操作错误: {str(e)}"
     
+    def _request(self, url, method='GET', timeout=None):
+        """统一请求方法 — 带重试、UA、编码处理"""
+        timeout = timeout or self.timeout
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.request(
+                    method, url, timeout=timeout, headers=self._HEADERS,
+                    allow_redirects=True
+                )
+                # 显式编码处理：优先用响应头声明的编码，兜底 UTF-8
+                if not response.encoding or response.encoding.lower() == 'iso-8859-1':
+                    response.encoding = response.apparent_encoding or 'utf-8'
+                return response
+            except requests.exceptions.Timeout:
+                last_error = f"请求超时 (>{timeout}秒)"
+                if attempt < self.max_retries:
+                    time.sleep(1)
+            except requests.exceptions.ConnectionError:
+                last_error = "连接失败 (无法连接到服务器)"
+                if attempt < self.max_retries:
+                    time.sleep(1)
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                break
+        return last_error
+
     def _ping(self, target):
-        """测试网站连通性和延迟"""
+        """测试网站连通性和延迟（单次请求，不重试，保证延迟测量准确）"""
         try:
             # 确保URL格式正确
             if not target.startswith(('http://', 'https://')):
                 test_url = 'http://' + target
             else:
                 test_url = target
-            
-            # 添加协议如果缺失
-            if not test_url.startswith(('http://', 'https://')):
-                test_url = 'http://' + test_url
-            
+
+            # 单次请求测量延迟（不使用重试，避免重试干扰延迟数值）
             start_time = time.time()
-            response = requests.get(test_url, timeout=self.timeout)
+            try:
+                response = requests.get(
+                    test_url, timeout=self.timeout,
+                    headers=self._HEADERS, allow_redirects=True
+                )
+            except requests.exceptions.Timeout:
+                return f".ping 测试结果:\n目标: {target}\n错误: 请求超时 (>{self.timeout}秒)\n连接状态: 失败"
+            except requests.exceptions.ConnectionError:
+                return f".ping 测试结果:\n目标: {target}\n错误: 连接失败 (无法连接到服务器)\n连接状态: 失败"
+            except requests.exceptions.RequestException as e:
+                return f".ping 测试结果:\n目标: {target}\n错误: {str(e)}\n连接状态: 失败"
             end_time = time.time()
-            
+
             response_time = (end_time - start_time) * 1000  # 转换为毫秒
-            
+
             result = f".ping 测试结果:\n"
             result += f"目标: {target}\n"
             result += f"HTTP状态码: {response.status_code}\n"
             result += f"响应时间: {response_time:.2f} ms\n"
             result += f"连接状态: {'成功' if response.status_code < 400 else '失败'}\n"
-            
+
             if response.status_code >= 400:
                 result += f"错误信息: {response.reason if hasattr(response, 'reason') else '请求失败'}\n"
-            
+
             return result
-            
-        except requests.exceptions.Timeout:
-            return f".ping 测试结果:\n目标: {target}\n错误: 请求超时 (>{self.timeout}秒)\n连接状态: 失败"
-        except requests.exceptions.ConnectionError:
-            return f".ping 测试结果:\n目标: {target}\n错误: 连接失败 (无法连接到服务器)\n连接状态: 失败"
-        except requests.exceptions.RequestException as e:
-            return f".ping 测试结果:\n目标: {target}\n错误: {str(e)}\n连接状态: 失败"
+
         except Exception as e:
             return f".ping 测试结果:\n目标: {target}\n错误: {str(e)}\n连接状态: 失败"
     
     def _get_content(self, url):
         """获取网页内容"""
-        try:
-            # 确保URL格式正确
-            if not url.startswith(('http://', 'https://')):
-                url = 'https://' + url
-            
-            response = requests.get(url, timeout=self.timeout)
-            
-            if response.status_code == 200:
-                content = response.text
-                # 限制内容长度以避免过长输出
-                if len(content) > 2000:
-                    content = content[:2000] + f"\n... (内容已截断，完整内容共{len(content)}字符)"
-                
-                result = f"网页内容 (来自 {url}):\n"
-                result += content
-                return result
-            else:
-                return f"获取网页内容失败，状态码: {response.status_code}, 原因: {response.reason if hasattr(response, 'reason') else ''}"
-                
-        except requests.exceptions.Timeout:
-            return f"获取网页内容超时 (>{self.timeout}秒)"
-        except requests.exceptions.ConnectionError:
-            return f"无法连接到 {url}，请检查URL是否正确"
-        except requests.exceptions.RequestException as e:
-            return f"请求失败: {str(e)}"
-        except Exception as e:
-            return f"获取网页内容时发生错误: {str(e)}"
+        # 确保URL格式正确
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+
+        response = self._request(url)
+        # _request 返回字符串表示错误
+        if isinstance(response, str):
+            return f"获取网页内容失败: {response}"
+
+        if response.status_code == 200:
+            content = response.text
+            # 限制内容长度以避免过长输出
+            if len(content) > 2000:
+                content = content[:2000] + f"\n... (内容已截断，完整内容共{len(content)}字符)"
+
+            result = f"网页内容 (来自 {url}):\n"
+            result += content
+            return result
+        else:
+            return f"获取网页内容失败，状态码: {response.status_code}, 原因: {response.reason if hasattr(response, 'reason') else ''}"
     
     def _check_status(self, url):
         """检查网站状态码"""
-        try:
-            # 确保URL格式正确
-            if not url.startswith(('http://', 'https://')):
-                url = 'https://' + url
-            
-            response = requests.get(url, timeout=self.timeout)
-            
-            result = f"网站状态 (来自 {url}):\n"
-            result += f"HTTP状态码: {response.status_code}\n"
-            result += f"状态描述: {response.reason if hasattr(response, 'reason') else 'Unknown'}\n"
-            result += f"响应时间: {response.elapsed.total_seconds():.2f} 秒\n"
-            result += f"内容长度: {len(response.content)} 字节\n"
-            result += f"服务器: {response.headers.get('Server', '未知')}\n"
-            result += f"内容类型: {response.headers.get('Content-Type', '未知')}\n"
-            
-            return result
-            
-        except requests.exceptions.Timeout:
-            return f"检查网站状态超时 (>{self.timeout}秒)"
-        except requests.exceptions.ConnectionError:
-            return f"无法连接到 {url}，请检查URL是否正确"
-        except requests.exceptions.RequestException as e:
-            return f"请求失败: {str(e)}"
-        except Exception as e:
-            return f"检查网站状态时发生错误: {str(e)}"
+        # 确保URL格式正确
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+
+        response = self._request(url)
+        if isinstance(response, str):
+            return f"检查网站状态失败: {response}"
+
+        result = f"网站状态 (来自 {url}):\n"
+        result += f"HTTP状态码: {response.status_code}\n"
+        result += f"状态描述: {response.reason if hasattr(response, 'reason') else 'Unknown'}\n"
+        result += f"响应时间: {response.elapsed.total_seconds():.2f} 秒\n"
+        result += f"内容长度: {len(response.content)} 字节\n"
+        result += f"服务器: {response.headers.get('Server', '未知')}\n"
+        result += f"内容类型: {response.headers.get('Content-Type', '未知')}\n"
+
+        return result
     
     def _get_headers(self, url):
-        """获取网站响应头"""
-        try:
-            # 确保URL格式正确
-            if not url.startswith(('http://', 'https://')):
-                url = 'https://' + url
-            
-            response = requests.get(url, timeout=self.timeout)
-            
-            headers = dict(response.headers)
-            
-            result = f"响应头 (来自 {url}):\n"
-            for key, value in headers.items():
-                result += f"{key}: {value}\n"
-            
-            return result
-            
-        except requests.exceptions.Timeout:
-            return f"获取响应头超时 (>{self.timeout}秒)"
-        except requests.exceptions.ConnectionError:
-            return f"无法连接到 {url}，请检查URL是否正确"
-        except requests.exceptions.RequestException as e:
-            return f"请求失败: {str(e)}"
-        except Exception as e:
-            return f"获取响应头时发生错误: {str(e)}"
+        """获取网站响应头（优先 HEAD 请求，失败则回退 GET）"""
+        # 确保URL格式正确
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+
+        # 优先用 HEAD（更高效），失败则回退到 GET
+        response = self._request(url, method='HEAD')
+        if isinstance(response, str):
+            # HEAD 失败（可能服务器不支持），回退到 GET
+            response = self._request(url, method='GET')
+        if isinstance(response, str):
+            return f"获取响应头失败: {response}"
+
+        headers = dict(response.headers)
+
+        result = f"响应头 (来自 {url}):\n"
+        for key, value in headers.items():
+            result += f"{key}: {value}\n"
+
+        return result
     
     def _get_ip(self, domain):
         """获取域名对应的IP地址"""

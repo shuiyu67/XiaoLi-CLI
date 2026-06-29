@@ -107,24 +107,16 @@ class ProcessProtection:
             if sys.platform == 'darwin':
                 # macOS: 使用 fcntl 文件锁
                 import fcntl
-                self._lock_fd = open(self._lock_file_path, 'w')
+                self._lock_fd = open(self._lock_file_path, 'a+')
+                self._lock_fd.seek(0)
                 try:
                     fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except (IOError, OSError):
-                    # 文件已被锁定 — 已有实例在运行
-                    # 检查锁文件中的 PID 是否仍在运行
-                    try:
-                        old_pid = self._lock_fd.read().strip()
-                        if old_pid and self._is_process_running(int(old_pid)):
-                            self._lock_fd.close()
-                            self._lock_fd = None
-                            return False
-                        else:
-                            # 旧进程已死，清理残留锁
-                            self._lock_fd.seek(0)
-                            self._lock_fd.truncate()
-                    except (ValueError, OSError):
-                        pass
+                    # flock 失败 — 已有存活实例在运行
+                    # (flock 是进程级锁，进程退出时自动释放)
+                    self._lock_fd.close()
+                    self._lock_fd = None
+                    return False
 
                 self._lock_fd.seek(0)
                 self._lock_fd.truncate()
@@ -135,22 +127,15 @@ class ProcessProtection:
             else:
                 # Linux: 使用 fcntl 文件锁
                 import fcntl
-                self._lock_fd = open(self._lock_file_path, 'w')
+                self._lock_fd = open(self._lock_file_path, 'a+')
+                self._lock_fd.seek(0)
                 try:
                     fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except (IOError, OSError):
-                    # 检查旧进程是否仍在运行
-                    try:
-                        old_pid = self._lock_fd.read().strip()
-                        if old_pid and self._is_process_running(int(old_pid)):
-                            self._lock_fd.close()
-                            self._lock_fd = None
-                            return False
-                        else:
-                            self._lock_fd.seek(0)
-                            self._lock_fd.truncate()
-                    except (ValueError, OSError):
-                        pass
+                    # flock 失败 — 已有存活实例在运行
+                    self._lock_fd.close()
+                    self._lock_fd = None
+                    return False
 
                 self._lock_fd.seek(0)
                 self._lock_fd.truncate()

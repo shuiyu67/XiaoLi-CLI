@@ -189,6 +189,13 @@ class WorkflowEngine:
         self.state_dir = os.path.join(self.workflows_dir, ".state")
         os.makedirs(self.state_dir, exist_ok=True)
 
+    def _out(self, msg):
+        """TUI 兼容输出"""
+        if self.cli and getattr(self.cli, 'tui_output_callback', None):
+            self.cli.tui_output_callback(msg)
+        else:
+            print(msg)
+
     def run(self, path: str, args: dict = None) -> str:
         """执行工作流"""
         if not os.path.exists(path):
@@ -226,8 +233,8 @@ class WorkflowEngine:
             'started_at': context['workflow']['started_at'],
         })
 
-        print(f"\n{Fore.CYAN}🔄 工作流 '{wf_name}' 开始 (ID: {wf_id}){Style.RESET_ALL}")
-        print(f"   共 {len(steps)} 个步骤\n")
+        self._out(f"\n{Fore.CYAN}🔄 工作流 '{wf_name}' 开始 (ID: {wf_id}){Style.RESET_ALL}")
+        self._out(f"   共 {len(steps)} 个步骤\n")
 
         failed = False
         for i, step in enumerate(steps):
@@ -240,7 +247,7 @@ class WorkflowEngine:
             if condition:
                 resolved_condition = _resolve_vars(condition, context)
                 if not self._eval_condition(resolved_condition):
-                    print(f"  {Fore.YELLOW}⏭ [{step_name}] 条件不满足，跳过{Style.RESET_ALL}")
+                    self._out(f"  {Fore.YELLOW}⏭ [{step_name}] 条件不满足，跳过{Style.RESET_ALL}")
                     context['steps'][step_name] = {
                         'output': '', 'exit_code': 0, 'skipped': True
                     }
@@ -249,7 +256,7 @@ class WorkflowEngine:
             # 解析步骤参数
             resolved_step = _resolve_value(step, context)
 
-            print(f"  {Fore.CYAN}▶ [{step_name}] {step_type}{Style.RESET_ALL}")
+            self._out(f"  {Fore.CYAN}▶ [{step_name}] {step_type}{Style.RESET_ALL}")
 
             # 更新状态
             self._save_state(wf_id, {
@@ -268,29 +275,29 @@ class WorkflowEngine:
 
                 if result.get('exit_code', 0) == 0:
                     output_preview = str(result.get('output', ''))[:100]
-                    print(f"  {Fore.GREEN}✓ [{step_name}] 完成{Style.RESET_ALL}"
+                    self._out(f"  {Fore.GREEN}✓ [{step_name}] 完成{Style.RESET_ALL}"
                           f"{' → ' + output_preview if output_preview else ''}")
                 else:
                     failed = True
-                    print(f"  {Fore.RED}✗ [{step_name}] 失败 (exit={result.get('exit_code')}){Style.RESET_ALL}")
-                    print(f"    {result.get('error', result.get('output', ''))[:200]}")
+                    self._out(f"  {Fore.RED}✗ [{step_name}] 失败 (exit={result.get('exit_code')}){Style.RESET_ALL}")
+                    self._out(f"    {result.get('error', result.get('output', ''))[:200]}")
 
                     if not continue_on_error:
                         # 检查 on_fail 分支
                         on_fail = resolved_step.get('on_fail')
                         if on_fail:
-                            print(f"  {Fore.YELLOW}→ 执行 on_fail 分支{Style.RESET_ALL}")
+                            self._out(f"  {Fore.YELLOW}→ 执行 on_fail 分支{Style.RESET_ALL}")
                             self._execute_on_fail(on_fail, context)
                         break
                     else:
-                        print(f"  {Fore.YELLOW}⚠ continue_on_error=true，继续{Style.RESET_ALL}")
+                        self._out(f"  {Fore.YELLOW}⚠ continue_on_error=true，继续{Style.RESET_ALL}")
 
             except Exception as e:
                 failed = True
                 context['steps'][step_name] = {
                     'output': '', 'exit_code': 1, 'error': str(e)
                 }
-                print(f"  {Fore.RED}✗ [{step_name}] 异常: {e}{Style.RESET_ALL}")
+                self._out(f"  {Fore.RED}✗ [{step_name}] 异常: {e}{Style.RESET_ALL}")
                 if not continue_on_error:
                     break
 
@@ -310,7 +317,7 @@ class WorkflowEngine:
         })
 
         icon = '✅' if not failed else '❌'
-        print(f"\n{icon} 工作流 '{wf_name}' {status} (ID: {wf_id})")
+        self._out(f"\n{icon} 工作流 '{wf_name}' {status} (ID: {wf_id})")
         return f"{icon} 工作流 '{wf_name}' {status}"
 
     def resume(self, wf_id: str) -> str:
@@ -335,7 +342,7 @@ class WorkflowEngine:
         start_from = state.get('current_step', 0)
         context = state.get('context', {})
 
-        print(f"\n{Fore.CYAN}🔄 恢复工作流 '{wf.get('name', wf_id)}' 从步骤 {start_from + 1}{Style.RESET_ALL}")
+        self._out(f"\n{Fore.CYAN}🔄 恢复工作流 '{wf.get('name', wf_id)}' 从步骤 {start_from + 1}{Style.RESET_ALL}")
 
         failed = False
         for i in range(start_from, len(steps)):
@@ -345,23 +352,23 @@ class WorkflowEngine:
             continue_on_error = step.get('continue_on_error', False)
 
             resolved_step = _resolve_value(step, context)
-            print(f"  {Fore.CYAN}▶ [{step_name}] {step_type}{Style.RESET_ALL}")
+            self._out(f"  {Fore.CYAN}▶ [{step_name}] {step_type}{Style.RESET_ALL}")
 
             try:
                 result = self._execute_step(resolved_step, context)
                 context['steps'][step_name] = result
 
                 if result.get('exit_code', 0) == 0:
-                    print(f"  {Fore.GREEN}✓ [{step_name}] 完成{Style.RESET_ALL}")
+                    self._out(f"  {Fore.GREEN}✓ [{step_name}] 完成{Style.RESET_ALL}")
                 else:
                     failed = True
-                    print(f"  {Fore.RED}✗ [{step_name}] 失败{Style.RESET_ALL}")
+                    self._out(f"  {Fore.RED}✗ [{step_name}] 失败{Style.RESET_ALL}")
                     if not continue_on_error:
                         break
             except Exception as e:
                 failed = True
                 context['steps'][step_name] = {'output': '', 'exit_code': 1, 'error': str(e)}
-                print(f"  {Fore.RED}✗ [{step_name}] 异常: {e}{Style.RESET_ALL}")
+                self._out(f"  {Fore.RED}✗ [{step_name}] 异常: {e}{Style.RESET_ALL}")
                 if not continue_on_error:
                     break
 
@@ -553,7 +560,7 @@ class WorkflowEngine:
         """打印步骤"""
         message = step.get('message', step.get('text', ''))
         resolved = _resolve_vars(str(message), context)
-        print(f"    💬 {resolved}")
+        self._out(f"    💬 {resolved}")
         return {'output': resolved, 'exit_code': 0}
 
     def _exec_wait_step(self, step: dict, context: dict) -> dict:
@@ -622,7 +629,7 @@ class WorkflowEngine:
     def _execute_on_fail(self, on_fail, context: dict):
         """执行 on_fail 处理"""
         if isinstance(on_fail, str):
-            print(f"    💬 {on_fail}")
+            self._out(f"    💬 {on_fail}")
         elif isinstance(on_fail, list):
             for step in on_fail:
                 self._execute_step(step, context)
@@ -636,7 +643,7 @@ class WorkflowEngine:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(state, f, ensure_ascii=False, indent=2, default=str)
         except Exception as e:
-            print(f"{Fore.YELLOW}⚠ 保存状态失败: {e}{Style.RESET_ALL}")
+            self._out(f"{Fore.YELLOW}⚠ 保存状态失败: {e}{Style.RESET_ALL}")
 
     def _load_state(self, wf_id: str) -> dict:
         """加载工作流状态"""
