@@ -999,7 +999,13 @@ multi 操作支持一次修改多处：
     # ── CLI 主循环 ──
 
     def run_tui(self):
-        """运行 TUI 模式（v8.0 默认 Rich 面板 TUI，支持快照自验；textual 作为可选回退）"""
+        """运行 TUI 模式（v8.0 默认真·全屏 textual TUI；textual 不可用时回退 rich 面板）"""
+        if TEXTUAL_AVAILABLE:
+            from .tui import XiaoliTUI
+            app = XiaoliTUI(self)
+            app.run()
+            return
+        # 回退 rich 面板 TUI（textual 不可用时）
         try:
             from .rich_tui import RichTUI
             from xcli_core.constants import VERSION as _V
@@ -1013,15 +1019,8 @@ multi 操作支持一次修改多处：
             self.tui_output_callback = tui.push
             tui.run()
             self.tui_output_callback = None
-            return
         except ImportError:
-            # 回退到旧版 textual TUI
-            if not TEXTUAL_AVAILABLE:
-                print(f"{Fore.RED}TUI 不可用: 请安装 rich (pip install rich){Style.RESET_ALL}")
-                return
-            from .tui import XiaoliTUI
-            app = XiaoliTUI(self)
-            app.run()
+            print(f"{Fore.RED}TUI 不可用: 请安装 textual (pip install textual){Style.RESET_ALL}")
 
     def run(self):
         """运行 CLI"""

@@ -1,6 +1,6 @@
 """TUI 界面模块 - Textual TUI 实现 (动画增强版 + 多行输入)"""
 
-from .constants import TEXTUAL_AVAILABLE
+from .constants import TEXTUAL_AVAILABLE, VERSION
 
 if TEXTUAL_AVAILABLE:
     import re
@@ -379,7 +379,12 @@ if TEXTUAL_AVAILABLE:
             self.styles.opacity = 0
 
         def on_mount(self):
-            self.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
+            # textual >= 8: Widget.opacity 是只读属性，直接 animate 会抛
+            # "property 'opacity' has no setter"。改为在 styles 上动画，失败则直接到位。
+            try:
+                self.styles.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
+            except Exception:
+                self.styles.opacity = 1.0
 
 
     class TypingIndicator(Static):
@@ -498,7 +503,7 @@ if TEXTUAL_AVAILABLE:
                 "",
                 "  ╔══════════════════════════════════════════════╗",
                 "  ║                                              ║",
-                "  ║    小狸 Pro-CLI v5.4.1                        ║",
+                "  ║    小狸 Pro-CLI v8.0.0                        ║",
                 "  ║    智能编程助手 · 动画增强版                  ║",
                 "  ║                                              ║",
                 "  ╚══════════════════════════════════════════════╝",
@@ -542,7 +547,7 @@ if TEXTUAL_AVAILABLE:
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║    小狸 Pro-CLI v5.4.1                        ║", "msg-welcome"),
+                ("  ║    小狸 Pro-CLI v8.0.0                        ║", "msg-welcome"),
                 ("  ║    智能编程助手 · 动画增强版                  ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
@@ -587,7 +592,28 @@ if TEXTUAL_AVAILABLE:
         def _update_status(self, text: str):
             bar = self.query_one("#status-bar")
             engine = self.bridge.current_engine()
-            bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话")
+            bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话{self._token_str()}")
+
+        def _token_str(self):
+            """token 用量进度（v8.0 token 感知压缩联动，引擎支持时显示）"""
+            e = getattr(self.cli, 'current_engine', None)
+            if not e:
+                return ""
+            used = getattr(e, 'last_prompt_tokens', None)
+            win = None
+            if hasattr(e, 'context_window'):
+                try:
+                    win = e.context_window()
+                except Exception:
+                    win = None
+            if used and win:
+                ratio = min(1.0, used / win)
+                filled = int(ratio * 10)
+                bar_s = "▓" * filled + "░" * (10 - filled)
+                return f" | {used}/{win} {bar_s}"
+            if used:
+                return f" | {used} tok"
+            return ""
 
         # ── 消息追加 ──
 
@@ -743,12 +769,14 @@ if TEXTUAL_AVAILABLE:
                 'cls': lambda: self.action_clear(),
                 'model': lambda: self._switch_model(args),
                 'engine': lambda: self._switch_model(args),
-                'about': lambda: self._system(" 小狸 Pro-CLI v5.4.1 - 智能编程助手"),
+                'about': lambda: self._system(f" 小狸 Pro-CLI v{VERSION} - 智能编程助手"),
                 'status': lambda: self._show_status(),
                 'tools': lambda: self._show_tools(),
                 'engines': lambda: self._show_engines(),
                 'tui': lambda: self._system("已在 TUI 模式中"),
                 'manual': lambda: self._handle_manual(args),
+                'snapshot': lambda: self._save_screenshot(),
+                'screenshot': lambda: self._save_screenshot(),
             }
 
             handler = cmds.get(name)
@@ -917,6 +945,22 @@ if TEXTUAL_AVAILABLE:
                 self._remove_typing_indicator()
                 self._system("已取消")
                 self.is_generating = False
+
+        def _save_screenshot(self):
+            """导出当前 TUI 屏幕截图（SVG）——AI 可据此自验实时渲染（/snapshot）"""
+            import os
+            out_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".tui_snapshots"
+            )
+            os.makedirs(out_dir, exist_ok=True)
+            path = os.path.join(out_dir, "live.svg")
+            try:
+                svg = self.export_screenshot()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(svg)
+                self._system(f"截图已保存: {path}")
+            except Exception as e:
+                self._error(f"截图失败: {e}")
 
 else:
     # Textual 不可用时的占位类
