@@ -22,7 +22,8 @@ class MemoryManager:
         self.memory_dir = os.path.join(project_dir, "memory")
         self.memory_file = os.path.join(project_dir, "MEMORY.md")
         self.chat_dir = os.path.join(project_dir, "chat_history")
-        self.compress_threshold = 50  # 超过 50 条消息触发压缩
+        self.compress_threshold = 50  # 超过 50 条消息触发压缩（兜底）
+        self.compress_ratio = 0.7    # token 感知压缩阈值：used/context_window >= 0.7 触发
         self._ensure_dirs()
 
     def _ensure_dirs(self):
@@ -299,8 +300,28 @@ class MemoryManager:
     #  上下文压缩
     # ══════════════════════════════════════════════
 
-    def should_compress(self, conversation: list) -> bool:
-        """判断是否需要压缩上下文"""
+    def set_compress_ratio(self, ratio: float):
+        """设置 token 感知压缩阈值（0~1）"""
+        try:
+            self.compress_ratio = float(ratio)
+        except (TypeError, ValueError):
+            pass
+
+    def should_compress(self, conversation: list, prompt_tokens=None, context_window=None, ratio=None) -> bool:
+        """
+        判断是否需要压缩上下文。
+        优先级:
+          1. token 感知: prompt_tokens/context_window >= ratio 触发（OpenAI 格式可拿到真实 token 数）
+          2. 兜底: 消息数超过 compress_threshold
+        """
+        if ratio is None:
+            ratio = self.compress_ratio
+        if prompt_tokens and context_window:
+            try:
+                if int(context_window) > 0 and (int(prompt_tokens) / int(context_window)) >= ratio:
+                    return True
+            except (TypeError, ValueError):
+                pass
         return len(conversation) > self.compress_threshold
 
     def compress_context(self, conversation: list, engine=None) -> list:

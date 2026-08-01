@@ -47,3 +47,6 @@ screenshots/gen_*.png
 # 临时文件
 *.tmp
 *.bak
+
+# v8.0 TUI 快照产物（运行时生成，供 AI 自验/预览）
+.tui_snapshots/

@@ -13,6 +13,31 @@ import logging
 # 设置日志
 logger = logging.getLogger(__name__)
 
+try:
+    from xcli_core.config import get_system_config
+except Exception:
+    def get_system_config(key, default=None):
+        return default
+
+# ── 常见模型的上下文窗口（token 数）──
+# OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
+MODEL_CONTEXT_WINDOWS = {
+    "gpt-4o": 128000, "gpt-4o-mini": 128000, "gpt-4": 8192, "gpt-4-turbo": 128000,
+    "gpt-3.5-turbo": 16385,
+    "deepseek-chat": 64000, "deepseek-reasoner": 64000,
+    "qwen2.5": 32768, "qwen2": 32768, "qwen-max": 32768, "qwen-plus": 32768,
+    "llama3": 8192, "llama3.1": 128000, "llama3.2": 128000, "llama2": 4096,
+    "claude-3": 200000, "claude-3.5": 200000, "claude-3.7": 200000, "claude": 200000,
+    "grok": 131072, "grok-2": 131072, "grok-3": 131072,
+    "glm-4": 128000, "glm-4v": 128000,
+    "mistral": 32768, "mixtral": 32768, "mistral-large": 128000,
+    "gemini": 1000000, "gemini-1.5": 1000000, "gemini-2.0": 1000000, "gemini-2.5": 1000000,
+    "yi": 200000, "yi-large": 200000,
+    "kimi": 200000, "moonshot": 200000,
+    "abab": 200000, "minimax": 200000,
+    "baichuan": 192000, "chatglm": 32768,
+}
+
 # 添加项目根目录到sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -95,6 +120,9 @@ OpenAI 兼容格式引擎帮助信息
         self.conversation_history = []
         self.shared_conversation_history = None
 
+        # 最近一次请求的 token 用量（供 token 感知压缩使用）
+        self.last_prompt_tokens = None
+
         # 思考标记（兼容深度思考模型）
         self.thinking_start_marker = "<think>"
         self.thinking_end_marker = "</think>"
@@ -169,6 +197,13 @@ OpenAI 兼容格式引擎帮助信息
 
             if response.status_code == 200:
                 response_data = response.json()
+                # ── 记录 token 用量（供 token 感知压缩）──
+                usage = response_data.get("usage", {})
+                if isinstance(usage, dict) and usage.get("prompt_tokens"):
+                    try:
+                        self.last_prompt_tokens = int(usage["prompt_tokens"])
+                    except (TypeError, ValueError):
+                        self.last_prompt_tokens = None
                 if "choices" in response_data and len(response_data["choices"]) > 0:
                     message = response_data["choices"][0].get("message", {})
 
@@ -341,6 +376,24 @@ OpenAI 兼容格式引擎帮助信息
         """设置模型"""
         self.model = model_name
         print(f"{Fore.GREEN}已切换模型为: {model_name}{Style.RESET_ALL}")
+
+    def context_window(self):
+        """
+        返回当前模型的上下文窗口（token 数）。
+        优先级: config.system.context_window > 模型名查表 > 默认 128000。
+        注: OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
+        """
+        cfg = get_system_config("context_window", None)
+        if cfg:
+            try:
+                return int(cfg)
+            except (TypeError, ValueError):
+                pass
+        model = (self.model or "").lower()
+        for key, win in MODEL_CONTEXT_WINDOWS.items():
+            if key and key in model:
+                return win
+        return 128000
 
     def list_models(self):
         """列出可用模型（调用 API 的 /models 端点）"""

@@ -9,7 +9,7 @@ import random
 from typing import Optional
 from colorama import Fore, Style
 
-from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY
+from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY, VERSION
 from .config import get_system_config, logger
 from .cli_base import BaseAICLI
 from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
@@ -714,17 +714,33 @@ multi 操作支持一次修改多处：
             except Exception:
                 pass
 
-            # ── 自动压缩上下文 ──
+            # ── 自动压缩上下文（token 感知优先，消息数兜底）──
             try:
-                if self.memory_manager.should_compress(self.shared_conversation_history):
-                    self.shared_conversation_history = self.memory_manager.compress_context(
-                        self.shared_conversation_history,
-                        engine=self.current_engine
-                    )
-                    self._set_shared_conversation_history()
-                    print(f"{Fore.DIM}[上下文已压缩，保留最近 10 条]{Style.RESET_ALL}")
-            except Exception:
-                pass
+                if hasattr(self, 'memory_manager') and self.memory_manager:
+                    engine = self.current_engine
+                    prompt_tokens = getattr(engine, 'last_prompt_tokens', None) if engine else None
+                    ctx = None
+                    if engine and hasattr(engine, 'context_window'):
+                        try:
+                            ctx = engine.context_window()
+                        except Exception:
+                            ctx = None
+                    ratio = get_system_config('compress_ratio', 0.7)
+                    self.memory_manager.set_compress_ratio(ratio)
+                    if self.memory_manager.should_compress(
+                        self.shared_conversation_history, prompt_tokens, ctx, ratio
+                    ):
+                        before = len(self.shared_conversation_history)
+                        self.shared_conversation_history = self.memory_manager.compress_context(
+                            self.shared_conversation_history,
+                            engine=engine
+                        )
+                        token_info = f"，token {prompt_tokens}/{ctx}" if (prompt_tokens and ctx) else ""
+                        self._output(
+                            f"{Fore.CYAN}🗜 上下文已自动压缩 (原 {before} 条 → {len(self.shared_conversation_history)} 条{token_info}，阈值 {ratio}){Style.RESET_ALL}"
+                        )
+            except Exception as e:
+                logger.warning(f"自动压缩上下文失败: {e}")
 
     def _extract_task_summary(self, user_input: str) -> str:
         """提取任务摘要用于通知显示"""
@@ -983,20 +999,35 @@ multi 操作支持一次修改多处：
     # ── CLI 主循环 ──
 
     def run_tui(self):
-        """运行 TUI 模式"""
-        if not TEXTUAL_AVAILABLE:
-            print(f"{Fore.RED}TUI 模式不可用：Textual 库未安装{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}请运行: pip install textual rich{Style.RESET_ALL}")
+        """运行 TUI 模式（v8.0 默认 Rich 面板 TUI，支持快照自验；textual 作为可选回退）"""
+        try:
+            from .rich_tui import RichTUI
+            from xcli_core.constants import VERSION as _V
+            tui = RichTUI(self)
+            tui.version = _V
+            tui.set_status(
+                engine=getattr(self.current_engine, 'name', '') if self.current_engine else '',
+                model=getattr(self.current_engine, 'model', '') if self.current_engine else '',
+                mode='TUI',
+            )
+            self.tui_output_callback = tui.push
+            tui.run()
+            self.tui_output_callback = None
             return
-        from .tui import XiaoliTUI
-        app = XiaoliTUI(self)
-        app.run()
+        except ImportError:
+            # 回退到旧版 textual TUI
+            if not TEXTUAL_AVAILABLE:
+                print(f"{Fore.RED}TUI 不可用: 请安装 rich (pip install rich){Style.RESET_ALL}")
+                return
+            from .tui import XiaoliTUI
+            app = XiaoliTUI(self)
+            app.run()
 
     def run(self):
         """运行 CLI"""
         import uuid
         self.user_id = str(uuid.getnode())
-        print(f"{Fore.GREEN}小狸 Pro-CLI 已启动!{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}小狸 Pro-CLI v{VERSION} 已启动!{Style.RESET_ALL}")
         print(f"{Fore.GREEN}用户ID: {self.user_id}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/help' 查看帮助信息{Style.RESET_ALL}")
         print(f"{Fore.GREEN}输入 '/quit' 退出程序{Style.RESET_ALL}")
@@ -1213,6 +1244,30 @@ multi 操作支持一次修改多处：
                     print(f"{Fore.CYAN}正在切换到 TUI 模式...{Style.RESET_ALL}")
                     self.run_tui()
                     print(f"{Fore.CYAN}已从 TUI 模式返回 CLI 模式{Style.RESET_ALL}")
+                    continue
+
+                if user_input == '/compress':
+                    if hasattr(self, 'memory_manager') and self.memory_manager:
+                        engine = self.current_engine
+                        before = len(self.shared_conversation_history)
+                        self.shared_conversation_history = self.memory_manager.compress_context(
+                            self.shared_conversation_history, engine=engine)
+                        self._set_shared_conversation_history()
+                        print(f"{Fore.CYAN}已手动压缩上下文: {before} → {len(self.shared_conversation_history)} 条{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.YELLOW}记忆系统未加载，无法压缩{Style.RESET_ALL}")
+                    continue
+
+                if user_input.startswith('/memory mode '):
+                    mode = user_input[len('/memory mode '):].strip().lower()
+                    if mode in ('companion', 'work'):
+                        try:
+                            set_system_config('memory_mode', mode)
+                        except Exception:
+                            pass
+                        print(f"{Fore.GREEN}记忆模式已设为: {mode}{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.RED}用法: /memory mode <companion|work>{Style.RESET_ALL}")
                     continue
 
                 if user_input.startswith('/safe'):

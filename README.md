@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.4.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-8.0.0-blue" alt="version">
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-150+%20passed-brightgreen" alt="tests">
@@ -21,6 +21,12 @@
 ## 简介
 
 小狸 Pro-CLI 是一款基于 Python 的智能编程助手，集成了代码编辑、版本控制、浏览器自动化、图像生成、记忆系统等功能，支持多种 AI 引擎，帮助开发者提升工作效率。
+
+## v8.0 新特性
+
+- **Rich 面板式 TUI（默认）** — `rich` 驱动的可视化对话面板；自带**快照出口**（导出 text/svg/html），AI 开发界面时可把渲染结果读回自验，补上"看不见渲染"的反馈闭环。输入 `/tui` 进入，`/snapshot` 随时导出当前界面。
+- **Token 感知压缩** — 自动读取 OpenAI 格式返回的 `usage.prompt_tokens`，当 `已用 token / 模型上下文窗口 ≥ 0.7`（可在 `config.json` 设 `system.compress_ratio` / `system.context_window` 覆盖）即触发上下文压缩，消息数阈值作为兜底，避免超窗截断。
+- **记忆模式** — 持久化 `MEMORY.md` + 每日日记 + 自动保存聊天记录 + 关键词检索；新增 `/memory mode <companion|work>` 切换与 `/compress` 手动压缩。
 
 ## 特性
 
