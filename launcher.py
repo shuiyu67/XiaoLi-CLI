@@ -16,6 +16,13 @@ from pathlib import Path
 from datetime import datetime
 import platform
 
+# <input> 特殊语法：配置模型时可用它交互式询问用户并获取输入
+try:
+    from xcli_core.config import resolve_input_value
+except Exception:
+    def resolve_input_value(value, field_name="", default_prompt=None):
+        return value
+
 # ── 编码设置 ──
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -471,6 +478,12 @@ class Launcher:
                     entry['base_url'] = 'https://api.deepseek.com/v1'
                     entry['model'] = 'deepseek-chat'
                 config['api']['engines'][name] = entry
+            if name == 'ollama':
+                # 模型最大 token 大小（单位 K，如 32 = 32K = 32768 token）
+                # 默认用 <input> 语法：配置模型时交互式询问用户
+                config['api']['engines'][name].setdefault(
+                    'max_token_k', '<input:请输入模型最大token大小(K)>'
+                )
 
         self.config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), 'utf-8')
         return config
@@ -498,7 +511,7 @@ class Launcher:
                     info(f'当前密钥: {masked}')
                 if prompt_yn(f'配置 {name} 的 API 密钥?', 'n'):
                     key = self.secret_input(f'{name} API 密钥')
-                    cfg['api_key'] = key
+                    cfg['api_key'] = resolve_input_value(key, field_name='API 密钥')
 
             # URL
             current_url = cfg.get('base_url', '')
@@ -506,7 +519,7 @@ class Launcher:
                 info(f'当前 URL: {current_url}')
             if prompt_yn(f'配置 {name} 的 Base URL?', 'n'):
                 url = prompt('Base URL', current_url)
-                cfg['base_url'] = url
+                cfg['base_url'] = resolve_input_value(url, field_name='Base URL')
 
             # Model
             current_model = cfg.get('model', '')
@@ -514,7 +527,26 @@ class Launcher:
                 info(f'当前模型: {current_model}')
             if prompt_yn(f'配置 {name} 的模型?', 'n'):
                 model = prompt('模型名称', current_model)
-                cfg['model'] = model
+                cfg['model'] = resolve_input_value(model, field_name='模型')
+
+            # 最大 token 大小（仅 ollama；单位 K，如 32 = 32K = 32768 token；支持 <input> 语法）
+            if name == 'ollama':
+                current_ctx = cfg.get('max_token_k', '')
+                is_syntax = isinstance(current_ctx, str) and '<input' in current_ctx
+                if is_syntax:
+                    info('当前最大 token: (启动时询问)')
+                elif current_ctx:
+                    shown = str(current_ctx)
+                    info(f'当前最大 token: {shown}K' if shown.replace('.', '', 1).isdigit() else f'当前最大 token: {shown}')
+                else:
+                    info('当前最大 token: 未设置')
+                if prompt_yn(f'配置 {name} 的最大 token 大小(K)?', 'n'):
+                    default_ctx = '' if is_syntax else str(current_ctx)
+                    val = prompt('最大 token (K)', default_ctx)
+                    if val.strip():
+                        cfg['max_token_k'] = resolve_input_value(val, field_name='最大 token 大小(K)')
+                elif not current_ctx:
+                    cfg['max_token_k'] = '<input:请输入模型最大token大小(K)>'
 
             config.setdefault('api', {}).setdefault('engines', {})[name] = cfg
 

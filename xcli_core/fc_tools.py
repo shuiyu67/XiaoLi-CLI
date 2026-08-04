@@ -120,11 +120,11 @@ def fc_result_to_message(tool_call_id: str, tool_name: str, result: str) -> Dict
 
     Returns:
         {"role": "tool", "tool_call_id": ..., "content": ...}
+        注意: 官方 OpenAI 的 tool 消息不含 name 字段（严格服务端如讯飞会拒），故不写入。
     """
     return {
         "role": "tool",
         "tool_call_id": tool_call_id,
-        "name": tool_name,
         "content": result[:10000] if result else ""  # 截断过长结果
     }
 

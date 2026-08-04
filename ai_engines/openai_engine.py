@@ -22,6 +22,9 @@ except Exception:
 # ── 常见模型的上下文窗口（token 数）──
 # OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
 MODEL_CONTEXT_WINDOWS = {
+    # 讯飞星火（Spark，经 one-api/new-api 转发时模型名常为 spark-* / general*）
+    "spark-4.0": 128000, "spark-max": 8192, "spark-pro": 8192, "spark-lite": 8192,
+    "spark": 8192, "generalv3.5": 8192, "generalv3": 8192, "general": 4096,
     "gpt-4o": 128000, "gpt-4o-mini": 128000, "gpt-4": 8192, "gpt-4-turbo": 128000,
     "gpt-3.5-turbo": 16385,
     "deepseek-chat": 64000, "deepseek-reasoner": 64000,
@@ -181,10 +184,19 @@ OpenAI 兼容格式引擎帮助信息
                 "stream": False
             }
 
-            # ── Function Calling: 注入工具定义 ──
+            # ── Function Calling: 注入工具定义（统一纯官方格式）──
             if tools:
-                body["tools"] = tools
-                body["tool_choice"] = "auto"
+                pure_tools = []
+                for t in tools:
+                    if not isinstance(t, dict):
+                        continue
+                    if t.get("type") == "function" and isinstance(t.get("function"), dict):
+                        pure_tools.append(t)
+                    elif isinstance(t.get("function"), dict):
+                        pure_tools.append({"type": "function", "function": t["function"]})
+                if pure_tools:
+                    body["tools"] = pure_tools
+                    body["tool_choice"] = "auto"
 
             # 发送请求
             api_url = self._get_api_url()
@@ -247,9 +259,29 @@ OpenAI 兼容格式引擎帮助信息
                         if "choices" in rd and rd["choices"]:
                             ai_response = rd["choices"][0].get("message", {}).get("content", "")
                             return ai_response.encode('utf-8', 'replace').decode('utf-8') if ai_response else ""
-                return f"API 调用失败: {response.status_code} - {response.text}"
+                return self._friendly_error(response.status_code, response)
             else:
-                return f"API 调用失败: {response.status_code} - {response.text}"
+                # 500 等错误：部分服务（如讯飞星火经 one-api 转发）不支持 FC 工具，
+                # 会直接报 500 Invalid Params —— 尝试去掉 tools 降级重试一次
+                lower = str(response.text).lower()
+                if tools and ("xunfei" in lower or "invalid params" in lower or "requestparamserror" in lower):
+                    print(f"{Fore.YELLOW}该接口可能不支持 FC 工具，降级为普通模式重试...{Style.RESET_ALL}")
+                    body.pop("tools", None)
+                    body.pop("tool_choice", None)
+                    retry = requests.post(url=api_url, json=body, headers=self._get_headers(), timeout=None)
+                    if retry.status_code == 200:
+                        rd = retry.json()
+                        retry_usage = rd.get("usage", {})
+                        if isinstance(retry_usage, dict) and retry_usage.get("prompt_tokens"):
+                            try:
+                                self.last_prompt_tokens = int(retry_usage["prompt_tokens"])
+                            except (TypeError, ValueError):
+                                pass
+                        if "choices" in rd and rd["choices"]:
+                            ai_response = rd["choices"][0].get("message", {}).get("content", "")
+                            ai_response = self._process_thinking_content(ai_response)
+                            return ai_response.encode('utf-8', 'replace').decode('utf-8') if ai_response else ""
+                return self._friendly_error(response.status_code, response)
 
         except requests.exceptions.ConnectionError:
             return f"无法连接到 API 服务: {self.base_url}，请检查服务是否运行"
@@ -276,22 +308,20 @@ OpenAI 兼容格式引擎帮助信息
 
                 role = msg["role"]
 
-                # tool 角色消息（FC 工具结果）
+                # tool 角色消息（FC 工具结果）—— 官方 OpenAI 格式不含 name 字段
                 if role == "tool":
                     tool_msg = {"role": "tool", "content": msg.get("content", "")}
                     if "tool_call_id" in msg:
                         tool_msg["tool_call_id"] = msg["tool_call_id"]
-                    if "name" in msg:
-                        tool_msg["name"] = msg["name"]
                     messages.append(tool_msg)
                     continue
 
-                # assistant 消息可能包含 tool_calls
+                # assistant 消息可能包含 tool_calls —— 重建成纯官方结构
                 if role == "assistant" and "tool_calls" in msg:
                     assistant_msg = {
                         "role": "assistant",
-                        "content": msg.get("content"),
-                        "tool_calls": msg["tool_calls"]
+                        "content": msg.get("content") or "",
+                        "tool_calls": self._pure_tool_calls(msg["tool_calls"])
                     }
                     messages.append(assistant_msg)
                     continue
@@ -371,6 +401,58 @@ OpenAI 兼容格式引擎帮助信息
                     return reply_content if reply_content else ""
 
         return response
+
+    @staticmethod
+    def _friendly_error(status_code, response):
+        """把错误响应里的可读信息提取出来，附带常见原因提示"""
+        try:
+            data = response.json()
+            err = data.get("error", {})
+            msg = err.get("message", "") if isinstance(err, dict) else ""
+        except Exception:
+            msg = ""
+        if not msg:
+            return f"API 调用失败: {status_code} - {response.text}"
+
+        hint = ""
+        low = str(msg).lower()
+        if "invalid params" in low or "requestparamserror" in low or "xunfei" in low:
+            hint = ("\n提示: 讯飞星火接口报'参数错误'，常见原因:"
+                    "\n  1) model 名与 one-api/new-api 渠道里的模型映射不一致（如 spark-4.0-ultra / spark-max / generalv3.5）"
+                    "\n  2) 该模型/渠道不支持 function calling（引擎已尝试去掉 tools 重试）"
+                    "\n  3) base_url 需为 OpenAI 兼容转发地址（如 one-api 的 https://域名/v1）")
+        return f"API 调用失败: {status_code} - {msg}{hint}"
+
+    @staticmethod
+    def _pure_tool_calls(tool_calls):
+        """把历史里的 tool_calls 重建成官方 OpenAI 格式:
+        [{"id": ..., "type": "function", "function": {"name": ..., "arguments": "json串"}}]
+        剔除内部字段（action/tool/args 等），arguments 统一为字符串。
+        """
+        pure = []
+        for tc in (tool_calls or []):
+            if not isinstance(tc, dict):
+                continue
+            func = tc.get("function")
+            if isinstance(func, dict):
+                name = func.get("name", tc.get("name", ""))
+                args = func.get("arguments", "{}")
+            else:
+                name = tc.get("name", "")
+                args = tc.get("arguments", "{}")
+            if isinstance(args, str):
+                args_str = args
+            else:
+                try:
+                    args_str = json.dumps(args, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    args_str = "{}"
+            pure.append({
+                "id": tc.get("id", f"call_{name}"),
+                "type": "function",
+                "function": {"name": name, "arguments": args_str}
+            })
+        return pure
 
     def set_model(self, model_name):
         """设置模型"""

@@ -795,11 +795,10 @@ multi 操作支持一次修改多处：
                 # 通过插件管理器执行
                 result = self._execute_tool_by_name(tool_name, tool_args)
 
-                # 记录工具结果到历史
+                # 记录工具结果到历史（官方 OpenAI tool 消息不含 name 字段）
                 tool_result_msg = {
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "name": tool_name,
                     "content": result[:5000] if result else "执行完成"
                 }
                 self.shared_conversation_history.append(tool_result_msg)

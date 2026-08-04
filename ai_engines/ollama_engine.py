@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import requests
@@ -20,6 +21,13 @@ except Exception as e:
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
+
+# <input> 特殊语法解析（配置模型时可交互式询问用户）
+try:
+    from xcli_core.config import resolve_input_value
+except Exception:
+    def resolve_input_value(value, field_name="", default_prompt=None):
+        return value
 
 
 class OllamaAI:
@@ -62,6 +70,9 @@ Ollama AI引擎插件帮助信息
         self.conversation_history = []
         
         # 直接从 config.json 读取配置
+        # 模型最大 token 大小（单位 K，如 32 = 32K = 32768 token）
+        # 支持 <input> 语法：配置里写 <input:提示语> 会在配置模型时询问用户
+        max_token_k = "<input:请输入模型最大token大小(K)>"
         config_file = os.path.join(project_root, "config.json")
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
@@ -71,12 +82,17 @@ Ollama AI引擎插件帮助信息
                 self.base_url = engine_config.get("base_url", "")
                 self.model = engine_config.get("model", "")
                 self.max_history = config.get("system", {}).get("max_history", 10)
+                max_token_k = engine_config.get("max_token_k", max_token_k)
         except Exception as e:
             # 如果读取失败，使用空值
             self.api_key = ""
             self.base_url = ""
             self.model = ""
             self.max_history = 10
+
+        # 解析 <input> 语法（询问用户）并换算成 num_ctx（token 数）
+        resolved_k = resolve_input_value(max_token_k, field_name="模型最大token大小(K)")
+        self.num_ctx = self._parse_num_ctx(resolved_k)
         
         # 共享对话历史引用（由CLI设置）
         self.shared_conversation_history = None
@@ -93,6 +109,23 @@ Ollama AI引擎插件帮助信息
         else:
             print(f"{Fore.RED}Ollama服务未运行,引擎将不可用{Style.RESET_ALL}")
     
+    @staticmethod
+    def _parse_num_ctx(value):
+        """把用户输入的 K 值换算成 token 数：32 / 32K → 32768。非法/空 → 4096"""
+        if value is None:
+            return 4096
+        s = str(value).strip().lower()
+        digits = re.sub(r"[^\d.]", "", s)
+        if not digits:
+            return 4096
+        try:
+            k = float(digits)
+        except ValueError:
+            return 4096
+        if k <= 0:
+            return 4096
+        return max(1024, int(k * 1024))
+
     def check_ollama_service(self):
         """检测Ollama服务是否运行"""
         # 检查 ollama 库是否可用
@@ -136,11 +169,12 @@ Ollama AI引擎插件帮助信息
             else:
                 messages = self._build_messages_with_history(system_prompt, user_input)
 
-            # 构建调用参数
+            # 构建调用参数（num_ctx: 模型上下文窗口大小，由配置的 max_token_k 决定）
             kwargs = {
                 "model": self.model,
                 "messages": messages,
-                "stream": False
+                "stream": False,
+                "options": {"num_ctx": self.num_ctx}
             }
 
             # ── Function Calling: 注入工具定义 ──
@@ -217,13 +251,11 @@ Ollama AI引擎插件帮助信息
 
                 role = msg["role"]
 
-                # tool 角色消息（FC 工具结果）
+                # tool 角色消息（FC 工具结果）—— 官方格式不含 name 字段
                 if role == "tool":
                     tool_msg = {"role": "tool", "content": msg.get("content", "")}
                     if "tool_call_id" in msg:
                         tool_msg["tool_call_id"] = msg["tool_call_id"]
-                    if "name" in msg:
-                        tool_msg["name"] = msg["name"]
                     messages.append(tool_msg)
                     continue
 
