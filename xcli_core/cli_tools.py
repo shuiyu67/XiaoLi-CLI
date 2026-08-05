@@ -205,7 +205,7 @@ class ToolMixin:
             return [r['result'] for r in results]
 
     def _execute_single_tool(self, tool_data):
-        """执行单个工具（带延迟和ESC检测）"""
+        """执行单个工具（零等待，执行前非阻塞检测 ESC 取消）"""
         tool_name = tool_data.get('tool', '未知工具')
         tool_args = tool_data.get('args', '')
         if len(tool_args) > 30:
@@ -213,27 +213,16 @@ class ToolMixin:
         else:
             tool_args_display = tool_args
 
-        # TUI 模式下不做延迟和 ESC 检测
+        # 非 TUI 模式：执行前零等待检查 ESC（不再做倒计时延迟，立即执行）
+        showed_hint = False
         if not self.tui_output_callback:
             try:
                 import msvcrt
                 canceled = False
-                spinners = ['⊶', '⊷']
-                spinner_index = 0
-                for i in range(25):
-                    if msvcrt.kbhit():
-                        key = msvcrt.getch()
-                        if key == b'\x1b':
-                            canceled = True
-                            break
-                    spinner = spinners[spinner_index % 2]
-                    spinner_index += 1
-                    loading_message = f"   正在执行: {spinner} {tool_name} {tool_args_display} (按ESC取消)"
-                    sys.stdout.write(f"\r{loading_message}")
-                    sys.stdout.flush()
-                    time.sleep(0.2)
-                sys.stdout.write("\r" + " " * 60 + "\r")
-                sys.stdout.flush()
+                # 排空键盘缓冲区：若在此之前按过 ESC 则取消（非阻塞，无等待）
+                while msvcrt.kbhit():
+                    if msvcrt.getch() == b'\x1b':
+                        canceled = True
                 if canceled:
                     print(f"{Fore.YELLOW}工具执行已取消（用户按ESC键）{Style.RESET_ALL}")
                     cancel_message = f"工具 {tool_name} 执行已被用户取消（按ESC键）。工具参数: {tool_args}"
@@ -245,8 +234,22 @@ class ToolMixin:
             except ImportError:
                 pass
 
+            try:
+                sys.stdout.write(f"\r   正在执行: {tool_name} {tool_args_display}")
+                sys.stdout.flush()
+                showed_hint = True
+            except Exception:
+                pass
+
         tool_results = self.process_tool_call(tool_data)
         full_result = normalize_tool_text(tool_results)
+
+        if showed_hint:
+            try:
+                sys.stdout.write("\r" + " " * 60 + "\r")
+                sys.stdout.flush()
+            except Exception:
+                pass
         from datetime import datetime
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._display_tool_result(tool_name, tool_args, full_result, current_time)
