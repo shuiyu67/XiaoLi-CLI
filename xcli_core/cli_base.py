@@ -102,6 +102,16 @@ class BaseAICLI:
         # Plan 模式状态（只读规划 → 审批 → 执行）
         self.plan_mode = False
         self.current_plan = ""
+        # Agents 管理器（opencode 式 @委派，加载 agents/ 目录下的 *.md）
+        self.agent_manager = None
+        try:
+            from .agent_manager import AgentManager
+            self.agent_manager = AgentManager()
+            agents_dir = os.path.join(project_dir, "agents")
+            os.makedirs(agents_dir, exist_ok=True)
+            self.agent_manager.load_dir(agents_dir)
+        except Exception:
+            self.agent_manager = None
 
         # 获取 skills 目录路径
         skills_dir = os.path.join(project_dir, "skills")
@@ -394,6 +404,47 @@ class BaseAICLI:
         eng.set_registry_model(name)
         self.current_model = name
         print(f"{Fore.GREEN}已添加并切换到模型: {name}{Style.RESET_ALL}")
+
+    # ── Provider 抽象层（opencode 式原生多 Provider）──
+    def handle_providers_command(self, args):
+        """处理 /providers 命令：列出已注册 Provider 与配置状态。
+
+        /providers           列出全部内置 Provider 及是否已配置 key
+        /providers <名称>    显示该 Provider 的连接参数（base_url / model / 协议）
+        """
+        from xcli_core.provider_router import (
+            list_providers, provider_summary, resolve_provider, PROVIDER_PRESETS,
+        )
+        try:
+            cfg = load_config() or {}
+        except Exception:
+            cfg = {}
+        providers_cfg = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
+
+        if args:
+            name = args.split()[0]
+            preset = PROVIDER_PRESETS.get(name)
+            if not preset:
+                print(f"{Fore.RED}未知 Provider: {name}（/providers 查看可用）{Style.RESET_ALL}")
+                return
+            r = resolve_provider(name, providers_cfg)
+            print(f"{Fore.GREEN}Provider: {preset['label']} ({name}){Style.RESET_ALL}")
+            print(f"  协议族: {r['protocol']}")
+            print(f"  base_url: {r['base_url']}")
+            print(f"  默认模型: {r['model']}")
+            print(f"  已配置 key: {'是' if r['api_key'] else '否'}")
+            print(f"{Fore.CYAN}在 config.json 的 providers.{name} 填入 {{api_key, base_url, model}} 即可启用；"
+                  f"OpenAI 兼容族经现有 openai 引擎直接可用。{Style.RESET_ALL}")
+            return
+
+        print(f"{Fore.GREEN}已注册 Provider（opencode 式多 Provider）:{Style.RESET_ALL}")
+        for name in list_providers():
+            s = provider_summary(name, providers_cfg)
+            if not s:
+                continue
+            mark = f"{Fore.GREEN}✓ 已配置{Style.RESET_ALL}" if s["configured"] else f"{Fore.YELLOW}· 未配置{Style.RESET_ALL}"
+            print(f"  {s['name']:<10} {s['label']:<22} [{s['protocol']:<9}] {mark}")
+        print(f"{Fore.CYAN}/providers <名称> 查看连接参数 ｜ 在 config.json 的 providers 段填入 key 启用{Style.RESET_ALL}")
 
     # ── 引擎切换 ──
 

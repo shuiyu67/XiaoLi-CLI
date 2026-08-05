@@ -1062,6 +1062,44 @@ multi 操作支持一次修改多处：
                   f"完成后用 {Fore.WHITE}/build{Style.RESET_ALL} 批准执行，或 "
                   f"{Fore.WHITE}/plan off{Style.RESET_ALL} 取消。{Style.RESET_ALL}")
 
+    def handle_agent_command(self, arg: str):
+        """@<agent名> <任务> 委派给指定 agent 独立执行。"""
+        mgr = getattr(self, 'agent_manager', None)
+        if mgr is None:
+            print(f"{Fore.RED}Agents 管理器未初始化{Style.RESET_ALL}")
+            return
+        if not arg:
+            names = mgr.names()
+            if names:
+                print(f"{Fore.CYAN}可用 Agents: {', '.join(names)}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}暂无 agent 定义（在 agents/ 目录放置 *.md）{Style.RESET_ALL}")
+            return
+        parts = arg.split(maxsplit=1)
+        name = parts[0]
+        task = parts[1] if len(parts) > 1 else ""
+        agent = mgr.get(name)
+        if not agent:
+            print(f"{Fore.RED}未找到 agent: {name}{Style.RESET_ALL}")
+            return
+        print(f"{Fore.CYAN}委派给 agent「{agent.name}」: {task}{Style.RESET_ALL}")
+        try:
+            result = mgr.dispatch(name, task, self._agent_runner)
+        except Exception as e:
+            print(f"{Fore.RED}agent 执行失败: {e}{Style.RESET_ALL}")
+            return
+        print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+
+    def _agent_runner(self, system_prompt, task, tools, model):
+        """agent 执行器：用当前引擎跑一轮独立上下文（不污染主会话）。"""
+        engine = getattr(self, 'current_engine', None) or getattr(self, 'engine', None)
+        if engine is None:
+            return "错误：当前无可用的 AI 引擎"
+        prompt = task
+        if system_prompt:
+            prompt = f"{system_prompt}\n\n---\n用户任务：\n{task}"
+        return engine.generate_response(prompt, system_prompt=system_prompt)
+
     def handle_build_command(self):
         """处理 /build 命令。从 PLAN 模式进入执行（用已批准计划驱动）。"""
         plan = getattr(self, 'current_plan', '') or ""
@@ -1203,6 +1241,11 @@ multi 操作支持一次修改多处：
                     print(f"{Fore.GREEN}再见!{Style.RESET_ALL}")
                     break
 
+                # @agent 委派（opencode 式 Agents 体系化）
+                if user_input.startswith('@'):
+                    self.handle_agent_command(user_input[1:].strip())
+                    continue
+
                 if user_input == '/help':
                     self.show_help()
                     continue
@@ -1233,6 +1276,11 @@ multi 操作支持一次修改多处：
                 # /model 命令族 — OpenAI 引擎多模型在线增删切换
                 if user_input == '/model' or user_input.startswith('/model '):
                     self.handle_model_command(user_input[7:].strip())
+                    continue
+
+                # /providers — opencode 式原生多 Provider 注册与状态一览
+                if user_input == '/providers' or user_input.startswith('/providers '):
+                    self.handle_providers_command(user_input[11:].strip())
                     continue
 
                 # /plan 进入 PLAN 模式（只读规划 → 审批 → 执行）
