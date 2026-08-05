@@ -85,6 +85,7 @@ class SafetyLayer:
         self.cli = None
         self._analysis_cache = {}  # 缓存分析结果
         self._lock = threading.Lock()
+        self._permissions_override = None  # set_permissions 注入的显式权限
 
     def set_cli(self, cli):
         self.cli = cli
@@ -103,6 +104,62 @@ class SafetyLayer:
         self.mode = (self.mode + 1) % 3
         return self.get_mode_name()
 
+    # ── 声明式权限（opencode 式 allow/ask/deny）──
+    # 规则语法：
+    #   "*"               → 匹配任意工具/操作
+    #   "tool"            → 精确匹配工具名
+    #   "tool:*"          → 该工具任意操作
+    #   "tool:op"         → 工具名 + 参数首个词命中 op 前缀
+    # 优先级：deny（阻断）> ask（强制确认）> allow（自动放行）> 默认（按模式）
+
+    def set_permissions(self, allow=None, ask=None, deny=None):
+        """显式注入权限规则（测试或启动时调用），优先级最高。"""
+        self._permissions_override = {
+            "allow": list(allow or []),
+            "ask": list(ask or []),
+            "deny": list(deny or []),
+        }
+
+    def _get_permissions(self) -> dict:
+        if self._permissions_override is not None:
+            return self._permissions_override
+        return self._load_permissions()
+
+    def _load_permissions(self) -> dict:
+        try:
+            from .config import load_config
+        except ImportError:
+            try:
+                from config import load_config
+            except ImportError:
+                return {"allow": [], "ask": [], "deny": []}
+        cfg = load_config() or {}
+        perm = cfg.get("permissions") or {}
+        return {
+            "allow": perm.get("allow", []) or [],
+            "ask": perm.get("ask", []) or [],
+            "deny": perm.get("deny", []) or [],
+        }
+
+    def _permission_match(self, rule: str, tool_name: str, tool_args) -> bool:
+        rule = (rule or "").strip()
+        if not rule:
+            return False
+        if rule == "*":
+            return True
+        if ":" in rule:
+            rtool, raction = rule.split(":", 1)
+            rtool = rtool.strip()
+            raction = raction.strip()
+            if rtool != tool_name:
+                return False
+            if raction in ("*", ""):
+                return True
+            op = (str(tool_args).strip().split()[0].lower()
+                  if str(tool_args).strip() else "")
+            return op == raction or op.startswith(raction)
+        return rule == tool_name
+
     # ── 核心：拦截检查 ──
 
     def check(self, tool_name: str, tool_args: str) -> Tuple[bool, str]:
@@ -117,6 +174,26 @@ class SafetyLayer:
             if plan_is_write_operation(tool_name, tool_args):
                 return False, "PLAN 模式：写操作已暂挂（只读调研中）。请在 /build 批准后执行。"
             return True, ""
+
+        # ── 声明式权限（config.permissions: deny > ask > allow）──
+        perm = self._get_permissions()
+        # deny 最高优先级：直接阻断（即便无限制模式也生效）
+        for rule in perm.get("deny", []):
+            if self._permission_match(rule, tool_name, tool_args):
+                return False, f"权限拒绝（deny 规则 '{rule}' 命中）: {tool_name}"
+        # ask：强制人工确认（覆盖自动放行，即便无限制模式也确认）
+        for rule in perm.get("ask", []):
+            if self._permission_match(rule, tool_name, tool_args):
+                return self._ask_user_confirm(
+                    tool_name, tool_args,
+                    risk_level="中",
+                    impact="命中 ask 规则，需你确认后执行",
+                    reason=f"权限规则 '{rule}'"
+                )
+        # allow：自动放行（跳过 AI 风险分析）
+        for rule in perm.get("allow", []):
+            if self._permission_match(rule, tool_name, tool_args):
+                return True, ""
 
         # 无限制模式：直接放行
         if self.mode == MODE_UNRESTRICTED:

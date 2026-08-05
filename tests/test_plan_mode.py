@@ -118,9 +118,11 @@ def test_normal_mode_does_not_plan_block():
     safety = get_safety()
     saved_cli = safety.cli
     saved_mode = safety.mode
+    saved_perm = safety._permissions_override
     fake_cli = types.SimpleNamespace(plan_mode=False)
     safety.set_cli(fake_cli)
     safety.set_mode(0)  # MODE_UNRESTRICTED：直接放行，不消耗 AI
+    safety.set_permissions(allow=[], ask=[], deny=[])  # 隔离真实 config 的权限规则
     try:
         allowed, _ = safety.check("code_editor", "write a.py x")
         assert allowed is True
@@ -129,6 +131,7 @@ def test_normal_mode_does_not_plan_block():
     finally:
         safety.set_cli(saved_cli)
         safety.set_mode(saved_mode)
+        safety._permissions_override = saved_perm
 
 
 # ── system prompt 注入 ──
