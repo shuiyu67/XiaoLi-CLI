@@ -1040,7 +1040,17 @@ multi 操作支持一次修改多处：
 
         # 一行速览，完整命令清单收进 /help
         print(f"{Fore.CYAN}/help 全部命令 · /quit 退出 · /tui 图形界面 · "
-              f"/model 换模型 · @文件路径 读文件给 AI{Style.RESET_ALL}")
+              f"/model 换模型 · /resume 恢复会话 · @文件路径 读文件给 AI{Style.RESET_ALL}")
+
+        # 历史会话提示（opencode 式 /resume）
+        try:
+            sessions = self.session_manager.list_sessions()
+            if sessions:
+                latest = sessions[0]
+                print(f"{Fore.YELLOW}有 {len(sessions)} 个历史会话，/resume 可恢复"
+                      f"（最近: {latest.id} · {latest.title}）{Style.RESET_ALL}")
+        except Exception:
+            pass
 
         extras = []
         loaded_engines = list(self.engines.keys())
@@ -1144,6 +1154,19 @@ multi 操作支持一次修改多处：
                 # /model 命令族 — OpenAI 引擎多模型在线增删切换
                 if user_input == '/model' or user_input.startswith('/model '):
                     self.handle_model_command(user_input[7:].strip())
+                    continue
+
+                # /resume 会话恢复（opencode 式自动持久化 + 一键恢复）
+                if user_input in ('/resume', '/sessions') or \
+                   user_input.startswith('/resume ') or user_input.startswith('/sessions ') or \
+                   user_input.startswith('/session '):
+                    if user_input.startswith('/resume'):
+                        self.handle_resume_command(user_input[7:].strip())
+                    elif user_input.startswith('/sessions'):
+                        self.handle_resume_command(user_input[9:].strip())
+                    else:  # /session <子命令>
+                        sub = user_input[8:].strip()
+                        self.handle_resume_command(sub if sub != 'new' else 'new')
                     continue
 
                 # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
@@ -1393,6 +1416,8 @@ multi 操作支持一次修改多处：
                         print(f"{Fore.CYAN}{'='*50}{Style.RESET_ALL}")
 
                 self.process_conversation(user_input)
+                # 自动持久化当前会话（opencode 式 /resume 落盘）
+                self._autosave_session()
             except KeyboardInterrupt:
                 user_id_display = f"[用户ID: {self.user_id}]"
                 print(f"\n{Fore.GREEN}再见! {user_id_display}{Style.RESET_ALL}")

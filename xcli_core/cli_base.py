@@ -97,6 +97,8 @@ class BaseAICLI:
         self.chat_history_dir = os.path.join(project_dir, "chat_history")
         if not os.path.exists(self.chat_history_dir):
             os.makedirs(self.chat_history_dir)
+        # 初始化会话管理器（opencode 式 /resume 持久化）
+        self.init_session_manager()
 
         # 获取 skills 目录路径
         skills_dir = os.path.join(project_dir, "skills")
