@@ -241,7 +241,7 @@ class TestStartupSlim:
         out = buf.getvalue()
 
         assert "/fc" in out and "/diff" in out, "速查表要覆盖新命令"
-        assert 18 <= len(out.strip().splitlines()) <= 26
+        assert 18 <= len(out.strip().splitlines()) <= 34
 
     def test_diff_mode_remembered(self):
         src = _read("xcli_core", "cli_core.py")

@@ -81,6 +81,13 @@ class BaseAICLI:
             self.current_engine = None
         if self.current_engine:
             self.current_engine.cli = self  # 设置引用以便访问插件
+            # 记录当前模型（openai 引擎注册表名，其它引擎取 model 值）
+            try:
+                self.current_model = self.current_engine.current_model_name()
+            except Exception:
+                self.current_model = getattr(self.current_engine, 'model', None)
+        else:
+            self.current_model = None
 
         # 初始化安全层
         from .safety import get_safety
@@ -305,6 +312,83 @@ class BaseAICLI:
             else:
                 help_lines.append(f"  /engine {cmd:<10} - 执行{cmd}命令")
         return '\n'.join(help_lines) if help_lines else "  无可用引擎管理命令"
+
+    # ── 模型管理（OpenAI 引擎多模型切换）──
+
+    def handle_model_command(self, args):
+        """处理 /model 命令族。仅对 openai 引擎有效。"""
+        eng = self.current_engine
+        if getattr(eng, 'name', None) != 'openai':
+            cur = getattr(eng, 'name', '?')
+            print(f"{Fore.RED}模型管理仅适用于 openai 引擎（当前: {cur}）。"
+                  f"先 /engine switch openai{Style.RESET_ALL}")
+            return
+
+        if not args or args == 'list':
+            self._model_list(eng)
+            return
+
+        parts = args.split(' ', 1)
+        cmd = parts[0]
+        rest = parts[1].strip() if len(parts) > 1 else ''
+        if cmd == 'add':
+            self._model_add_interactive(eng)
+        elif cmd in ('rm', 'remove', 'del'):
+            if not rest:
+                print(f"{Fore.RED}用法: /model rm <名称>{Style.RESET_ALL}")
+                return
+            if eng.remove_model(rest):
+                print(f"{Fore.GREEN}已删除模型: {rest}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}未找到模型: {rest}{Style.RESET_ALL}")
+        elif cmd in ('set', 'switch'):
+            self._model_switch(eng, rest)
+        else:
+            # 无子命令：/model <名称> 视为切换
+            self._model_switch(eng, cmd)
+
+    def _model_list(self, eng):
+        models, current = eng.list_registry_models()
+        if not models:
+            print(f"{Fore.YELLOW}尚未配置任何模型，用 /model add 添加{Style.RESET_ALL}")
+            return
+        print(f"{Fore.GREEN}已配置的 OpenAI 模型:{Style.RESET_ALL}")
+        for m in models:
+            mark = f"{Fore.CYAN} *{Style.RESET_ALL}" if m.get('name') == current else ""
+            print(f"  {m.get('name')}{mark}  ({m.get('model')} @ {m.get('base_url') or '无 base_url'})")
+        print(f"{Fore.CYAN}当前: {current} ｜ /model <名称> 切换 ｜ /model add 新增 ｜ "
+              f"/model rm <名称> 删除{Style.RESET_ALL}")
+
+    def _model_switch(self, eng, name):
+        if not name:
+            print(f"{Fore.RED}用法: /model <名称>  或 /model 查看列表{Style.RESET_ALL}")
+            return
+        if eng.set_registry_model(name):
+            self.current_model = name
+            print(f"{Fore.GREEN}已切换到模型: {name}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}未找到模型: {name}（/model 查看可用）{Style.RESET_ALL}")
+
+    def _model_add_interactive(self, eng):
+        print(f"{Fore.CYAN}添加 OpenAI 模型（回车留空则用默认/为空）{Style.RESET_ALL}")
+        try:
+            name = input(f"{Fore.CYAN}名称(用于切换, 如 gpt4o): {Style.RESET_ALL}").strip()
+            if not name:
+                print(f"{Fore.RED}名称不能为空{Style.RESET_ALL}")
+                return
+            base_url = input(f"{Fore.CYAN}base_url(如 https://api.openai.com/v1): {Style.RESET_ALL}").strip()
+            api_key = input(f"{Fore.CYAN}api_key: {Style.RESET_ALL}").strip()
+            model = input(f"{Fore.CYAN}model(如 gpt-4o): {Style.RESET_ALL}").strip()
+            if not model:
+                print(f"{Fore.RED}model 不能为空{Style.RESET_ALL}")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print(f"{Fore.YELLOW}\n已取消添加{Style.RESET_ALL}")
+            return
+        eng.add_model({"name": name, "base_url": base_url, "api_key": api_key, "model": model})
+        eng.set_registry_model(name)
+        self.current_model = name
+        print(f"{Fore.GREEN}已添加并切换到模型: {name}{Style.RESET_ALL}")
 
     # ── 引擎切换 ──
 

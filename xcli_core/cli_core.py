@@ -1040,7 +1040,7 @@ multi 操作支持一次修改多处：
 
         # 一行速览，完整命令清单收进 /help
         print(f"{Fore.CYAN}/help 全部命令 · /quit 退出 · /tui 图形界面 · "
-              f"@文件路径 读文件给 AI{Style.RESET_ALL}")
+              f"/model 换模型 · @文件路径 读文件给 AI{Style.RESET_ALL}")
 
         extras = []
         loaded_engines = list(self.engines.keys())
@@ -1139,6 +1139,11 @@ multi 操作支持一次修改多处：
                     engine_command = user_input[8:].strip()
                     if not self.handle_engine_command(engine_command):
                         print(f"{Fore.RED}当前引擎不支持该命令或命令执行失败{Style.RESET_ALL}")
+                    continue
+
+                # /model 命令族 — OpenAI 引擎多模型在线增删切换
+                if user_input == '/model' or user_input.startswith('/model '):
+                    self.handle_model_command(user_input[7:].strip())
                     continue
 
                 # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
