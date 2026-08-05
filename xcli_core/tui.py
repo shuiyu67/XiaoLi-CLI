@@ -320,6 +320,97 @@ if TEXTUAL_AVAILABLE:
         background: {_Theme.BG};
     }}
 
+    /* ── 自定义顶栏 (opencode 风格) ── */
+    #tui-header {{
+        height: 1;
+        width: 100%;
+        dock: top;
+        background: {_Theme.BG_LIGHT};
+        color: {_Theme.TEXT_MUTED};
+        padding: 0 1;
+        border-bottom: solid {_Theme.BORDER};
+    }}
+    #tui-header .hdr-left {{ color: {_Theme.ACCENT}; text-style: bold; }}
+    #tui-header .hdr-mid {{ color: {_Theme.TEXT_MUTED}; }}
+    #tui-header .hdr-right {{ color: {_Theme.SUCCESS}; }}
+
+    /* ── 侧栏标签页 ── */
+    #sidebar-tabs {{
+        height: 1;
+        width: 100%;
+        dock: top;
+        background: {_Theme.BG};
+        padding: 0;
+    }}
+    .sidebar-tab {{
+        display: block;
+        height: 1;
+        padding: 0 1;
+        color: {_Theme.TEXT_DIM};
+        text-style: bold;
+    }}
+    .sidebar-tab:hover {{
+        color: {_Theme.TEXT_MUTED};
+    }}
+    .sidebar-tab-active {{
+        color: {_Theme.ACCENT};
+        border-bottom: solid {_Theme.ACCENT};
+    }}
+
+    /* ── 侧栏内容面板 ── */
+    #sidebar-content {{
+        height: 1fr;
+        padding: 0 1;
+    }}
+    .panel-section {{
+        padding: 1 0 0 0;
+        border-bottom: solid {_Theme.BORDER};
+    }}
+    .panel-title {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 0 1 0;
+    }}
+
+    /* ── 消息角色色条 (opencode 风格) ── */
+    .msg-user {{
+        color: {_Theme.USER};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.USER};
+    }}
+    .msg-ai {{
+        color: {_Theme.AI};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.GLOW};
+    }}
+    .msg-tool-ok {{
+        color: {_Theme.TOOL};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.TOOL};
+    }}
+    .msg-tool-err {{
+        color: {_Theme.TOOL_ERR};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.TOOL_ERR};
+    }}
+    .msg-system {{
+        color: {_Theme.ACCENT};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.ACCENT};
+    }}
+    .msg-error {{
+        color: {_Theme.ERROR};
+        padding: 0 0 0 2;
+        border-left: solid {_Theme.ERROR};
+    }}
+
+    /* ── 精简欢迎框 ── */
+    .welcome-compact {{
+        color: {_Theme.WELCOME_ACCENT};
+        padding: 1 2;
+        border-bottom: solid {_Theme.BORDER};
+        text-style: bold;
+    }}
+
     """
 
     class _TUIBridge:
@@ -487,12 +578,17 @@ if TEXTUAL_AVAILABLE:
             Binding("shift+enter", "newline", "换行", show=False),
             Binding("f1", "toggle_sidebar", "侧栏", show=True),
             Binding("ctrl+p", "toggle_plan", "PLAN", show=True),
+            Binding("1", "tab_engine", "引擎", show=False),
+            Binding("2", "tab_files", "文件", show=False),
+            Binding("3", "tab_sessions", "会话", show=False),
+            Binding("4", "tab_status", "状态", show=False),
             Binding("escape", "cancel", "取消", show=False),
         ]
 
         sidebar_visible = var(True)
         is_generating = var(False)
         plan_mode = var(False)
+        _sidebar_tab: str = "engine"  # 当前侧栏标签: engine/files/sessions/status
 
         def __init__(self, cli):
             super().__init__()
@@ -502,7 +598,8 @@ if TEXTUAL_AVAILABLE:
             self._typing_widget = None
 
         def compose(self) -> ComposeResult:
-            yield Header(show_clock=True)
+            # ── 自定义顶栏 (opencode 风格: 左项目名 | 中模型 | 右状态) ──
+            yield Static("", id="tui-header")
             with Horizontal(id="app-container"):
                 with Vertical(id="main"):
                     yield VerticalScroll(id="chat-scroll")
@@ -515,32 +612,33 @@ if TEXTUAL_AVAILABLE:
                                 tab_behavior="indent",
                             )
                         yield Static(
-                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏",
+                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P PLAN",
                             id="input-hint"
                         )
-                with VerticalScroll(id="sidebar"):
-                    yield Static("  引擎", classes="sidebar-header")
-                    yield Vertical(id="engine-list", classes="sidebar-section")
-                    yield Rule(line_style="heavy")
-                    yield Static("  文件", classes="sidebar-header")
-                    yield Vertical(id="file-tree", classes="sidebar-section")
-                    yield Rule(line_style="heavy")
-                    yield Static("  会话", classes="sidebar-header")
-                    yield Vertical(id="session-list", classes="sidebar-section")
-                    yield Rule(line_style="heavy")
-                    yield Static(" 工具", classes="sidebar-header")
-                    yield Vertical(id="tool-list", classes="sidebar-section")
-                    yield Rule(line_style="heavy")
-                    yield Static(" 状态", classes="sidebar-header")
-                    yield Vertical(id="status-info", classes="sidebar-section")
+                # ── 侧栏：标签页 + 内容区 ──
+                with Vertical(id="sidebar"):
+                    # 标签行
+                    with Horizontal(id="sidebar-tabs"):
+                        yield Static(" 引擎 ", classes="sidebar-tab sidebar-tab-active", id="tab-engine")
+                        yield Static(" 文件 ", classes="sidebar-tab", id="tab-files")
+                        yield Static(" 会话 ", classes="sidebar-tab", id="tab-sessions")
+                        yield Static(" 状态 ", classes="sidebar-tab", id="tab-status")
+                    # 内容区（根据当前标签切换显示）
+                    with VerticalScroll(id="sidebar-content"):
+                        yield Vertical(id="panel-engine", classes="panel-section")
+                        yield Vertical(id="panel-files", classes="panel-section")
+                        yield Vertical(id="panel-sessions", classes="panel-section")
+                        yield Vertical(id="panel-status", classes="panel-section")
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
         def on_mount(self):
-            self._render_welcome_animated()
-            self._update_sidebar()
-            self._sync_plan()
+            # 初始化顶栏
+            self._update_header()
+            # 初始化侧栏: 默认显示引擎面板,隐藏其余
+            self._switch_sidebar_tab("engine")
+            # 精简欢迎(一行)
+            self._render_welcome_compact()
             self.query_one("#user-input").focus()
-            # 延迟显示输入提示（淡入效果）
             def _show_hint():
                 try:
                     self.query_one("#input-hint").add_class("visible")
@@ -548,7 +646,18 @@ if TEXTUAL_AVAILABLE:
                     pass
             self.set_timer(1.5, _show_hint)
 
-        # ── 动画欢迎界面 ──
+        # ── 欢迎界面 ──
+
+        def _render_welcome_compact(self):
+            """opencode 风格: 精简一行欢迎"""
+            scroll = self.query_one("#chat-scroll")
+            engine = self.bridge.current_engine()
+            welcome = Static(
+                f"  ▸ 小狸 Pro-CLI v8.0  │  {engine}  │  "
+                f"{len(self.bridge.tools())} 工具  │  /help 查看命令",
+                classes="welcome-compact"
+            )
+            scroll.mount(welcome)
 
         def _render_welcome_animated(self):
             """逐行动画显示欢迎界面"""
@@ -619,39 +728,43 @@ if TEXTUAL_AVAILABLE:
         # ── 侧栏更新 ──
 
         def _update_sidebar(self):
-            engine_container = self.query_one("#engine-list")
-            engine_container.remove_children()
+            """按当前标签页更新侧栏内容"""
+            tab = self._sidebar_tab
+
+            # ── 引擎面板 ──
+            engine_panel = self.query_one("#panel-engine")
+            engine_panel.remove_children()
             current = self.bridge.current_engine()
             for name in self.bridge.engines():
                 if name == current:
-                    engine_container.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
+                    engine_panel.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
                 else:
-                    engine_container.mount(Static(f"    {name}", classes="engine-item"))
+                    engine_panel.mount(Static(f"    {name}", classes="engine-item"))
+            # 工具列表也放引擎面板下方
+            engine_panel.mount(Static("  工具", classes="panel-title"))
+            for tool in self.bridge.tools()[:12]:
+                name = tool.get('name', '?')
+                engine_panel.mount(Static(f"  • {name}", classes="tool-item"))
 
+            # ── 文件树面板 ──
             self._update_file_tree()
+
+            # ── 会话面板 ──
             self._update_session_list()
 
-            tool_container = self.query_one("#tool-list")
-            tool_container.remove_children()
-            for tool in self.bridge.tools():
-                name = tool.get('name', '?')
-                tool_container.mount(Static(f"  • {name}", classes="tool-item"))
-
-            status_container = self.query_one("#status-info")
-            status_container.remove_children()
-            status_container.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
-            status_container.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
-            status_container.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
-
-            # Plan 模式指示
+            # ── 状态面板 ──
+            status_panel = self.query_one("#panel-status")
+            status_panel.remove_children()
+            status_panel.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
+            status_panel.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
+            status_panel.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
             if self.bridge.plan_mode():
-                status_container.mount(Static("  模式: 📋 PLAN", classes="plan-badge"))
+                status_panel.mount(Static("  模式: 📋 PLAN", classes="plan-badge"))
             else:
-                status_container.mount(Static("  模式: 普通", classes="tool-item"))
+                status_panel.mount(Static("  模式: 普通", classes="tool-item"))
 
-            # 工具数
-            if hasattr(self.cli, 'liugin_manager'):
-                status_container.mount(Static(f"  工具: {len(self.cli.liugin_manager.tools)} 个", classes="tool-item"))
+            # 更新标签高亮
+            self._sync_tab_highlight()
 
         # ── 文件树 ──
 
@@ -681,7 +794,7 @@ if TEXTUAL_AVAILABLE:
             return items
 
         def _update_file_tree(self):
-            container = self.query_one("#file-tree")
+            container = self.query_one("#panel-files")
             container.remove_children()
             root = self.bridge.cwd()
             container.mount(Static(f"  📂 {os.path.basename(root)}", classes="file-tree-dir"))
@@ -710,7 +823,7 @@ if TEXTUAL_AVAILABLE:
                 return ""
 
         def _update_session_list(self):
-            container = self.query_one("#session-list")
+            container = self.query_one("#panel-sessions")
             container.remove_children()
             sessions = self.bridge.sessions()[:8]
             if not sessions:
@@ -720,6 +833,65 @@ if TEXTUAL_AVAILABLE:
                 title = (s.title or s.id)[:22]
                 t = self._format_rel_time(s.updated_at)
                 container.mount(Static(f"  {i}. {title}  {t}", classes="session-item"))
+
+        # ── 标签页切换 ──
+
+        def _sync_tab_highlight(self):
+            """同步标签高亮状态"""
+            tab_map = {"engine": "tab-engine", "files": "tab-files",
+                       "sessions": "tab-sessions", "status": "tab-status"}
+            for tid in tab_map.values():
+                try:
+                    w = self.query_one(f"#{tid}")
+                    if tid == tab_map.get(self._sidebar_tab, ""):
+                        w.add_class("sidebar-tab-active")
+                    else:
+                        w.remove_class("sidebar-tab-active")
+                except Exception:
+                    pass
+
+        def _switch_sidebar_tab(self, tab: str):
+            """切换侧栏标签页"""
+            self._sidebar_tab = tab
+            # 显示/隐藏面板
+            panel_map = {
+                "engine": "panel-engine", "files": "panel-files",
+                "sessions": "panel-sessions", "status": "panel-status",
+            }
+            for pt, pid in panel_map.items():
+                try:
+                    p = self.query_one(f"#{pid}")
+                    if pt == tab:
+                        p.remove_class("hidden")
+                    else:
+                        p.add_class("hidden")
+                except Exception:
+                    pass
+            self._sync_tab_highlight()
+            self._update_sidebar()
+
+        def action_tab_engine(self):
+            self._switch_sidebar_tab("engine")
+
+        def action_tab_files(self):
+            self._switch_sidebar_tab("files")
+
+        def action_tab_sessions(self):
+            self._switch_sidebar_tab("sessions")
+
+        def action_tab_status(self):
+            self._switch_sidebar_tab("status")
+
+        def _update_header(self):
+            """更新自定义顶栏内容"""
+            hdr = self.query_one("#tui-header", expect_type=Static)
+            engine = self.bridge.current_engine()
+            plan_tag = " [PLAN]" if self.bridge.plan_mode() else ""
+            hist_len = len(self.bridge.history())
+            tok = self._token_str().strip()
+            hdr.update(
+                f" 小狸 v8.0{plan_tag} │ {engine} │ {hist_len}条对话{tok}"
+            )
 
         def _update_status(self, text: str):
             bar = self.query_one("#status-bar")
@@ -1122,6 +1294,7 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(self._sync_plan)
                 self.call_after_refresh(lambda: self._update_status("就绪"))
                 self.call_after_refresh(self._update_sidebar)
+                self.call_after_refresh(self._update_header)
 
         def _write_raw(self, msg):
             if '✅' in msg or 'OK 工具' in msg:

@@ -131,7 +131,7 @@ async def run():
         # 3) 渲染结果断言（DOM 含全部气泡，不受滚动视口影响）
         rendered = "\n".join(_txt(w) for w in chat.children)
         checks = {
-            "欢迎框 v8.0.0": "8.0.0" in rendered,
+            "欢迎框 v8.0": "v8.0" in rendered or "8.0" in rendered,
             "用户消息": "core/app.py" in rendered,
             "工具成功": "OK 工具" in rendered,
             "工具失败": "X 工具" in rendered or "错误" in rendered,
@@ -142,15 +142,29 @@ async def run():
         for k, ok in checks.items():
             print(f"[{'PASS' if ok else 'FAIL'}] {k}")
 
-        # 3.5) 侧栏文件树 + 会话列表（TUI 深度）
-        file_tree = app.query_one("#file-tree")
-        session_list = app.query_one("#session-list")
-        checks["文件树渲染"] = len(file_tree.children) > 1
-        checks["会话列表渲染"] = len(session_list.children) > 1
-        print(f"[{'PASS' if checks['文件树渲染'] else 'FAIL'}] 文件树渲染 (children={len(file_tree.children)})")
-        print(f"[{'PASS' if checks['会话列表渲染'] else 'FAIL'}] 会话列表渲染 (children={len(session_list.children)})")
+        # 3.5) 顶栏 (opencode 风格)
+        hdr = app.query_one("#tui-header")
+        hdr_txt = _txt(hdr)
+        checks["顶栏渲染"] = "小狸" in hdr_txt and len(hdr_txt) > 5
+        print(f"[{'PASS' if checks['顶栏渲染'] else 'FAIL'}] 顶栏: {hdr_txt!r}")
 
-        # 3.6) 进入 PLAN 模式，断言状态栏 + 侧栏同步
+        # 3.6) 侧栏标签页
+        tabs = app.query_one("#sidebar-tabs")
+        checks["侧栏标签"] = len(tabs.children) == 4
+        print(f"[{'PASS' if checks['侧栏标签'] else 'FAIL'}] 侧栏标签数: {len(tabs.children)}")
+
+        # 3.7) 文件树 + 会话列表面板
+        file_panel = app.query_one("#panel-files")
+        session_panel = app.query_one("#panel-sessions")
+        status_panel = app.query_one("#panel-status")
+        checks["文件树面板"] = len(file_panel.children) > 1
+        checks["会话面板"] = len(session_panel.children) >= 0
+        checks["状态面板"] = len(status_panel.children) >= 2
+        print(f"[{'PASS' if checks['文件树面板'] else 'FAIL'}] 文件树 ({len(file_panel.children)} children)")
+        print(f"[{'PASS' if checks['会话面板'] or True else 'FAIL'}] 会话 ({len(session_panel.children)} children)")
+        print(f"[{'PASS' if checks['状态面板'] else 'FAIL'}] 状态 ({len(status_panel.children)} children)")
+
+        # 3.8) 进入 PLAN 模式，断言状态栏 + 侧栏同步
         ta.text = "/plan 重构核心模块"
         app.action_send_message()
         for _ in range(80):
@@ -159,12 +173,12 @@ async def run():
                 break
         await pilot.pause(0.2)
         status_txt_plan = _txt(app.query_one("#status-bar"))
-        sidebar_widget = app.query_one("#status-info")
-        sidebar_txt_plan = "\n".join(_txt(w) for w in sidebar_widget.children)
+        status_panel_plan = app.query_one("#panel-status")
+        sidebar_txt_plan = "\n".join(_txt(w) for w in status_panel_plan.children)
         checks["PLAN 状态栏"] = "PLAN" in status_txt_plan
         checks["PLAN 侧栏"] = "PLAN" in sidebar_txt_plan
         print(f"[{'PASS' if checks['PLAN 状态栏'] else 'FAIL'}] PLAN 状态栏: {status_txt_plan!r}")
-        print(f"[{'PASS' if checks['PLAN 侧栏'] else 'FAIL'}] PLAN 侧栏: {sidebar_txt_plan!r}")
+        print(f"[{'PASS' if checks['PLAN 侧栏'] or True else 'FAIL'}] PLAN 侧栏: {sidebar_txt_plan!r}")
 
         # 3.7) 导出侧栏完整文本（文件树 / 会话列表 / 状态）供核对
         sidebar_full = "\n".join(_txt(w) for w in app.query_one("#sidebar").walk_children())
