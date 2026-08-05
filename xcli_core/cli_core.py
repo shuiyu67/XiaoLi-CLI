@@ -812,7 +812,13 @@ multi 操作支持一次修改多处：
             return None
 
     def _execute_tool_by_name(self, tool_name: str, tool_args: str) -> str:
-        """根据名称执行工具（FC 调用路径）"""
+        """根据名称执行工具（FC 调用路径）
+
+        注意：插件 handler 可能返回 ToolResult / dict / str，
+        这里统一归一成 str，保证调用方能安全做切片与拼接。
+        """
+        from .tool_result import normalize_tool_text
+
         # 安全检查
         safety = get_safety()
         allowed, msg = safety.check(tool_name, tool_args)
@@ -823,20 +829,20 @@ multi 操作支持一次修改多处：
         tool = self.liugin_manager.get_tool_by_name(tool_name)
         if tool and 'handler' in tool:
             try:
-                return tool['handler'](tool_args)
+                return normalize_tool_text(tool['handler'](tool_args), default="执行完成")
             except Exception as e:
                 return f"工具执行失败: {e}"
 
         # memory 内置工具
         if tool_name == 'memory' and hasattr(self, 'memory_manager'):
-            return self.memory_manager.handle_tool(tool_args)
+            return normalize_tool_text(self.memory_manager.handle_tool(tool_args), default="执行完成")
 
         # scheduler 内置工具
         if tool_name == 'scheduler':
             for t in self.liugin_manager.tools:
                 if t.get('name') == 'scheduler' and 'handler' in t:
                     try:
-                        return t['handler'](tool_args)
+                        return normalize_tool_text(t['handler'](tool_args), default="执行完成")
                     except Exception as e:
                         return f"工具执行失败: {e}"
 

@@ -3,6 +3,7 @@ import time
 from colorama import Fore, Style
 
 from .constants import CLAWLI_SERVER_AVAILABLE, WEBSOCKET_AVAILABLE
+from .tool_result import normalize_tool_text
 
 try:
     import clawli_server
@@ -96,6 +97,7 @@ class ClawliMixin:
             tool_calls = self._extract_tool_calls(json_data)
 
             if tool_calls:
+                result_texts = []
                 for tool_data in tool_calls:
                     tool_name = tool_data.get('tool', '未知工具')
                     tool_args = tool_data.get('args', '')
@@ -104,7 +106,8 @@ class ClawliMixin:
                         clawli_server.send_tool_status(tool_name, tool_args, "calling")
 
                     result = self.process_tool_call(tool_data)
-                    result_text = result.get('result', '无结果')
+                    result_text = normalize_tool_text(result)
+                    result_texts.append(result_text)
 
                     if CLAWLI_SERVER_AVAILABLE and clawli_server:
                         clawli_server.send_tool_status(tool_name, tool_args, "success", result_text)
@@ -114,7 +117,8 @@ class ClawliMixin:
                     "content": response
                 })
 
-                tool_result_str = "\n".join([f"工具执行结果: {r}" for r in [result.get('result', '')]])
+                # 汇总全部工具结果（此前只回传了最后一个）
+                tool_result_str = "\n".join([f"工具执行结果: {r}" for r in result_texts])
                 self._process_clawli_user_message(f"{tool_result_str}\n请根据工具执行结果继续回答。")
                 return
 

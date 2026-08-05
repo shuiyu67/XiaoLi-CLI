@@ -117,3 +117,57 @@ class ToolResult:
     def to_string(self) -> str:
         """转为字符串（兼容旧插件 handle() 返回值）"""
         return str(self)
+
+
+# ── 归一化辅助（跨层兼容：ToolResult / dict / str / None）──
+
+def normalize_tool_text(result: Any, default: str = "无结果") -> str:
+    """把任意工具返回值统一成字符串。
+
+    工具链里三种返回形态都可能出现：
+      - ToolResult（新插件 / UnifiedToolManager.execute）
+      - {"result": ...}（旧插件 / to_dict）
+      - 纯字符串（最老的 handler）
+    统一收敛成字符串，避免上层对 ToolResult 调用 .get() 报
+    "'ToolResult' object has no attribute 'get'"。
+    """
+    if result is None:
+        return default
+    if isinstance(result, ToolResult):
+        text = str(result)
+    elif isinstance(result, dict):
+        text = result.get("result", result.get("content", ""))
+        if isinstance(text, (dict, list)):
+            import json as _json
+            try:
+                text = _json.dumps(text, ensure_ascii=False)
+            except Exception:
+                text = str(text)
+        elif not isinstance(text, str):
+            text = str(text) if text is not None else ""
+    else:
+        text = str(result)
+    text = text.strip() if isinstance(text, str) else str(text)
+    return text if text else default
+
+
+def normalize_tool_dict(result: Any, default: str = "无结果") -> dict:
+    """把任意工具返回值统一成 {"result": str, ...} 结构。
+
+    额外附带 success / error_code / tool_result，方便需要细节的调用方，
+    同时保证 .get('result') 一定可用。
+    """
+    text = normalize_tool_text(result, default)
+    if isinstance(result, ToolResult):
+        return {
+            "result": text,
+            "success": result.success,
+            "error_code": result.error_code,
+            "tool_result": result,
+        }
+    if isinstance(result, dict):
+        out = dict(result)
+        out["result"] = text
+        out.setdefault("success", True)
+        return out
+    return {"result": text, "success": True}

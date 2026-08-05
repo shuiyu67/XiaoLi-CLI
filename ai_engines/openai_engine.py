@@ -19,6 +19,17 @@ except Exception:
     def get_system_config(key, default=None):
         return default
 
+try:
+    from xcli_core.tool_result import normalize_tool_text
+except Exception:
+    def normalize_tool_text(result, default="无结果"):
+        """兜底归一化：ToolResult / dict / str 统一成字符串"""
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
+
 # ── 常见模型的上下文窗口（token 数）──
 # OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
 MODEL_CONTEXT_WINDOWS = {
@@ -172,7 +183,7 @@ OpenAI 兼容格式引擎帮助信息
 
             # 处理工具结果
             if tool_results:
-                tool_result_text = f"工具执行结果: {tool_results.get('result', '无结果')}"
+                tool_result_text = f"工具执行结果: {normalize_tool_text(tool_results)}"
                 messages = self._build_messages_with_history(system_prompt, tool_result_text)
             else:
                 messages = self._build_messages_with_history(system_prompt, user_input)

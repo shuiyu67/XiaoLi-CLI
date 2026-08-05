@@ -18,6 +18,17 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
+try:
+    from xcli_core.tool_result import normalize_tool_text
+except Exception:
+    def normalize_tool_text(result, default="无结果"):
+        """兜底归一化：ToolResult / dict / str 统一成字符串"""
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
+
 # 通信用的临时目录
 COMM_DIR = os.path.join(tempfile.gettempdir(), "xiaoli_manual_engine")
 
@@ -246,7 +257,7 @@ while True:
         # 把用户消息写入文件
         msg = user_input
         if tool_results:
-            msg = f"[工具结果] {tool_results.get('result', '无结果')}\n\n{user_input}"
+            msg = f"[工具结果] {normalize_tool_text(tool_results)}\n\n{user_input}"
 
         to_human = paths["msg_to_human"]
         with open(to_human, 'w', encoding='utf-8') as f:

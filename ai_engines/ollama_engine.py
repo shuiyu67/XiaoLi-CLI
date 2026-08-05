@@ -29,6 +29,17 @@ except Exception:
     def resolve_input_value(value, field_name="", default_prompt=None):
         return value
 
+try:
+    from xcli_core.tool_result import normalize_tool_text
+except Exception:
+    def normalize_tool_text(result, default="无结果"):
+        """兜底归一化：ToolResult / dict / str 统一成字符串"""
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
+
 
 class OllamaAI:
     """基于Ollama的本地AI引擎"""
@@ -164,7 +175,7 @@ Ollama AI引擎插件帮助信息
 
             # 如果有工具结果,将其作为上下文返回给AI处理
             if tool_results:
-                tool_result_text = f"工具执行结果: {tool_results.get('result', '无结果')}"
+                tool_result_text = f"工具执行结果: {normalize_tool_text(tool_results)}"
                 messages = self._build_messages_with_history(system_prompt, tool_result_text)
             else:
                 messages = self._build_messages_with_history(system_prompt, user_input)

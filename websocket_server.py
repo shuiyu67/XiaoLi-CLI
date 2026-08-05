@@ -24,6 +24,17 @@ import os
 from datetime import datetime
 from typing import Optional, Dict, List
 
+try:
+    from xcli_core.tool_result import normalize_tool_text
+except Exception:
+    def normalize_tool_text(result, default="无结果"):
+        """兜底归一化：ToolResult / dict / str 统一成字符串"""
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
+
 # 全局变量
 websocket_server = None  # 当前活动的服务器实例（供外部访问）
 proxy_client = None
@@ -583,7 +594,7 @@ class LocalServer:
                                 await self._send_tool_status(websocket, tool_name, tool_args, "calling")
                             
                             result = self.cli.process_tool_call(tool_data)
-                            result_text = result.get('result', '无结果')
+                            result_text = normalize_tool_text(result)
                             results.append(result_text)
                             
                             if websocket:
@@ -957,7 +968,7 @@ class ProxyClient:
                         results = []
                         for tool_data in tool_calls:
                             result = self.cli.process_tool_call(tool_data)
-                            results.append(result.get('result', '无结果'))
+                            results.append(normalize_tool_text(result))
                         
                         self.cli.shared_conversation_history.append({
                             "role": "assistant",

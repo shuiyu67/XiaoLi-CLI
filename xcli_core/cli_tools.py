@@ -7,6 +7,7 @@ from colorama import Fore, Style
 
 from .constants import UNIFIED_TOOL_MANAGER_AVAILABLE
 from .safety import get_safety
+from .tool_result import normalize_tool_dict, normalize_tool_text
 
 
 class ToolMixin:
@@ -105,18 +106,18 @@ class ToolMixin:
                     result = self.liugin_manager.execute(tool_name, args, **arguments)
                 else:
                     result = self.liugin_manager.execute(tool_name, args)
-                return result
+                # execute() 返回 ToolResult，必须归一成 dict——
+                # 否则上层 result.get('result') 会报
+                # "'ToolResult' object has no attribute 'get'"
+                return normalize_tool_dict(result)
 
-            # 回退：直接调用 handler（旧逻辑）
+            # 回退：直接调用 handler（旧逻辑，handler 可能返回 ToolResult/str）
             for tool in self.liugin_manager.tools:
                 if tool['name'] == tool_name:
                     try:
-                        result = tool['handler'](args)
-                        if result is None:
-                            result = "无结果"
-                        return {"result": result}
+                        return normalize_tool_dict(tool['handler'](args))
                     except Exception as e:
-                        return {"result": f"工具执行错误: {e}"}
+                        return {"result": f"工具执行错误: {e}", "success": False}
 
             return {"result": f"未找到工具: {tool_name}"}
 
@@ -136,7 +137,7 @@ class ToolMixin:
                 return {"index": index, "result": "工具执行已取消"}
             try:
                 result = self.process_tool_call(tool_data)
-                tool_result = result.get('result', '无结果')
+                tool_result = normalize_tool_text(result)
                 with history_lock:
                     self.shared_conversation_history.append({
                         "role": "assistant",
@@ -245,7 +246,7 @@ class ToolMixin:
                 pass
 
         tool_results = self.process_tool_call(tool_data)
-        full_result = tool_results.get('result', '无结果')
+        full_result = normalize_tool_text(tool_results)
         from datetime import datetime
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._display_tool_result(tool_name, tool_args, full_result, current_time)
