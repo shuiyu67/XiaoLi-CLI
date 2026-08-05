@@ -50,3 +50,9 @@ screenshots/gen_*.png
 
 # v8.0 TUI 快照产物（运行时生成，供 AI 自验/预览）
 .tui_snapshots/
+
+# FC 能力探测缓存（运行时按 base_url+model 生成，机器相关）
+.fc_support.json
+
+# pytest 缓存
+.pytest_cache/

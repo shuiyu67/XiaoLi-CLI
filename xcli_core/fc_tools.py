@@ -2,7 +2,9 @@
 Function Calling 工具格式转换
 将 MCP 插件定义转为 OpenAI FC 格式，收集所有可用工具
 """
+import os
 import json
+import threading
 from typing import List, Dict, Optional
 
 
@@ -248,3 +250,81 @@ def _get_builtin_tools() -> List[Dict]:
             }
         }
     ]
+
+
+# ══════════════════════════════════════════════════════════════════
+#  FC 能力探测缓存
+#
+#  部分渠道/模型（如讯飞星火经 one-api 转发的 xophunyuan* 系列）
+#  不支持 function calling，请求体里只要带上非空 tools 字段就会直接
+#  返回 500 RequestParamsError:Invalid Params。
+#  引擎捕获到这种错误后会去掉 tools 降级重试；本缓存把"该模型不支持 FC"
+#  这件事记下来，后续请求直接跳过 tools，避免每次冷启动都白撞一次 500。
+# ══════════════════════════════════════════════════════════════════
+
+_FC_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".fc_support.json"
+)
+_fc_cache = None
+_fc_lock = threading.Lock()
+
+
+def _fc_key(base_url, model) -> str:
+    """缓存键：base_url + model（同一渠道下不同模型能力可能不同）"""
+    return f"{(base_url or '').rstrip('/')}::{model or ''}"
+
+
+def _load_fc_cache() -> dict:
+    global _fc_cache
+    if _fc_cache is not None:
+        return _fc_cache
+    try:
+        with open(_FC_CACHE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        _fc_cache = data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        _fc_cache = {}
+    return _fc_cache
+
+
+def _save_fc_cache(cache: dict):
+    try:
+        with open(_FC_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+
+
+def supports_fc(base_url, model) -> bool:
+    """该 (base_url, model) 是否支持 FC。未探测过时默认 True（乐观，先试一次）"""
+    return _load_fc_cache().get(_fc_key(base_url, model)) is not False
+
+
+def mark_fc_unsupported(base_url, model) -> bool:
+    """标记该 (base_url, model) 不支持 FC 并持久化。首次标记返回 True"""
+    with _fc_lock:
+        cache = _load_fc_cache()
+        key = _fc_key(base_url, model)
+        if cache.get(key) is False:
+            return False
+        cache[key] = False
+        _save_fc_cache(cache)
+        return True
+
+
+def reset_fc_cache(base_url=None, model=None) -> int:
+    """清除 FC 探测缓存。不传参数则全清，返回清除的条目数"""
+    with _fc_lock:
+        cache = _load_fc_cache()
+        if base_url is None and model is None:
+            count = len(cache)
+            cache.clear()
+        else:
+            count = 1 if cache.pop(_fc_key(base_url, model), None) is not None else 0
+        _save_fc_cache(cache)
+        return count
+
+
+def get_fc_cache() -> dict:
+    """返回 FC 探测缓存副本（供 /fc 命令展示）"""
+    return dict(_load_fc_cache())

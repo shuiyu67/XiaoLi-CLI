@@ -376,8 +376,42 @@ class DisplayMixin:
 
     # ── 帮助系统 ──
 
+    def show_quick_commands(self):
+        """常用命令速查表（启动时不再刷屏，改由 /help 展示）"""
+        rows = [
+            ('/help [插件名]', '显示帮助信息'),
+            ('/quit', '退出程序'),
+            ('/tui', '切换到 TUI 图形模式'),
+            ('/engine list', '查看可用 AI 引擎'),
+            ('/engine switch <名>', '切换 AI 引擎'),
+            ('/fc [reset]', '查看/清除 FC 能力探测缓存'),
+            ('/safe', '切换安全模式 (普通→人工→无限制)'),
+            ('/diff', '切换 diff 显示模式 (弹窗/主终端)'),
+            ('/notify', '切换任务完成通知 (开/关)'),
+            ('/scheduler 或 /remind', '管理定时任务'),
+            ('/memory', '管理记忆系统 (日记/搜索/聊天记录)'),
+            ('/file.read <文件> [行数]', '直接读取文件内容'),
+            ('@文件路径', '自动读取文件内容并发送给 AI'),
+            ('@图片路径', '自动分析图片并发送描述给 AI'),
+            ('/image engines', '查看图像识别引擎'),
+            ('/chat save|list|open', '保存/查看/加载聊天记录'),
+            ('/remote', '查看远程连接帮助'),
+            ('/plugin', '管理插件市场 (安装/卸载/搜索)'),
+            ('/protect', '查看进程保护状态'),
+        ]
+        width = max(len(cmd) for cmd, _ in rows)
+        print(f"{Fore.GREEN}常用命令:{Style.RESET_ALL}")
+        for cmd, desc in rows:
+            print(f"  {Fore.WHITE}{cmd.ljust(width)}{Style.RESET_ALL}  {desc}")
+        print()
+        print(f"{Fore.GREEN}启动参数:{Style.RESET_ALL}")
+        print(f"  {Fore.WHITE}{'--verbose / -v'.ljust(width)}{Style.RESET_ALL}  打印引擎/插件/技能的逐条加载明细")
+        print(f"  {Fore.WHITE}{'--logo'.ljust(width)}{Style.RESET_ALL}  播放完整开机动画")
+        print()
+
     def show_help(self):
         """显示帮助信息"""
+        self.show_quick_commands()
         help_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HELP.md")
         if os.path.exists(help_file_path):
             try:

@@ -20,6 +20,12 @@ except Exception:
         return default
 
 try:
+    from xcli_core.verbose import vprint
+except Exception:
+    def vprint(*args, **kwargs):
+        pass
+
+try:
     from xcli_core.tool_result import normalize_tool_text
 except Exception:
     def normalize_tool_text(result, default="无结果"):
@@ -147,7 +153,7 @@ OpenAI 兼容格式引擎帮助信息
         if not self.base_url:
             print(f"{Fore.YELLOW}警告: openai 引擎的 base_url 未设置{Style.RESET_ALL}")
         else:
-            print(f"{Fore.GREEN}OpenAI 兼容引擎已启用 (base_url: {self.base_url}){Style.RESET_ALL}")
+            vprint(f"{Fore.GREEN}OpenAI 兼容引擎已启用 (base_url: {self.base_url}){Style.RESET_ALL}")
 
     def _get_headers(self):
         """构建请求头"""
@@ -166,6 +172,26 @@ OpenAI 兼容格式引擎帮助信息
         if not url.endswith('/chat/completions'):
             url = url.rstrip('/') + '/chat/completions'
         return url
+
+    # ── FC 能力探测缓存 ──
+
+    def _fc_supported(self):
+        """当前 (base_url, model) 是否支持 function calling（未探测过默认支持）"""
+        try:
+            from xcli_core.fc_tools import supports_fc
+            return supports_fc(self.base_url, self.model)
+        except Exception:
+            return True
+
+    def _mark_fc_unsupported(self):
+        """降级成功后记住该模型不支持 FC，后续请求不再带 tools"""
+        try:
+            from xcli_core.fc_tools import mark_fc_unsupported
+            if mark_fc_unsupported(self.base_url, self.model):
+                print(f"{Fore.CYAN}已记住 {self.model} 不支持 FC，后续请求将跳过工具字段"
+                      f"（/fc reset 可清除）{Style.RESET_ALL}")
+        except Exception:
+            pass
 
     def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
         """
@@ -196,7 +222,8 @@ OpenAI 兼容格式引擎帮助信息
             }
 
             # ── Function Calling: 注入工具定义（统一纯官方格式）──
-            if tools:
+            # 已探测过不支持 FC 的模型直接跳过 tools，省掉每次白撞一次 500
+            if tools and self._fc_supported():
                 pure_tools = []
                 for t in tools:
                     if not isinstance(t, dict):
@@ -260,12 +287,13 @@ OpenAI 兼容格式引擎帮助信息
                 return f"API 端点不存在，请检查 base_url 是否正确: {api_url}"
             elif response.status_code == 400:
                 # 工具定义可能不兼容，降级为无工具重试
-                if tools and "tools" in str(response.text).lower():
+                if body.get("tools") and "tools" in str(response.text).lower():
                     print(f"{Fore.YELLOW}FC 不支持，降级为普通模式{Style.RESET_ALL}")
                     body.pop("tools", None)
                     body.pop("tool_choice", None)
                     retry = requests.post(url=api_url, json=body, headers=self._get_headers(), timeout=None)
                     if retry.status_code == 200:
+                        self._mark_fc_unsupported()
                         rd = retry.json()
                         if "choices" in rd and rd["choices"]:
                             ai_response = rd["choices"][0].get("message", {}).get("content", "")
@@ -275,12 +303,13 @@ OpenAI 兼容格式引擎帮助信息
                 # 500 等错误：部分服务（如讯飞星火经 one-api 转发）不支持 FC 工具，
                 # 会直接报 500 Invalid Params —— 尝试去掉 tools 降级重试一次
                 lower = str(response.text).lower()
-                if tools and ("xunfei" in lower or "invalid params" in lower or "requestparamserror" in lower):
+                if body.get("tools") and ("xunfei" in lower or "invalid params" in lower or "requestparamserror" in lower):
                     print(f"{Fore.YELLOW}该接口可能不支持 FC 工具，降级为普通模式重试...{Style.RESET_ALL}")
                     body.pop("tools", None)
                     body.pop("tool_choice", None)
                     retry = requests.post(url=api_url, json=body, headers=self._get_headers(), timeout=None)
                     if retry.status_code == 200:
+                        self._mark_fc_unsupported()
                         rd = retry.json()
                         retry_usage = rd.get("usage", {})
                         if isinstance(retry_usage, dict) and retry_usage.get("prompt_tokens"):

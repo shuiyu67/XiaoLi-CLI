@@ -22,6 +22,12 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
+try:
+    from xcli_core.verbose import vprint as _vprint
+except Exception:
+    def _vprint(*args, **kwargs):
+        pass
+
 # <input> 特殊语法解析（配置模型时可交互式询问用户）
 try:
     from xcli_core.config import resolve_input_value
@@ -116,7 +122,7 @@ Ollama AI引擎插件帮助信息
         self.is_service_running = self.check_ollama_service()
         
         if self.is_service_running:
-            print(f"{Fore.GREEN}Ollama服务检测成功,引擎已启用{Style.RESET_ALL}")
+            _vprint(f"{Fore.GREEN}Ollama服务检测成功,引擎已启用{Style.RESET_ALL}")
         else:
             print(f"{Fore.RED}Ollama服务未运行,引擎将不可用{Style.RESET_ALL}")
     

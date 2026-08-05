@@ -10,6 +10,7 @@ import threading
 from typing import Dict, List, Any, Optional, Union, Callable
 from colorama import Fore, Style
 from xcli_core.tool_result import ToolResult, ErrorCode
+from xcli_core.verbose import vprint
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,11 @@ class UnifiedToolManager:
         self._load_skills(skills_dir)
         self._build_mcp_cache()
 
-        print(f"{Fore.GREEN}[统一工具管理器] 加载完成: {len(self._tools)} 个工具{Style.RESET_ALL}")
-        print(f"  - Liugin 协议: {sum(1 for p in self._protocol_map.values() if p == 'liugin')}")
-        print(f"  - Skill 协议: {sum(1 for p in self._protocol_map.values() if p == 'skill')}")
+        n_liugin = sum(1 for p in self._protocol_map.values() if p == 'liugin')
+        n_skill = sum(1 for p in self._protocol_map.values() if p == 'skill')
+        print(f"{Fore.GREEN}已加载 {len(self._tools)} 个工具{Style.RESET_ALL}"
+              f"{Fore.BLACK}{Style.BRIGHT} (Liugin {n_liugin} · Skill {n_skill}"
+              f"，--verbose 看明细){Style.RESET_ALL}")
 
     def shutdown(self) -> None:
         """关闭管理器，清理所有插件实例"""
@@ -144,7 +147,7 @@ class UnifiedToolManager:
             self._skill_loader = SkillLoader(skills_dir)
 
             discovered = self._skill_loader.discover_skills(skills_dir)
-            print(f"{Fore.CYAN}发现 {len(discovered)} 个技能: {[s['name'] for s in discovered]}{Style.RESET_ALL}")
+            vprint(f"{Fore.CYAN}发现 {len(discovered)} 个技能: {[s['name'] for s in discovered]}{Style.RESET_ALL}")
 
             self._skill_loader.load_all_skills(skills_dir)
 
@@ -182,7 +185,7 @@ class UnifiedToolManager:
                 }
                 self._protocol_map[skill_name] = 'skill'
 
-                print(f"{Fore.GREEN}已加载 Skill ({skill_format}): {skill_name}{Style.RESET_ALL}")
+                vprint(f"{Fore.GREEN}已加载 Skill ({skill_format}): {skill_name}{Style.RESET_ALL}")
 
         except ImportError as e:
             print(f"{Fore.YELLOW}Skill 协议模块未找到: {e}{Style.RESET_ALL}")

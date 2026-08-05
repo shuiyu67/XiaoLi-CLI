@@ -10,6 +10,7 @@ from .constants import (
     UNIFIED_TOOL_MANAGER_AVAILABLE, TEXTUAL_AVAILABLE,
 )
 from .config import get_system_config, set_system_config, logger
+from .verbose import vprint
 from .plugin_manager import LiuginManager
 from .process_protection import get_protection, enable_process_protection
 
@@ -70,11 +71,11 @@ class BaseAICLI:
         # 设置默认引擎，优先使用配置文件指定的引擎
         if default_engine_name in self.engines:
             self.current_engine = self.engines[default_engine_name]
-            print(f"{Fore.GREEN}使用配置的默认AI引擎: {default_engine_name}{Style.RESET_ALL}")
+            vprint(f"{Fore.GREEN}使用配置的默认AI引擎: {default_engine_name}{Style.RESET_ALL}")
         elif self.engines:
             first_engine_name = next(iter(self.engines))
             self.current_engine = self.engines[first_engine_name]
-            print(f"{Fore.GREEN}使用默认AI引擎: {first_engine_name}{Style.RESET_ALL}")
+            vprint(f"{Fore.GREEN}使用默认AI引擎: {first_engine_name}{Style.RESET_ALL}")
         else:
             print(f"{Fore.RED}警告: 没有可用的AI引擎，请检查ai_engines目录{Style.RESET_ALL}")
             self.current_engine = None
@@ -153,7 +154,7 @@ class BaseAICLI:
 
     def load_ai_engines(self):
         """动态加载AI引擎插件"""
-        print(f"{Fore.GREEN}正在加载AI引擎插件...{Style.RESET_ALL}")
+        vprint(f"{Fore.GREEN}正在加载AI引擎插件...{Style.RESET_ALL}")
         ai_engines_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_engines")
         if os.path.exists(ai_engines_dir):
             for filename in os.listdir(ai_engines_dir):
@@ -171,7 +172,7 @@ class BaseAICLI:
                             engine_key = getattr(engine_instance, 'name', engine_name)
                             if engine_key not in self.engines:
                                 self.engines[engine_key] = engine_instance
-                                print(f"{Fore.GREEN}已加载AI引擎: {engine_key} ({class_name}){Style.RESET_ALL}")
+                                vprint(f"{Fore.GREEN}已加载AI引擎: {engine_key} ({class_name}){Style.RESET_ALL}")
                             else:
                                 print(f"{Fore.YELLOW}AI引擎 {engine_key} 已存在，跳过加载{Style.RESET_ALL}")
                         else:
@@ -185,7 +186,7 @@ class BaseAICLI:
                     except Exception as e:
                         logger.error(f"加载AI引擎插件时发生未知错误 {filename}: {e}")
                         print(f"{Fore.RED}加载AI引擎插件失败 {filename}: {e}{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}总共加载了 {len(self.engines)} 个AI引擎{Style.RESET_ALL}")
+            vprint(f"{Fore.GREEN}总共加载了 {len(self.engines)} 个AI引擎{Style.RESET_ALL}")
 
     def _find_engine_class(self, module, engine_name):
         """查找AI引擎类，使用动态方式避免硬编码类名"""
@@ -213,7 +214,7 @@ class BaseAICLI:
 
     def load_liugins(self, liugins_dir=None, skills_dir=None):
         """加载liugin和技能"""
-        print(f"{Fore.GREEN}正在加载工具...{Style.RESET_ALL}")
+        vprint(f"{Fore.GREEN}正在加载工具...{Style.RESET_ALL}")
 
         if self._use_unified_manager:
             self.liugin_manager.initialize(liugins_dir or "plugins", skills_dir or "skills")
@@ -242,19 +243,19 @@ class BaseAICLI:
                                 tool_info = plugin_instance.get_tool_info()
                                 tool_info['handler'] = plugin_instance.handle
                                 self.liugin_manager.tools.append(tool_info)
-                                print(f"{Fore.GREEN}已加载liugin: {liugin_name}{Style.RESET_ALL}")
+                                vprint(f"{Fore.GREEN}已加载liugin: {liugin_name}{Style.RESET_ALL}")
                         except Exception as e:
                             print(f"{Fore.RED}加载liugin失败 {filename}: {e}{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}总共加载了 {len(self.liugin_manager.tools)} 个工具插件{Style.RESET_ALL}")
+            vprint(f"{Fore.GREEN}总共加载了 {len(self.liugin_manager.tools)} 个工具插件{Style.RESET_ALL}")
 
-        print(f"{Fore.GREEN}工具加载完成!{Style.RESET_ALL}")
+        vprint(f"{Fore.GREEN}工具加载完成!{Style.RESET_ALL}")
 
     # ── 命令注册 ──
 
     def register_liugin_command(self, command, handler):
         """注册插件命令"""
         self.liugin_commands[command] = handler
-        print(f"{Fore.GREEN}已注册插件命令: {command}{Style.RESET_ALL}")
+        vprint(f"{Fore.GREEN}已注册插件命令: {command}{Style.RESET_ALL}")
 
     def unregister_liugin_command(self, command):
         """注销插件命令"""

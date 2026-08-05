@@ -10,7 +10,7 @@ from typing import Optional
 from colorama import Fore, Style
 
 from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY, VERSION
-from .config import get_system_config, logger
+from .config import get_system_config, set_system_config, logger
 from .cli_base import BaseAICLI
 from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
 from .cli_clawli import ClawliMixin
@@ -1031,63 +1031,55 @@ multi 操作支持一次修改多处：
         """运行 CLI"""
         import uuid
         self.user_id = str(uuid.getnode())
-        print(f"{Fore.GREEN}小狸 Pro-CLI v{VERSION} 已启动!{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}用户ID: {self.user_id}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/help' 查看帮助信息{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/quit' 退出程序{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/tui' 切换到 TUI 模式{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/engine list' 查看可用AI引擎{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/engine switch <引擎名>' 切换AI引擎{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/safe' 切换安全模式 (普通→人工→无限制){Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/notify' 切换任务完成通知 (开/关){Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/scheduler' 或 '/remind' 管理定时任务{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/memory' 管理记忆系统 (日记/搜索/聊天记录){Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/file.read <文件名> [行数]' 直接读取文件内容{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '@文件路径' 自动读取文件内容并发送给AI{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '@图片路径' 自动分析图片并发送描述给AI{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/image engines' 查看图像识别引擎{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/chat save <名称>' 保存当前聊天记录{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/chat list' 查看所有已保存的聊天记录{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/chat open <名称>' 加载聊天记录{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/remote' 查看远程连接帮助{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/plugin' 管理插件市场 (安装/卸载/搜索){Style.RESET_ALL}")
-        print(f"{Fore.GREEN}输入 '/protect' 查看进程保护状态{Style.RESET_ALL}")
         current_engine_name = getattr(self.current_engine, 'name', '未设置') if self.current_engine else '未设置'
-        print(f"{Fore.GREEN}当前使用的AI引擎: {current_engine_name}{Style.RESET_ALL}")
+        model_name = getattr(self.current_engine, 'model', '') if self.current_engine else ''
+        engine_desc = f"{current_engine_name} ({model_name})" if model_name else current_engine_name
+
+        print(f"{Fore.GREEN}小狸 Pro-CLI v{VERSION} 已启动!{Style.RESET_ALL} "
+              f"{Fore.WHITE}引擎: {engine_desc}{Style.RESET_ALL}")
+
+        # 一行速览，完整命令清单收进 /help
+        print(f"{Fore.CYAN}/help 全部命令 · /quit 退出 · /tui 图形界面 · "
+              f"@文件路径 读文件给 AI{Style.RESET_ALL}")
+
+        extras = []
         loaded_engines = list(self.engines.keys())
         if len(loaded_engines) > 1:
-            print(f"{Fore.GREEN}已加载的AI引擎: {', '.join(loaded_engines)}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}{'-' * 50}{Style.RESET_ALL}")
-
-        # 显示进程保护状态
-        if hasattr(self, 'protection_results') and self.protection_results:
+            extras.append(f"可切换引擎: {', '.join(loaded_engines)}")
+        # 进程保护：只在有未生效项时才提示，全绿就闭嘴
+        if getattr(self, 'protection_results', None):
             r = self.protection_results
-            si_icon = '' if r.get('single_instance') else ''
-            prio_icon = '' if r.get('priority') else ''
-            ppl_icon = '' if r.get('ppl_protection') else ''
-            wd_icon = '' if r.get('watchdog') else ''
-            print(f"{Fore.CYAN}  进程保护: {si_icon}单实例 {prio_icon}优先级 {ppl_icon}PPL保护 {wd_icon}看门狗{Style.RESET_ALL}")
+            failed = [n for k, n in (('single_instance', '单实例'), ('priority', '优先级'),
+                                     ('ppl_protection', 'PPL保护'), ('watchdog', '看门狗'))
+                      if not r.get(k)]
+            if failed:
+                extras.append(f"进程保护未生效: {', '.join(failed)}")
+        if extras:
+            print(f"{Fore.BLACK}{Style.BRIGHT}{' · '.join(extras)}{Style.RESET_ALL}")
 
-        # 询问 diff 弹窗模式
+        print(f"{Fore.BLACK}{Style.BRIGHT}用户ID: {self.user_id}{Style.RESET_ALL}")
+
+        # 恢复 diff 显示模式（首次运行才询问）
         self._ask_diff_popup_mode()
 
         self._run_cli_loop()
 
-    def _ask_diff_popup_mode(self):
-        """启动时询问 diff 显示模式"""
-        # 找到 code_editor 插件
-        code_editor = None
+    def _get_code_editor_plugin(self):
+        """拿到 code_editor 插件实例（找不到返回 None）"""
         for tool in self.liugin_manager.tools:
             if tool.get('name') == 'code_editor':
-                code_editor = tool.get('handler')
-                break
+                return getattr(tool.get('handler'), '__self__', None)
+        return None
 
-        if code_editor is None:
+    def _ask_diff_popup_mode(self):
+        """设置 diff 显示模式：已保存过就静默沿用，只有首次运行才交互询问"""
+        plugin_instance = self._get_code_editor_plugin()
+        if plugin_instance is None:
             return
 
-        # 找到插件实例（通过 handler 的 __self__）
-        plugin_instance = getattr(code_editor, '__self__', None)
-        if plugin_instance is None:
+        saved = get_system_config('diff_popup_mode', None)
+        if saved is not None:
+            plugin_instance.diff_popup_mode = bool(saved)
             return
 
         print(f"\n{Fore.CYAN}  Diff 显示模式（AI 修改文件后的对比方式）:{Style.RESET_ALL}")
@@ -1095,18 +1087,22 @@ multi 操作支持一次修改多处：
         print(f"    {Fore.WHITE}2{Style.RESET_ALL} - 主终端内显示（SSH 兼容，推荐）")
 
         try:
-            choice = input(f"\n{Fore.WHITE}  请选择 [1/2]（默认 2）: {Style.RESET_ALL}").strip()
+            choice = input(f"\n{Fore.WHITE}  请选择 [1/2]（默认 2，之后可用 /diff 改）: {Style.RESET_ALL}").strip()
         except (EOFError, KeyboardInterrupt):
             choice = '2'
 
-        if choice == '1':
-            plugin_instance.diff_popup_mode = True
-            print(f"{Fore.GREEN}  ✓ 已选择: 弹窗模式{Style.RESET_ALL}")
-        else:
-            plugin_instance.diff_popup_mode = False
-            print(f"{Fore.GREEN}  ✓ 已选择: 主终端内显示{Style.RESET_ALL}")
-
+        self._set_diff_popup_mode(choice == '1', plugin_instance)
         print()
+
+    def _set_diff_popup_mode(self, popup, plugin_instance=None):
+        """写入并持久化 diff 显示模式"""
+        if plugin_instance is None:
+            plugin_instance = self._get_code_editor_plugin()
+        if plugin_instance is not None:
+            plugin_instance.diff_popup_mode = bool(popup)
+        set_system_config('diff_popup_mode', bool(popup))
+        label = '弹窗模式' if popup else '主终端内显示'
+        print(f"{Fore.GREEN}  ✓ Diff 显示模式: {label}{Style.RESET_ALL}")
 
     def _run_cli_loop(self):
         """运行 CLI 主循环"""
@@ -1297,6 +1293,42 @@ multi 操作支持一次修改多处：
                     print(f"{icon} 安全模式: {mode_name}")
                     continue
 
+                if user_input.startswith('/diff'):
+                    parts = user_input.split()
+                    if self._get_code_editor_plugin() is None:
+                        print(f"{Fore.YELLOW}code_editor 插件未加载，无法设置 diff 模式{Style.RESET_ALL}")
+                        continue
+                    if len(parts) > 1:
+                        arg = parts[1].lower()
+                        if arg in ('popup', '弹窗', '1'):
+                            self._set_diff_popup_mode(True)
+                        elif arg in ('inline', '内联', '主终端', '2'):
+                            self._set_diff_popup_mode(False)
+                        else:
+                            print(f"{Fore.RED}用法: /diff [popup|inline]{Style.RESET_ALL}")
+                    else:
+                        cur = bool(get_system_config('diff_popup_mode', False))
+                        self._set_diff_popup_mode(not cur)
+                    continue
+
+                if user_input.startswith('/fc'):
+                    from .fc_tools import get_fc_cache, reset_fc_cache
+                    parts = user_input.split()
+                    if len(parts) > 1 and parts[1].lower() in ('reset', 'clear', '清除'):
+                        n = reset_fc_cache()
+                        print(f"{Fore.GREEN}已清除 {n} 条 FC 探测记录，下次请求会重新试探{Style.RESET_ALL}")
+                    else:
+                        cache = get_fc_cache()
+                        if not cache:
+                            print(f"{Fore.GREEN}FC 探测缓存为空：所有模型都按支持 function calling 处理{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.CYAN}已探测到不支持 function calling 的模型:{Style.RESET_ALL}")
+                            for key, ok in cache.items():
+                                if ok is False:
+                                    print(f"  {Fore.YELLOW}✗{Style.RESET_ALL} {key}")
+                            print(f"{Fore.WHITE}这些请求会自动跳过 tools 字段；/fc reset 可清除重测{Style.RESET_ALL}")
+                    continue
+
                 if user_input.startswith('/notify'):
                     parts = user_input.split()
                     nm = get_notification_manager()
@@ -1436,12 +1468,22 @@ def main():
         import codecs
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
 
-    for line in art_lines:
+    def _safe_print(line):
         try:
             print(line, flush=True)
         except UnicodeEncodeError:
             print(line.encode('gbk', errors='ignore').decode('gbk'), flush=True)
-        time.sleep(0.05)
+
+    # 完整开机动画（57 行 + 逐行 0.05s）默认不放，用 --logo 显式召唤
+    if '--logo' in sys.argv or '--banner' in sys.argv:
+        for line in art_lines:
+            _safe_print(line)
+            time.sleep(0.05)
+    else:
+        _safe_print(f"\n{Fore.CYAN}  ▄▀▄  小狸 Pro-CLI v{VERSION}{Style.RESET_ALL}")
+        _safe_print(f"{Fore.CYAN}  ▀▄▀  {Style.RESET_ALL}"
+                    f"{Fore.WHITE}AI 智能编程助手{Style.RESET_ALL}"
+                    f"  {Fore.BLACK}{Style.BRIGHT}(--logo 看完整开机动画){Style.RESET_ALL}")
 
     cli = AICLI()
     cli.run()

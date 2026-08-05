@@ -29,6 +29,29 @@ def load_module(name, path):
     return mod
 
 
+def plugin_class(mod):
+    """取插件入口类（项目里叫 Liugin，历史上叫 Plugin，两种都认）"""
+    cls = getattr(mod, "Liugin", None) or getattr(mod, "Plugin", None)
+    assert cls is not None, f"{mod.__name__}: 缺少 Plugin/Liugin 类"
+    return cls
+
+
+def as_text(result):
+    """插件返回值统一转文本（可能是 str，也可能是 ToolResult）"""
+    return result if isinstance(result, str) else str(result)
+
+
+ERROR_MARKERS = ("❌", "错误", "失败", "缺少", "不存在", "无效", "请提供", "用法")
+
+
+def is_error(result):
+    """判断插件返回是否表示失败（不依赖具体文案措辞）"""
+    success = getattr(result, "success", None)
+    if success is not None:
+        return not success
+    return any(m in as_text(result) for m in ERROR_MARKERS)
+
+
 # ══════════════════════════════════════
 #  插件加载测试
 # ══════════════════════════════════════
@@ -89,7 +112,7 @@ class TestCodeEditor:
     @pytest.fixture
     def editor(self):
         mod = load_module("code_editor", os.path.join(PLUGINS_DIR, "code_editor.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     @pytest.fixture
     def tmp_file(self, tmp_path):
@@ -99,47 +122,47 @@ class TestCodeEditor:
 
     def test_read_range(self, editor, tmp_file):
         result = editor.handle(f"read_range {tmp_file} 1 2")
-        assert "hello" in result
-        assert "1 |" in result
+        assert "hello" in as_text(result)
+        assert "1 |" in as_text(result)
 
     def test_edit(self, editor, tmp_file):
         result = editor.handle(f"edit {tmp_file} print('hello') <<<>>> print('hi')")
-        assert "已编辑" in result
+        assert "已编辑" in as_text(result)
         content = open(tmp_file).read()
         assert "print('hi')" in content
 
     def test_edit_not_found(self, editor, tmp_file):
         result = editor.handle(f"edit {tmp_file} nonexistent_code <<<>>> new_code")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_create(self, editor, tmp_path):
         new_file = str(tmp_path / "new.py")
         result = editor.handle(f"create {new_file} import os")
-        assert "已创建" in result
+        assert "已创建" in as_text(result)
         assert os.path.exists(new_file)
 
     def test_diff_text(self, editor):
         result = editor.handle("diff_text old <<<>>> new")
-        assert "变更预览" in result
+        assert "变更预览" in as_text(result)
 
     def test_ast_info(self, editor, tmp_file):
         result = editor.handle(f"ast_info {tmp_file}")
-        assert "def hello" in result
-        assert "def world" in result
+        assert "def hello" in as_text(result)
+        assert "def world" in as_text(result)
 
     def test_stats(self, editor, tmp_path):
         result = editor.handle(f"stats {tmp_path}")
-        assert "代码统计" in result
-        assert "文件" in result
+        assert "代码统计" in as_text(result)
+        assert "文件" in as_text(result)
 
     def test_structure(self, editor, tmp_path):
         result = editor.handle(f"structure {tmp_path} 1")
-        assert "" in result
+        assert "" in as_text(result)
 
     def test_find(self, editor, tmp_path):
         (tmp_path / "a.py").write_text("x = 1\ny = 2\n")
         result = editor.handle(f"find {tmp_path} x *.py")
-        assert "x = 1" in result
+        assert "x = 1" in as_text(result)
 
 
 class TestGitTools:
@@ -148,11 +171,11 @@ class TestGitTools:
     @pytest.fixture
     def git(self):
         mod = load_module("git_tools", os.path.join(PLUGINS_DIR, "git_tools.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_status(self, git):
         result = git.handle("status")
-        assert "Git" in result or "干净" in result or "分支" in result
+        assert "Git" in as_text(result) or "干净" in as_text(result) or "分支" in as_text(result)
 
     def test_log(self, git):
         result = git.handle("log --oneline 3")
@@ -161,7 +184,7 @@ class TestGitTools:
 
     def test_branch(self, git):
         result = git.handle("branch")
-        assert "master" in result or "main" in result
+        assert "master" in as_text(result) or "main" in as_text(result)
 
 
 class TestCmdExecutor:
@@ -170,27 +193,27 @@ class TestCmdExecutor:
     @pytest.fixture
     def cmd(self):
         mod = load_module("cmd_executor", os.path.join(PLUGINS_DIR, "cmd_executor.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_echo(self, cmd):
         result = cmd.handle("run echo test_ok")
-        assert "test_ok" in result
+        assert "test_ok" in as_text(result)
 
     def test_python_version(self, cmd):
         result = cmd.handle("run python3 --version")
-        assert "Python" in result
+        assert "Python" in as_text(result)
 
     def test_blocked_command(self, cmd):
         result = cmd.handle("run rm -rf /")
-        assert "拦截" in result
+        assert "拦截" in as_text(result)
 
     def test_timeout(self, cmd):
         result = cmd.handle("run echo fast --timeout 5")
-        assert "fast" in result
+        assert "fast" in as_text(result)
 
     def test_empty_command(self, cmd):
         result = cmd.handle("run")
-        assert "错误" in result
+        assert is_error(result)
 
 
 class TestFileManager:
@@ -199,53 +222,53 @@ class TestFileManager:
     @pytest.fixture
     def fm(self):
         mod = load_module("file_manager", os.path.join(PLUGINS_DIR, "file_manager.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_list(self, fm, tmp_path):
         (tmp_path / "a.txt").write_text("hi")
         result = fm.handle(f"list {tmp_path}")
-        assert "a.txt" in result
+        assert "a.txt" in as_text(result)
 
     def test_read(self, fm, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("hello world")
         result = fm.handle(f"read {f}")
-        assert "hello world" in result
+        assert "hello world" in as_text(result)
 
     def test_write_and_read(self, fm, tmp_path):
         f = tmp_path / "new.txt"
         result = fm.handle(f"write {f} -c test_content")
-        assert "已写入" in result
+        assert "已写入" in as_text(result)
         result = fm.handle(f"read {f}")
-        assert "test_content" in result
+        assert "test_content" in as_text(result)
 
     def test_copy(self, fm, tmp_path):
         src = tmp_path / "src.txt"
         src.write_text("data")
         dst = tmp_path / "dst.txt"
         result = fm.handle(f"copy {src} {dst}")
-        assert "已复制" in result
+        assert "已复制" in as_text(result)
         assert dst.exists()
 
     def test_delete(self, fm, tmp_path):
         f = tmp_path / "del.txt"
         f.write_text("bye")
         result = fm.handle(f"delete {f}")
-        assert "已删除" in result
+        assert "已删除" in as_text(result)
         assert not f.exists()
 
     def test_mkdir(self, fm, tmp_path):
         d = tmp_path / "newdir"
         result = fm.handle(f"mkdir {d}")
-        assert "已创建" in result
+        assert "已创建" in as_text(result)
         assert d.is_dir()
 
     def test_info(self, fm, tmp_path):
         f = tmp_path / "info.txt"
         f.write_text("x")
         result = fm.handle(f"info {f}")
-        assert "路径" in result
-        assert "大小" in result
+        assert "路径" in as_text(result)
+        assert "大小" in as_text(result)
 
 
 class TestAutoEngineer:
@@ -254,23 +277,23 @@ class TestAutoEngineer:
     @pytest.fixture
     def eng(self):
         mod = load_module("auto_engineer", os.path.join(PLUGINS_DIR, "auto_engineer.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_metrics(self, eng, tmp_path):
         (tmp_path / "a.py").write_text("x = 1\n# comment\n\ny = 2\n")
         result = eng.handle(f"metrics {tmp_path}")
-        assert "代码指标" in result
-        assert "文件" in result
+        assert "代码指标" in as_text(result)
+        assert "文件" in as_text(result)
 
     def test_security_clean(self, eng, tmp_path):
         (tmp_path / "safe.py").write_text("x = 1\nprint(x)\n")
         result = eng.handle(f"security {tmp_path}")
-        assert "没有发现" in result or "风险" in result
+        assert "没有发现" in as_text(result) or "风险" in as_text(result)
 
     def test_security_risk(self, eng, tmp_path):
         (tmp_path / "risk.py").write_text('password = "secret123"\neval("1+1")\n')
         result = eng.handle(f"security {tmp_path}")
-        assert "风险" in result
+        assert "风险" in as_text(result)
 
     def test_complexity(self, eng, tmp_path):
         code = "def f():\n    if True:\n        if True:\n            if True:\n                pass\n"
@@ -292,34 +315,34 @@ class TestTaskManager:
 
     def test_add(self, tm):
         result = tm.handle("add 测试任务")
-        assert "已添加" in result
+        assert "已添加" in as_text(result)
 
     def test_list_empty(self, tm):
         result = tm.handle("list")
-        assert "没有任务" in result
+        assert "没有任务" in as_text(result)
 
     def test_add_and_list(self, tm):
         tm.handle("add 任务A")
         tm.handle("add 任务B")
         result = tm.handle("list")
-        assert "任务A" in result
-        assert "任务B" in result
+        assert "任务A" in as_text(result)
+        assert "任务B" in as_text(result)
 
     def test_complete(self, tm):
         tm.handle("add 任务X")
         result = tm.handle("complete 1")
-        assert "已更新" in result
+        assert "已更新" in as_text(result)
 
     def test_delete(self, tm):
         tm.handle("add 任务Y")
         result = tm.handle("delete 1")
-        assert "已删除" in result
+        assert "已删除" in as_text(result)
 
     def test_clear(self, tm):
         tm.handle("add A")
         tm.handle("complete 1")
         result = tm.handle("clear")
-        assert "已清除" in result
+        assert "已清除" in as_text(result)
 
 
 # ══════════════════════════════════════
@@ -332,19 +355,19 @@ class TestBrowserAuto:
     @pytest.fixture
     def browser(self):
         mod = load_module("browser_auto", os.path.join(PLUGINS_DIR, "browser_auto.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_status_stopped(self, browser):
         result = browser.handle("status")
-        assert "未运行" in result
+        assert "未运行" in as_text(result)
 
     def test_invalid_operation(self, browser):
         result = browser.handle("nonexistent")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_empty_args(self, browser):
         result = browser.handle("")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_tool_info(self, browser):
         info = browser.get_tool_info()
@@ -363,7 +386,7 @@ class TestGuiAuto:
     @pytest.fixture
     def gui(self):
         mod = load_module("gui_auto", os.path.join(PLUGINS_DIR, "gui_auto.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_tool_info(self, gui):
         info = gui.get_tool_info()
@@ -380,88 +403,88 @@ class TestGuiAuto:
     def test_convert_mcp_args(self, gui):
         args = {"operation": "click", "target": "确定"}
         result = gui.convert_mcp_args(args)
-        assert "click" in result
-        assert "确定" in result
+        assert "click" in as_text(result)
+        assert "确定" in as_text(result)
 
     def test_convert_mcp_args_xy(self, gui):
         args = {"operation": "click", "x": 100, "y": 200}
         result = gui.convert_mcp_args(args)
-        assert "--xy" in result
-        assert "100" in result
+        assert "--xy" in as_text(result)
+        assert "100" in as_text(result)
 
     def test_convert_mcp_args_snapshot(self, gui):
         args = {"operation": "snapshot", "depth": 3}
         result = gui.convert_mcp_args(args)
-        assert "snapshot" in result
-        assert "3" in result
+        assert "snapshot" in as_text(result)
+        assert "3" in as_text(result)
 
     def test_empty_args(self, gui):
         result = gui.handle("")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_invalid_operation(self, gui):
         result = gui.handle("nonexistent_op")
-        assert "不支持" in result
+        assert "不支持" in as_text(result)
 
     def test_click_no_args(self, gui):
         result = gui.handle("click")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_type_no_args(self, gui):
         result = gui.handle("type")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_type_missing_text(self, gui):
         result = gui.handle("type 按钮")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_find_no_args(self, gui):
         result = gui.handle("find")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_findall_no_args(self, gui):
         result = gui.handle("findall")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_info_no_args(self, gui):
         result = gui.handle("info")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_value_no_args(self, gui):
         result = gui.handle("value")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_tree_no_args(self, gui):
         result = gui.handle("tree")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_wait_no_args(self, gui):
         result = gui.handle("wait")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_exists_no_args(self, gui):
         result = gui.handle("exists")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_highlight_no_args(self, gui):
         result = gui.handle("highlight")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_state_no_args(self, gui):
         result = gui.handle("state")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_keys_no_args(self, gui):
         result = gui.handle("keys")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_focus_no_args(self, gui):
         result = gui.handle("focus")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_click_xy_format_error(self, gui):
         result = gui.handle("click --xy abc")
-        assert "错误" in result
+        assert is_error(result)
 
     def test_format_element_info(self, gui):
         el = {
@@ -472,9 +495,9 @@ class TestGuiAuto:
             "enabled": True, "focused": False
         }
         result = gui._format_element_info(el)
-        assert "测试按钮" in result
-        assert "Button" in result
-        assert "btn_ok" in result
+        assert "测试按钮" in as_text(result)
+        assert "Button" in as_text(result)
+        assert "btn_ok" in as_text(result)
 
     def test_format_element_info_detailed(self, gui):
         el = {
@@ -485,8 +508,8 @@ class TestGuiAuto:
                        "right": 200, "bottom": 25}
         }
         result = gui._format_element_info(el, detailed=True)
-        assert "输入框" in result
-        assert "hello" in result
+        assert "输入框" in as_text(result)
+        assert "hello" in as_text(result)
 
     def test_all_operations_route(self, gui):
         """所有操作都能正确路由"""
@@ -504,28 +527,28 @@ class TestSubAgent:
     @pytest.fixture
     def sa(self):
         mod = load_module("sub_agent", os.path.join(PLUGINS_DIR, "sub_agent.py"))
-        return mod.Plugin()
+        return plugin_class(mod)()
 
     def test_list_empty(self, sa):
         result = sa.handle("list")
-        assert "没有" in result
+        assert "没有" in as_text(result)
 
     def test_stats_empty(self, sa):
         result = sa.handle("stats")
-        assert "总数: 0" in result
+        assert "总数: 0" in as_text(result)
 
     def test_spawn(self, sa):
         result = sa.handle("spawn tester 测试任务")
-        assert "已创建" in result
-        assert "agent_tester" in result
+        assert "已创建" in as_text(result)
+        assert "agent_tester" in as_text(result)
 
     def test_spawn_and_list(self, sa):
         sa.handle("spawn a 任务A")
         sa.handle("spawn b 任务B")
         import time; time.sleep(0.1)
         result = sa.handle("list")
-        assert "agent_a" in result
-        assert "agent_b" in result
+        assert "agent_a" in as_text(result)
+        assert "agent_b" in as_text(result)
 
     def test_status(self, sa):
         sa.handle("spawn x 某任务")
@@ -533,24 +556,24 @@ class TestSubAgent:
         # 获取 agent ID
         agent_id = list(sa.agents.keys())[0]
         result = sa.handle(f"status {agent_id}")
-        assert "名称" in result
+        assert "名称" in as_text(result)
 
     def test_kill(self, sa):
         sa.handle("spawn y 要终止的任务")
         import time; time.sleep(0.1)
         agent_id = list(sa.agents.keys())[0]
         result = sa.handle(f"kill {agent_id}")
-        assert "已终止" in result
+        assert "已终止" in as_text(result)
 
     def test_clean(self, sa):
         sa.handle("spawn z 清理测试")
         import time; time.sleep(0.1)
         result = sa.handle("clean")
-        assert "已清理" in result
+        assert "已清理" in as_text(result)
 
     def test_invalid_agent(self, sa):
         result = sa.handle("status nonexistent")
-        assert "未找到" in result
+        assert "未找到" in as_text(result)
 
 
 # ══════════════════════════════════════

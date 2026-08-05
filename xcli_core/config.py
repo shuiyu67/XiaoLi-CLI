@@ -76,13 +76,29 @@ def set_system_config(key, value):
     save_config(config)
 
 
-# 配置日志
+# 配置日志：文件留全量 INFO，控制台默认只报 WARNING 以上（--verbose 时放开到 INFO）
+try:
+    from .verbose import is_verbose as _is_verbose
+except ImportError:  # 被当作顶层模块单独导入时
+    try:
+        from verbose import is_verbose as _is_verbose
+    except ImportError:
+        def _is_verbose():
+            return False
+
+_file_handler = logging.FileHandler('xiaoli_cli.log', encoding='utf-8')
+_file_handler.setLevel(logging.INFO)
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO if _is_verbose() else logging.WARNING)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('xiaoli_cli.log', encoding='utf-8'),
-        logging.StreamHandler()  # 同时输出到控制台
-    ]
+    handlers=[_file_handler, _console_handler]
 )
+
+# 第三方库的心跳日志（httpx 每发一次请求就打一行）不上屏也不进日志文件
+for _noisy in ('httpx', 'httpcore', 'urllib3', 'requests', 'openai', 'PIL', 'markdown_it'):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
