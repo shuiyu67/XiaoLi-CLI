@@ -12,6 +12,11 @@ from colorama import Fore, Style
 from xcli_core.tool_result import ToolResult, ErrorCode
 from xcli_core.verbose import vprint
 
+try:
+    from mcp_client import McpClientManager
+except Exception:
+    McpClientManager = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,6 +53,9 @@ class UnifiedToolManager:
         # MCP 工具定义缓存
         self._mcp_tools_cache: Optional[List[Dict]] = None
 
+        # 外部 MCP client 管理器（懒加载）
+        self._mcp_client_manager = None
+
     def initialize(self, plugins_dir: str = "plugins", skills_dir: str = "skills") -> None:
         """初始化并加载所有工具"""
         self._plugins_dir = plugins_dir
@@ -55,6 +63,7 @@ class UnifiedToolManager:
         self._load_plugins(plugins_dir)
         self._load_skills(skills_dir)
         self._build_mcp_cache()
+        self._load_mcp_servers()
 
         n_liugin = sum(1 for p in self._protocol_map.values() if p == 'liugin')
         n_skill = sum(1 for p in self._protocol_map.values() if p == 'skill')
@@ -301,6 +310,93 @@ class UnifiedToolManager:
                 "required": ["args"]
             }
         }
+
+    # ==================== 外部 MCP 客户端桥接 ====================
+
+    def _load_mcp_servers(self) -> None:
+        """连接 config.json 中声明的外部 MCP server，将其工具桥接进统一注册表。
+
+        外部工具以 ``{server}__{tool}`` 命名注册，schema（inputSchema）保真，
+        模型可像调用本地工具一样调用外部 MCP 工具。
+        """
+        if McpClientManager is None:
+            return
+        try:
+            from config import load_config
+        except ImportError:
+            try:
+                from xcli_core.config import load_config
+            except ImportError:
+                return
+
+        try:
+            cfg = load_config()
+            servers = cfg.get("mcpServers") or {}
+        except Exception:
+            return
+
+        if not servers:
+            return
+
+        if self._mcp_client_manager is None:
+            self._mcp_client_manager = McpClientManager()
+
+        # unified_tool_manager.py 位于项目根，故 dirname(__file__) 即项目根
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+
+        try:
+            self._mcp_client_manager.connect_all(servers, cwd=project_dir)
+        except Exception as e:
+            print(f"{Fore.YELLOW}加载外部 MCP server 失败: {e}{Style.RESET_ALL}")
+            return
+
+        added = 0
+        for server_name, tool_def in self._mcp_client_manager.get_all_tools():
+            remote_name = tool_def.get("name")
+            if not remote_name:
+                continue
+            local_name = f"{server_name}__{remote_name}"
+            mcp_def = {
+                "name": local_name,
+                "description": tool_def.get("description", ""),
+                "inputSchema": tool_def.get("inputSchema", {"type": "object", "properties": {}}),
+            }
+            handler = self._make_external_handler(server_name, remote_name)
+            # instance 存 manager，shutdown 时统一 cleanup（McpClientManager.cleanup 幂等）
+            self.register_tool(
+                local_name, handler,
+                description=mcp_def["description"],
+                protocol="mcp",
+                mcp_definition=mcp_def,
+                instance=self._mcp_client_manager,
+            )
+            added += 1
+
+        if added:
+            n_servers = len(self._mcp_client_manager.get_servers())
+            print(f"{Fore.GREEN}已桥接 {added} 个外部 MCP 工具{Style.RESET_ALL}"
+                  f"{Fore.BLACK}{Style.BRIGHT} (来自 {n_servers} 个 server){Style.RESET_ALL}")
+
+    def _make_external_handler(self, server_name: str, remote_name: str):
+        """为某个外部 MCP 工具生成 handler：解析参数 → call_tool → ToolResult"""
+        def handler(args):
+            try:
+                if isinstance(args, dict):
+                    arguments = args
+                elif isinstance(args, str) and args.strip().startswith("{"):
+                    arguments = json.loads(args)
+                else:
+                    arguments = {"args": args}
+            except (json.JSONDecodeError, TypeError):
+                arguments = {"args": args}
+
+            try:
+                result_text = self._mcp_client_manager.call_tool(server_name, remote_name, arguments)
+                return ToolResult.ok(result_text, tool_name=f"{server_name}__{remote_name}")
+            except Exception as e:
+                return ToolResult.fail(str(e), ErrorCode.EXEC_FAILED,
+                                       tool_name=f"{server_name}__{remote_name}")
+        return handler
 
     # ==================== 公共 API ====================
 

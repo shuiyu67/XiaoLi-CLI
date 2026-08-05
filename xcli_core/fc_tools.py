@@ -21,8 +21,17 @@ def mcp_to_openai_tools(plugin_manager) -> List[Dict]:
     if not plugin_manager:
         return tools
 
-    # 统一工具管理器
-    if hasattr(plugin_manager, 'plugins'):
+    # 优先使用统一工具管理器的 MCP 定义（含外部 MCP client 桥接的工具，schema 保真）
+    if hasattr(plugin_manager, 'get_mcp_tools'):
+        try:
+            for mcp_def in plugin_manager.get_mcp_tools():
+                fc_def = mcp_to_fc(mcp_def)
+                if fc_def:
+                    tools.append(fc_def)
+        except Exception:
+            pass
+    # 统一工具管理器（兜底，旧实现未暴露 get_mcp_tools 时）
+    elif hasattr(plugin_manager, 'plugins'):
         for plugin in plugin_manager.plugins:
             fc_def = _extract_fc_def(plugin)
             if fc_def:
