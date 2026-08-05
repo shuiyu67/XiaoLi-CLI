@@ -35,6 +35,25 @@ class _MockMgr:
     ]
 
 
+class _MockSession:
+    def __init__(self, title, updated_at, sid):
+        self.title = title
+        self.updated_at = updated_at
+        self.id = sid
+
+
+class _MockSessionManager:
+    """模拟 SessionManager.list_sessions，返回几个示例会话。"""
+    def list_sessions(self):
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        return [
+            _MockSession("修复内存泄漏", (now - timedelta(minutes=5)).isoformat(), "s1"),
+            _MockSession("重构 CLI 入口", (now - timedelta(hours=2)).isoformat(), "s2"),
+            _MockSession("接入 MCP 客户端", (now - timedelta(days=1)).isoformat(), "s3"),
+        ]
+
+
 class _MockCLI:
     def __init__(self):
         self.engines = {"openai": _MockEngine()}
@@ -43,6 +62,10 @@ class _MockCLI:
         self.shared_conversation_history = []
         self.liugin_commands = {}
         self.tui_output_callback = None
+        # TUI 深度：会话列表 / Plan 状态依赖
+        self.session_manager = _MockSessionManager()
+        self.plan_mode = False
+        self.current_plan = ""
 
     def get_current_engine_name(self):
         return "openai"
@@ -67,6 +90,18 @@ class _MockCLI:
 def _txt(w):
     """提取 widget 文本（textual 8: Static.content）"""
     return str(getattr(w, "content", "") or getattr(w, "renderable", "") or "")
+
+
+async def _svg_to_png(svg_path, png_path, width=1280, height=720):
+    """用 Playwright Chromium 把 textual 导出的 SVG 渲染成 PNG（AI 肉眼核对用）。"""
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page(viewport={"width": width, "height": height})
+        await page.goto("file://" + os.path.abspath(svg_path))
+        await page.wait_for_timeout(400)
+        await page.screenshot(path=png_path, full_page=True)
+        await browser.close()
 
 
 async def run():
@@ -107,6 +142,35 @@ async def run():
         for k, ok in checks.items():
             print(f"[{'PASS' if ok else 'FAIL'}] {k}")
 
+        # 3.5) 侧栏文件树 + 会话列表（TUI 深度）
+        file_tree = app.query_one("#file-tree")
+        session_list = app.query_one("#session-list")
+        checks["文件树渲染"] = len(file_tree.children) > 1
+        checks["会话列表渲染"] = len(session_list.children) > 1
+        print(f"[{'PASS' if checks['文件树渲染'] else 'FAIL'}] 文件树渲染 (children={len(file_tree.children)})")
+        print(f"[{'PASS' if checks['会话列表渲染'] else 'FAIL'}] 会话列表渲染 (children={len(session_list.children)})")
+
+        # 3.6) 进入 PLAN 模式，断言状态栏 + 侧栏同步
+        ta.text = "/plan 重构核心模块"
+        app.action_send_message()
+        for _ in range(80):
+            await pilot.pause(0.05)
+            if not app.is_generating:
+                break
+        await pilot.pause(0.2)
+        status_txt_plan = _txt(app.query_one("#status-bar"))
+        sidebar_widget = app.query_one("#status-info")
+        sidebar_txt_plan = "\n".join(_txt(w) for w in sidebar_widget.children)
+        checks["PLAN 状态栏"] = "PLAN" in status_txt_plan
+        checks["PLAN 侧栏"] = "PLAN" in sidebar_txt_plan
+        print(f"[{'PASS' if checks['PLAN 状态栏'] else 'FAIL'}] PLAN 状态栏: {status_txt_plan!r}")
+        print(f"[{'PASS' if checks['PLAN 侧栏'] else 'FAIL'}] PLAN 侧栏: {sidebar_txt_plan!r}")
+
+        # 3.7) 导出侧栏完整文本（文件树 / 会话列表 / 状态）供核对
+        sidebar_full = "\n".join(_txt(w) for w in app.query_one("#sidebar").walk_children())
+        with open(os.path.join(OUT_DIR, "real_demo_sidebar.txt"), "w", encoding="utf-8") as f:
+            f.write(sidebar_full)
+
         # 4) 导出 SVG 截图（AI/人都能看）
         os.makedirs(OUT_DIR, exist_ok=True)
         svg_path = os.path.join(OUT_DIR, "real_demo.svg")
@@ -114,6 +178,14 @@ async def run():
         with open(svg_path, "w", encoding="utf-8") as f:
             f.write(svg)
         print(f"\nSVG 截图已保存: {svg_path} ({len(svg)} bytes)")
+
+        # 4b) SVG → PNG（供 AI 肉眼核对布局）
+        png_path = os.path.join(OUT_DIR, "real_demo.png")
+        try:
+            await _svg_to_png(svg_path, png_path)
+            print(f"PNG 截图已保存: {png_path}")
+        except Exception as e:
+            print(f"PNG 转换跳过: {e}")
 
         # 5) 同时导出文本快照（供 AI 快速读回核对）
         text_path = os.path.join(OUT_DIR, "real_demo.txt")

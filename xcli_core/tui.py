@@ -11,6 +11,7 @@ if TEXTUAL_AVAILABLE:
     from textual.reactive import var
     from textual.binding import Binding
     from textual import on
+    import os
     from rich.syntax import Syntax
     from rich.panel import Panel
     from rich.box import ROUNDED
@@ -197,6 +198,28 @@ if TEXTUAL_AVAILABLE:
         transition: color 300ms in_out_cubic;
     }}
 
+    /* ── 文件树 / 会话列表 ── */
+    .file-tree-item {{
+        padding: 0 0 0 1;
+        color: {_Theme.TEXT_MUTED};
+    }}
+    .file-tree-dir {{
+        color: {_Theme.ACCENT};
+        text-style: bold;
+    }}
+    .session-item {{
+        padding: 0 0 0 1;
+        color: {_Theme.TEXT_MUTED};
+    }}
+    .session-item-active {{
+        color: {_Theme.SUCCESS};
+        text-style: bold;
+    }}
+    .plan-badge {{
+        color: {_Theme.WARNING};
+        text-style: bold;
+    }}
+
     /* ── 消息样式 ── */
     .msg-user {{
         color: {_Theme.USER};
@@ -316,6 +339,24 @@ if TEXTUAL_AVAILABLE:
                 self.cli.switch_engine(name)
                 return True
             return False
+
+        def sessions(self) -> list:
+            mgr = getattr(self.cli, 'session_manager', None)
+            if mgr and hasattr(mgr, 'list_sessions'):
+                try:
+                    return mgr.list_sessions()
+                except Exception:
+                    return []
+            return []
+
+        def plan_mode(self) -> bool:
+            return bool(getattr(self.cli, 'plan_mode', False))
+
+        def current_plan(self) -> str:
+            return getattr(self.cli, 'current_plan', '') or ""
+
+        def cwd(self) -> str:
+            return os.getcwd()
 
 
     # ═══════════════════════════════════════════════════
@@ -445,11 +486,13 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+enter", "send_message", "发送", show=False),
             Binding("shift+enter", "newline", "换行", show=False),
             Binding("f1", "toggle_sidebar", "侧栏", show=True),
+            Binding("ctrl+p", "toggle_plan", "PLAN", show=True),
             Binding("escape", "cancel", "取消", show=False),
         ]
 
         sidebar_visible = var(True)
         is_generating = var(False)
+        plan_mode = var(False)
 
         def __init__(self, cli):
             super().__init__()
@@ -475,9 +518,15 @@ if TEXTUAL_AVAILABLE:
                             "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏",
                             id="input-hint"
                         )
-                with Vertical(id="sidebar"):
+                with VerticalScroll(id="sidebar"):
                     yield Static("  引擎", classes="sidebar-header")
                     yield Vertical(id="engine-list", classes="sidebar-section")
+                    yield Rule(line_style="heavy")
+                    yield Static("  文件", classes="sidebar-header")
+                    yield Vertical(id="file-tree", classes="sidebar-section")
+                    yield Rule(line_style="heavy")
+                    yield Static("  会话", classes="sidebar-header")
+                    yield Vertical(id="session-list", classes="sidebar-section")
                     yield Rule(line_style="heavy")
                     yield Static(" 工具", classes="sidebar-header")
                     yield Vertical(id="tool-list", classes="sidebar-section")
@@ -489,9 +538,15 @@ if TEXTUAL_AVAILABLE:
         def on_mount(self):
             self._render_welcome_animated()
             self._update_sidebar()
+            self._sync_plan()
             self.query_one("#user-input").focus()
             # 延迟显示输入提示（淡入效果）
-            self.set_timer(1.5, lambda: self.query_one("#input-hint").add_class("visible"))
+            def _show_hint():
+                try:
+                    self.query_one("#input-hint").add_class("visible")
+                except Exception:
+                    pass
+            self.set_timer(1.5, _show_hint)
 
         # ── 动画欢迎界面 ──
 
@@ -573,6 +628,9 @@ if TEXTUAL_AVAILABLE:
                 else:
                     engine_container.mount(Static(f"    {name}", classes="engine-item"))
 
+            self._update_file_tree()
+            self._update_session_list()
+
             tool_container = self.query_one("#tool-list")
             tool_container.remove_children()
             for tool in self.bridge.tools():
@@ -585,14 +643,89 @@ if TEXTUAL_AVAILABLE:
             status_container.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
             status_container.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
 
+            # Plan 模式指示
+            if self.bridge.plan_mode():
+                status_container.mount(Static("  模式: 📋 PLAN", classes="plan-badge"))
+            else:
+                status_container.mount(Static("  模式: 普通", classes="tool-item"))
+
             # 工具数
             if hasattr(self.cli, 'liugin_manager'):
                 status_container.mount(Static(f"  工具: {len(self.cli.liugin_manager.tools)} 个", classes="tool-item"))
 
+        # ── 文件树 ──
+
+        @staticmethod
+        def _build_file_tree(root, max_depth=2, max_items=40):
+            """生成 (name, is_dir) 列表，用于侧栏文件树展示。"""
+            items = []
+            try:
+                entries = sorted(os.listdir(root))
+            except OSError:
+                return items
+            dirs = [e for e in entries if os.path.isdir(os.path.join(root, e))]
+            files = [e for e in entries if os.path.isfile(os.path.join(root, e))]
+            skip = {'.git', '__pycache__', '.tui_snapshots', '.pytest_cache',
+                    'node_modules', '.workbuddy', 'chat_history', 'memory',
+                    '.idea', '.vscode', '.venv', 'venv'}
+            shown = 0
+            for name in dirs + files:
+                if name in skip or name.startswith('.'):
+                    continue
+                if shown >= max_items:
+                    items.append(("…", False))
+                    break
+                is_dir = os.path.isdir(os.path.join(root, name))
+                items.append((name, is_dir))
+                shown += 1
+            return items
+
+        def _update_file_tree(self):
+            container = self.query_one("#file-tree")
+            container.remove_children()
+            root = self.bridge.cwd()
+            container.mount(Static(f"  📂 {os.path.basename(root)}", classes="file-tree-dir"))
+            for name, is_dir in self._build_file_tree(root):
+                icon = "📁" if is_dir else "📄"
+                container.mount(Static(f"  {icon} {name}", classes="file-tree-item"))
+
+        # ── 会话列表 ──
+
+        @staticmethod
+        def _format_rel_time(ts: str) -> str:
+            if not ts:
+                return ""
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                diff = (datetime.now() - dt).total_seconds()
+                if diff < 60:
+                    return "刚刚"
+                if diff < 3600:
+                    return f"{int(diff // 60)}分钟前"
+                if diff < 86400:
+                    return f"{int(diff // 3600)}小时前"
+                return f"{int(diff // 86400)}天前"
+            except Exception:
+                return ""
+
+        def _update_session_list(self):
+            container = self.query_one("#session-list")
+            container.remove_children()
+            sessions = self.bridge.sessions()[:8]
+            if not sessions:
+                container.mount(Static("  (无历史会话)", classes="session-item"))
+                return
+            for i, s in enumerate(sessions, 1):
+                title = (s.title or s.id)[:22]
+                t = self._format_rel_time(s.updated_at)
+                container.mount(Static(f"  {i}. {title}  {t}", classes="session-item"))
+
         def _update_status(self, text: str):
             bar = self.query_one("#status-bar")
             engine = self.bridge.current_engine()
-            bar.update(f" {text} | {engine} | {len(self.bridge.history())} 条对话{self._token_str()}")
+            prefix = "📋 PLAN | " if self.plan_mode else ""
+            bar.update(f" {prefix}{text} | {engine} | {len(self.bridge.history())} 条对话{self._token_str()}")
 
         def _token_str(self):
             """token 用量进度（v8.0 token 感知压缩联动，引擎支持时显示）"""
@@ -775,6 +908,11 @@ if TEXTUAL_AVAILABLE:
                 'engines': lambda: self._show_engines(),
                 'tui': lambda: self._system("已在 TUI 模式中"),
                 'manual': lambda: self._handle_manual(args),
+                'plan': lambda: self._tui_plan(args),
+                'build': lambda: self._tui_build(),
+                'sessions': lambda: self._tui_sessions(),
+                'session': lambda: self._tui_session(args),
+                'resume': lambda: self._tui_resume(args),
                 'snapshot': lambda: self._save_screenshot(),
                 'screenshot': lambda: self._save_screenshot(),
             }
@@ -782,16 +920,17 @@ if TEXTUAL_AVAILABLE:
             handler = cmds.get(name)
             if handler:
                 handler()
-            else:
-                if name in self.cli.liugin_commands:
-                    try:
-                        result = self.cli.liugin_commands[name](args)
-                        if result:
-                            self._system(result[:500])
-                    except Exception as e:
-                        self._error(f"插件命令失败: {e}")
-                else:
-                    self._error(f"未知命令: /{name}，输入 /help 查看帮助")
+                return
+            if name in self.cli.liugin_commands:
+                try:
+                    result = self.cli.liugin_commands[name](args)
+                    if result:
+                        self._system(result[:500])
+                except Exception as e:
+                    self._error(f"插件命令失败: {e}")
+                return
+            # 未知命令转发给 cli 完整路由（/agent /providers /chat 等）
+            self._forward_to_cli(cmd)
 
         def _show_help(self):
             help_text = """   命令:
@@ -873,6 +1012,84 @@ if TEXTUAL_AVAILABLE:
 
             self._system('\n'.join(status_lines))
 
+        # ── Plan 模式 / 会话 委派 ──
+
+        def _tui_plan(self, args):
+            args = (args or "").strip()
+            if args in ('off', 'exit', '退出', 'cancel'):
+                self._set_plan_mode(False)
+                self._system("已退出 PLAN 模式（计划未执行）")
+                return
+            self._set_plan_mode(True)
+            if args:
+                self._system(f"📋 已进入 PLAN 模式，正在只读调研: {args}")
+                self._user_msg(f"/plan {args}")
+                self._show_thinking()
+                self.is_generating = True
+                self._update_status("思考中 (PLAN)...")
+                self.run_worker(self._generate(args), exclusive=True)
+            else:
+                self._system("📋 已进入 PLAN 模式。描述任务，AI 将只做只读调研并给出实施计划；/build 批准执行，/plan off 取消。")
+
+        def _tui_build(self):
+            if not self.bridge.plan_mode() and not self.bridge.current_plan().strip():
+                self._system("当前不在 PLAN 模式，且无已生成的计划")
+                return
+            self._set_plan_mode(False)
+            self._system("✅ 已批准 PLAN，开始执行。")
+
+        def _tui_sessions(self):
+            sessions = self.bridge.sessions()
+            if not sessions:
+                self._system("  无历史会话")
+                return
+            lines = ["  历史会话:"]
+            for i, s in enumerate(sessions[:10], 1):
+                title = (s.title or s.id)[:30]
+                t = self._format_rel_time(s.updated_at)
+                lines.append(f"  {i}. {title}  ({t})")
+            self._system('\n'.join(lines))
+
+        def _tui_session(self, args):
+            args = (args or "").strip()
+            if not args:
+                self._tui_sessions()
+                return
+            if args == 'new':
+                self.action_new_chat()
+                return
+            self._forward_to_cli(f"/resume {args}")
+
+        def _tui_resume(self, args):
+            self._forward_to_cli(f"/resume {args}")
+
+        def _forward_to_cli(self, cmd: str):
+            """把未知/委派命令交给 cli 完整路由处理。"""
+            try:
+                self.cli.process_conversation(cmd)
+            except Exception as e:
+                self._error(f"命令执行失败: {e}")
+            self.call_after_refresh(self._update_sidebar)
+            self.call_after_refresh(self._sync_plan)
+
+        def _set_plan_mode(self, on: bool):
+            self.plan_mode = on
+            try:
+                self.cli.plan_mode = on
+                if not on:
+                    self.cli.current_plan = ""
+            except Exception:
+                pass
+            self._update_sidebar()
+            self._update_status("📋 PLAN" if on else "就绪")
+
+        def _sync_plan(self):
+            """从 cli 同步 plan 状态到 TUI 反应变量。"""
+            remote = self.bridge.plan_mode()
+            if remote != self.plan_mode:
+                self.plan_mode = remote
+                self._update_sidebar()
+
         # ── AI 生成 ──
 
         async def _generate(self, user_input):
@@ -902,6 +1119,7 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(self._remove_thinking)
                 self.call_after_refresh(self._remove_typing_indicator)
                 self.is_generating = False
+                self.call_after_refresh(self._sync_plan)
                 self.call_after_refresh(lambda: self._update_status("就绪"))
                 self.call_after_refresh(self._update_sidebar)
 
@@ -938,6 +1156,10 @@ if TEXTUAL_AVAILABLE:
             else:
                 sidebar.add_class("hidden")
                 self.sidebar_visible = False
+
+        def action_toggle_plan(self):
+            self._set_plan_mode(not self.plan_mode)
+            self._system("📋 PLAN 模式: " + ("开" if self.plan_mode else "关"))
 
         def action_cancel(self):
             if self.is_generating:
