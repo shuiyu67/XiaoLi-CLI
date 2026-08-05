@@ -268,6 +268,16 @@ multi 操作支持一次修改多处：
         if getattr(self, 'plan_mode', False):
             prompt += PLAN_MODE_SYSTEM_APPEND
 
+        # ── LSP 诊断自动注入：让模型持续看到真实语言诊断 ──
+        liugin_manager = getattr(self, 'liugin_manager', None)
+        if liugin_manager and hasattr(liugin_manager, 'get_lsp_context'):
+            try:
+                lsp_ctx = liugin_manager.get_lsp_context()
+                if lsp_ctx:
+                    prompt += "\n\n# 当前代码诊断（来自 LSP 语言服务器）\n" + lsp_ctx
+            except Exception:
+                pass
+
         return prompt
 
     # ── JSON 解析 ──

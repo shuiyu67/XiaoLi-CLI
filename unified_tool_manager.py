@@ -17,6 +17,11 @@ try:
 except Exception:
     McpClientManager = None
 
+try:
+    from lsp_client import LspManager
+except Exception:
+    LspManager = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,6 +61,9 @@ class UnifiedToolManager:
         # 外部 MCP client 管理器（懒加载）
         self._mcp_client_manager = None
 
+        # 外部 LSP client 管理器（懒加载）
+        self._lsp_manager = None
+
     def initialize(self, plugins_dir: str = "plugins", skills_dir: str = "skills") -> None:
         """初始化并加载所有工具"""
         self._plugins_dir = plugins_dir
@@ -64,6 +72,7 @@ class UnifiedToolManager:
         self._load_skills(skills_dir)
         self._build_mcp_cache()
         self._load_mcp_servers()
+        self._load_lsp_servers()
 
         n_liugin = sum(1 for p in self._protocol_map.values() if p == 'liugin')
         n_skill = sum(1 for p in self._protocol_map.values() if p == 'skill')
@@ -397,6 +406,149 @@ class UnifiedToolManager:
                 return ToolResult.fail(str(e), ErrorCode.EXEC_FAILED,
                                        tool_name=f"{server_name}__{remote_name}")
         return handler
+
+    # ==================== LSP 协议支持 ====================
+    def _load_lsp_servers(self) -> None:
+        """加载外部语言服务器（LSP），把真实诊断/智能感知桥接为统一工具。
+
+        配置：config.json 顶层 lspServers = {语言或扩展名: {command, args, env, disabled}}
+        单个 server 失败不影响其他 server 与主程序。
+        """
+        if LspManager is None:
+            return
+        try:
+            from config import load_config
+        except ImportError:
+            try:
+                from xcli_core.config import load_config
+            except ImportError:
+                return
+
+        try:
+            cfg = load_config()
+            servers = cfg.get("lspServers") or {}
+        except Exception:
+            return
+        if not servers or not isinstance(servers, dict):
+            return
+
+        # unified_tool_manager.py 位于项目根，故 dirname(__file__) 即项目根
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        norm = project_dir.replace("\\", "/")
+        if norm.startswith("/"):
+            norm = norm.lstrip("/")
+        root_uri = "file:///" + norm
+
+        try:
+            manager = LspManager()
+            manager.connect_all(servers, cwd=project_dir, root_uri=root_uri)
+        except Exception as e:
+            print(f"{Fore.YELLOW}加载外部 LSP server 失败: {e}{Style.RESET_ALL}")
+            return
+
+        if not manager.get_servers():
+            # 没有成功连接的 server（多半是没装），不注册工具
+            return
+
+        self._lsp_manager = manager
+
+        # 注册 5 个统一的 LSP 工具（模型可按需调用；由 manager 按扩展名路由）
+        lsp_tools = [
+            ("lsp__diagnostics", "获取文件的真实语言诊断（错误/警告/提示），来自配置的语言服务器",
+             {"file": {"type": "string", "description": "文件路径"}},
+             "diagnostics"),
+            ("lsp__hover", "获取指定位置的符号悬停信息（类型/文档）",
+             {"file": {"type": "string", "description": "文件路径"},
+              "line": {"type": "integer", "description": "行号（0 基）"},
+              "character": {"type": "integer", "description": "列号（0 基）"}},
+             "hover"),
+            ("lsp__definition", "跳转到符号的定义位置",
+             {"file": {"type": "string", "description": "文件路径"},
+              "line": {"type": "integer", "description": "行号（0 基）"},
+              "character": {"type": "integer", "description": "列号（0 基）"}},
+             "definition"),
+            ("lsp__references", "查找符号的所有引用位置",
+             {"file": {"type": "string", "description": "文件路径"},
+              "line": {"type": "integer", "description": "行号（0 基）"},
+              "character": {"type": "integer", "description": "列号（0 基）"}},
+             "references"),
+            ("lsp__completion", "获取指定位置的代码补全项",
+             {"file": {"type": "string", "description": "文件路径"},
+              "line": {"type": "integer", "description": "行号（0 基）"},
+              "character": {"type": "integer", "description": "列号（0 基）"}},
+             "completion"),
+        ]
+        for tool_name, desc, props, method in lsp_tools:
+            mcp_def = {
+                "name": tool_name,
+                "description": desc,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": props,
+                    "required": list(props.keys()),
+                },
+            }
+            handler = self._make_lsp_handler(method)
+            self.register_tool(
+                tool_name, handler,
+                description=desc,
+                protocol="lsp",
+                mcp_definition=mcp_def,
+                instance=self._lsp_manager,
+            )
+
+        n_servers = len(manager.get_servers())
+        print(f"{Fore.GREEN}已桥接 LSP 智能感知{Style.RESET_ALL}"
+              f"{Fore.BLACK}{Style.BRIGHT} (来自 {n_servers} 个语言服务器){Style.RESET_ALL}")
+
+    def _make_lsp_handler(self, method: str):
+        """为某个 LSP 能力生成 handler：解析参数 → 调用 manager → ToolResult"""
+        def handler(args):
+            try:
+                if isinstance(args, dict):
+                    params = args
+                elif isinstance(args, str) and args.strip().startswith("{"):
+                    params = json.loads(args)
+                else:
+                    params = {"args": args}
+            except (json.JSONDecodeError, TypeError):
+                params = {"args": args}
+
+            file_path = params.get("file") or params.get("path") or ""
+            line = int(params.get("line", 0) or 0)
+            character = int(params.get("character", 0) or 0)
+            if not file_path:
+                return ToolResult.fail("缺少 file 参数", ErrorCode.INVALID_PARAM,
+                                       tool_name=f"lsp__{method}")
+
+            try:
+                if method == "diagnostics":
+                    result_text = self._lsp_manager.diagnostics(file_path)
+                elif method == "hover":
+                    result_text = self._lsp_manager.hover(file_path, line, character)
+                elif method == "definition":
+                    result_text = self._lsp_manager.definition(file_path, line, character)
+                elif method == "references":
+                    result_text = self._lsp_manager.references(file_path, line, character)
+                elif method == "completion":
+                    result_text = self._lsp_manager.completion(file_path, line, character)
+                else:
+                    return ToolResult.fail(f"未知 LSP 方法: {method}", ErrorCode.NOT_IMPLEMENTED,
+                                           tool_name=f"lsp__{method}")
+                return ToolResult.ok(result_text, tool_name=f"lsp__{method}")
+            except Exception as e:
+                return ToolResult.fail(str(e), ErrorCode.EXEC_FAILED,
+                                       tool_name=f"lsp__{method}")
+        return handler
+
+    def get_lsp_context(self) -> str:
+        """返回 LSP 诊断汇总（供系统提示自动注入模型上下文）"""
+        if self._lsp_manager is None:
+            return ""
+        try:
+            return self._lsp_manager.get_context()
+        except Exception:
+            return ""
 
     # ==================== 公共 API ====================
 
