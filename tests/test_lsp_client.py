@@ -290,3 +290,86 @@ def test_fc_tools_includes_lsp(tmp_path, monkeypatch, fake_server):
         assert "file" in diag["function"]["parameters"]["properties"]
     finally:
         mgr.shutdown()
+
+
+# ── code_editor / file_manager 的「写 .py 后自动触发 pylsp 诊断」钩子 ──
+def _make_fake_lsp_manager(diag_text):
+    """构造一个 fake LSP 管理器，记录被调用，并返回固定诊断文本。"""
+    calls = []
+
+    class FakeManager:
+        def __init__(self):
+            self.clients = {"python": object()}  # 模拟已连接 python server
+
+        def diagnostics(self, filepath, wait=1.5):
+            calls.append(filepath)
+            return diag_text
+
+    fm = FakeManager()
+    fm._calls = calls
+    return fm
+
+
+def _attach(cli, fm):
+    class UTM:
+        _lsp_manager = fm
+    cli.liugin_manager = UTM()
+
+
+def test_auto_lsp_check_triggers_on_py_write(tmp_path):
+    """写/改 .py 后钩子应调用 LSP 诊断，并在有问题时返回概要。"""
+    from plugins.code_editor import Liugin as CodeEditor
+    ce = CodeEditor()
+    fm = _make_fake_lsp_manager("🔍 x.py：2 条诊断\n  错误 L1:1 — undefined name 'foo'")
+    cli = type("CLI", (), {})()
+    _attach(cli, fm)
+    ce.set_cli(cli)
+
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("foo = bar\n", encoding="utf-8")
+    out = ce._auto_lsp_check(str(py_file))
+    assert str(py_file) in fm._calls, "应调用 lsp_manager.diagnostics(该 py 文件)"
+    assert "LSP 诊断" in out and "2 条诊断" in out
+
+
+def test_auto_lsp_check_silent_when_clean(tmp_path):
+    """文件干净（无诊断）时钩子应静默返回空串。"""
+    from plugins.code_editor import Liugin as CodeEditor
+    ce = CodeEditor()
+    fm = _make_fake_lsp_manager("✅ mod.py：无诊断（未发现问题）")
+    cli = type("CLI", (), {})()
+    _attach(cli, fm)
+    ce.set_cli(cli)
+
+    py_file = tmp_path / "clean.py"
+    py_file.write_text("x = 1\n", encoding="utf-8")
+    assert ce._auto_lsp_check(str(py_file)) == ""
+
+
+def test_auto_lsp_check_silent_without_lsp_manager(tmp_path):
+    """未连接 LSP 管理器（或未配置 server）时钩子应静默跳过，绝不报错。"""
+    from plugins.code_editor import Liugin as CodeEditor
+    ce = CodeEditor()
+    cli = type("CLI", (), {})()
+    # liugin_manager 没有 _lsp_manager 属性
+    cli.liugin_manager = type("UTM", (), {})()
+    ce.set_cli(cli)
+
+    py_file = tmp_path / "any.py"
+    py_file.write_text("pass\n", encoding="utf-8")
+    assert ce._auto_lsp_check(str(py_file)) == ""
+
+
+def test_auto_lsp_check_no_server_for_ext(tmp_path):
+    """扩展名未配置 LSP server 时（如 .txt）应静默返回空串。"""
+    from plugins.code_editor import Liugin as CodeEditor
+    ce = CodeEditor()
+    fm = _make_fake_lsp_manager("⚠️ 没有为 x.txt 配置 LSP server")
+    # clients 里只有 python，没有 txt 对应的 server；这里用文本模拟「无 server」返回
+    cli = type("CLI", (), {})()
+    _attach(cli, fm)
+    ce.set_cli(cli)
+
+    txt_file = tmp_path / "note.txt"
+    txt_file.write_text("hello\n", encoding="utf-8")
+    assert ce._auto_lsp_check(str(txt_file)) == ""

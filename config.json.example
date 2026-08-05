@@ -17,5 +17,13 @@
   "system": {
     "default_engine": "ollama",
     "max_history": 50
+  },
+  "lspServers": {
+    "_说明": "语言服务器（LSP）。键为语言ID或扩展名，值为启动命令。配置后重启即生效，工具 lsp__diagnostics/hover/definition/references/completion 自动可用，且 AI 写/改 .py 文件后会自动触发诊断并注入模型上下文。",
+    "python": {
+      "command": "pylsp",
+      "args": [],
+      "disabled": false
+    }
   }
 }

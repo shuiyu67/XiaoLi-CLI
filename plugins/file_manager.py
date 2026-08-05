@@ -38,6 +38,34 @@ class Liugin:
     def set_cli(self, cli):
         self.cli = cli
 
+    def _auto_lsp_check(self, filepath: str) -> str:
+        """写/改文件后自动让已连接的语言服务器(pylsp 等)重新诊断该文件。
+
+        诊断结果缓存进 LSP 管理器的 _workspace_diag，由 get_lsp_context()
+        在下一轮静默注入模型上下文；仅在有问题时返回一行提示。
+        无对应 server / 文件干净时静默跳过。
+        """
+        manager = None
+        try:
+            cli = self.cli
+            utm = getattr(cli, 'liugin_manager', None)
+            if utm is not None:
+                manager = getattr(utm, '_lsp_manager', None)
+        except Exception:
+            manager = None
+        if manager is None:
+            return ""
+        try:
+            diag_text = manager.diagnostics(filepath, wait=1.5)
+        except Exception:
+            return ""
+        if not diag_text or "没有为" in diag_text:
+            return ""
+        if "无诊断" in diag_text:
+            return ""
+        first = diag_text.splitlines()[0] if diag_text else ""
+        return f"\n  LSP 诊断: {first}"
+
     def get_tool_info(self):
         return {
             "name": "file_manager",
@@ -219,7 +247,11 @@ class Liugin:
         os.makedirs(os.path.dirname(fp) or ".", exist_ok=True)
         with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
-        return ToolResult.ok(f"已写入: {fp} ({len(content)} 字符)", tool_name="file_manager")
+        msg = f"已写入: {fp} ({len(content)} 字符)"
+        lsp_hint = self._auto_lsp_check(fp)
+        if lsp_hint:
+            msg += lsp_hint
+        return ToolResult.ok(msg, tool_name="file_manager")
 
     def _op_append(self, args: List[str]):
         if len(args) < 2:
@@ -237,7 +269,11 @@ class Liugin:
             return ToolResult.not_found(f"文件: {fp}")
         with open(fp, 'a', encoding='utf-8') as f:
             f.write(content)
-        return ToolResult.ok(f"已追加: {fp}", tool_name="file_manager")
+        msg = f"已追加: {fp}"
+        lsp_hint = self._auto_lsp_check(fp)
+        if lsp_hint:
+            msg += lsp_hint
+        return ToolResult.ok(msg, tool_name="file_manager")
 
     def _op_copy(self, args: List[str]):
         if len(args) < 2:

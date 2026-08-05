@@ -599,6 +599,34 @@ else:
         else:
             return f"\n{result}"
 
+    def _auto_lsp_check(self, filepath: str) -> str:
+        """写/改文件后自动让已连接的语言服务器(pylsp 等)重新诊断该文件。
+
+        诊断结果会被缓存进 LSP 管理器的 _workspace_diag，由 get_lsp_context()
+        在下一轮静默注入模型上下文；同时仅在确有问题时给一行可见提示。
+        无对应 server / 文件干净时静默跳过，绝不影响主流程。
+        """
+        manager = None
+        try:
+            cli = self.cli
+            utm = getattr(cli, 'liugin_manager', None)
+            if utm is not None:
+                manager = getattr(utm, '_lsp_manager', None)
+        except Exception:
+            manager = None
+        if manager is None:
+            return ""
+        try:
+            diag_text = manager.diagnostics(filepath, wait=1.5)
+        except Exception:
+            return ""
+        if not diag_text or "没有为" in diag_text:
+            return ""  # 该扩展名未配置 LSP server，跳过
+        if "无诊断" in diag_text:
+            return ""  # 干净，无需呈现（缓存也为空）
+        first = diag_text.splitlines()[0] if diag_text else ""
+        return f"\n  LSP 诊断: {first}"
+
     # ══════════════════════════════════════
     #  Diff 弹窗系统
     # ══════════════════════════════════════
@@ -975,7 +1003,7 @@ else:
 
         self._spawn_diff_popup(fp, before_content, new_content)
         result = f" 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_multi_edit(self, path: str, rest: str) -> str:
@@ -1013,7 +1041,7 @@ else:
             f.write(content)
         self._spawn_diff_popup(fp, before_content, content)
         result = f" 批量编辑: {fp}\n" + "\n".join(results)
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_insert(self, path: str, rest: str) -> str:
@@ -1046,7 +1074,7 @@ else:
         after_content = ''.join(lines)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已在第 {line_num} 行插入 {len(insert_lines)} 行"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_delete_lines(self, path: str, rest: str) -> str:
@@ -1079,7 +1107,7 @@ else:
         after_content = ''.join(lines)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_create(self, path: str, rest: str) -> str:
@@ -1095,7 +1123,7 @@ else:
             f.write(rest or "")
         self._spawn_diff_popup(fp, "", rest or "")
         result = f" 已创建: {fp} ({len(rest or '')} 字符)"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_write(self, path: str, rest: str) -> str:
@@ -1110,7 +1138,7 @@ else:
             f.write(rest)
         self._spawn_diff_popup(fp, before_content, rest)
         result = f" 已写入: {fp} ({len(rest)} 字符)"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     def _op_append(self, path: str, rest: str) -> str:
@@ -1125,7 +1153,7 @@ else:
         after_content = self._read_file_safe(fp)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已追加: {fp} ({len(rest)} 字符)"
-        result += self._auto_syntax_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
         return result
 
     # ══════════════════════════════════════
