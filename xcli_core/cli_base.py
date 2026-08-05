@@ -99,6 +99,9 @@ class BaseAICLI:
             os.makedirs(self.chat_history_dir)
         # 初始化会话管理器（opencode 式 /resume 持久化）
         self.init_session_manager()
+        # Plan 模式状态（只读规划 → 审批 → 执行）
+        self.plan_mode = False
+        self.current_plan = ""
 
         # 获取 skills 目录路径
         skills_dir = os.path.join(project_dir, "skills")

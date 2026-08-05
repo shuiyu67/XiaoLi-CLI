@@ -22,6 +22,17 @@ from .plugin_market import PluginMarketMixin
 from .notification import notify_task_complete, get_notification_manager
 from .process_protection import get_protection_status
 
+# ── Plan 模式 system prompt 追加段（只读规划约束）──
+PLAN_MODE_SYSTEM_APPEND = """
+
+【PLAN 模式 — 只读规划】
+你当前处于 PLAN 模式。此模式下你只能进行调查、阅读、分析，不得执行任何修改。
+- 你可以使用只读工具调研代码库：code_search（搜索/结构/符号/统计）、file_manager 的 list/read/info/search、code_editor 的 read_range/find/diff、git_tools 的 status/log/diff/show/blame、tool_search（查询工具用法）、ai_search（联网搜索）。
+- 你**不能**执行写操作（编辑/创建/删除文件、运行 shell 命令、git commit/push/checkout、委派会修改的子代理等）——这些会被系统拦截并返回提示。
+- 调研完成后，输出一份清晰的、带编号步骤的「实施计划」，让用户审批。计划应包含：每步要做什么、涉及哪些文件/函数、预期结果、潜在风险。
+- 计划以如下标记开头：## 实施计划
+- 完成计划后停止，等待用户输入 /build 批准执行，或继续追问以完善计划。不要自行开始修改。"""
+
 
 class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, HistoryMixin, PluginMarketMixin):
     """AI CLI主程序 - 组合所有 Mixin"""
@@ -252,6 +263,10 @@ multi 操作支持一次修改多处：
                     prompt += memory_ctx
             except Exception:
                 pass
+
+        # ── Plan 模式：追加只读规划约束 ──
+        if getattr(self, 'plan_mode', False):
+            prompt += PLAN_MODE_SYSTEM_APPEND
 
         return prompt
 
@@ -1001,6 +1016,60 @@ multi 操作支持一次修改多处：
             for t in threads:
                 t.join(timeout=1)
 
+    # ── Plan 模式（只读规划 → 审批 → 执行）──
+
+    def _sync_current_plan(self):
+        """Plan 模式下，把对话历史中最后一条 assistant 内容记为当前计划。"""
+        if not getattr(self, 'plan_mode', False):
+            return
+        for msg in reversed(self.shared_conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
+                self.current_plan = msg["content"]
+                break
+
+    def handle_plan_command(self, args):
+        """处理 /plan 命令。进入 PLAN 模式（只读规划）。
+
+        /plan            进入模式，等待描述任务
+        /plan <任务>     进入模式并立即只读调研、生成实施计划
+        /plan off|exit   退出模式（计划不执行）
+        """
+        args = (args or "").strip()
+        if args in ('off', 'exit', '退出', 'cancel'):
+            self.plan_mode = False
+            print(f"{Fore.YELLOW}已退出 PLAN 模式（计划未执行）{Style.RESET_ALL}")
+            return
+
+        self.plan_mode = True
+        if args:
+            print(f"{Fore.CYAN}已进入 PLAN 模式，正在只读调研并生成实施计划...{Style.RESET_ALL}")
+            self.process_conversation(args)
+            self._autosave_session()
+            self._sync_current_plan()
+        else:
+            print(f"{Fore.CYAN}已进入 PLAN 模式。{Style.RESET_ALL}")
+            print(f"  描述你的任务，AI 将只做只读调研并给出实施计划；"
+                  f"完成后用 {Fore.WHITE}/build{Style.RESET_ALL} 批准执行，或 "
+                  f"{Fore.WHITE}/plan off{Style.RESET_ALL} 取消。{Style.RESET_ALL}")
+
+    def handle_build_command(self):
+        """处理 /build 命令。从 PLAN 模式进入执行（用已批准计划驱动）。"""
+        plan = getattr(self, 'current_plan', '') or ""
+        if not getattr(self, 'plan_mode', False) and not plan.strip():
+            print(f"{Fore.YELLOW}当前不在 PLAN 模式，且无已生成的计划{Style.RESET_ALL}")
+            return
+
+        self.plan_mode = False
+        if not plan.strip():
+            print(f"{Fore.YELLOW}尚未生成实施计划，先 /plan 描述任务让 AI 调研{Style.RESET_ALL}")
+            return
+
+        print(f"{Fore.GREEN}已批准计划，开始执行...{Style.RESET_ALL}")
+        instruction = ("【已批准的实施计划，请现在严格按照以下步骤执行，利用可用工具完成每一步；"
+                       "遇到与计划不符的情况先说明再继续】\n\n" + plan)
+        self.process_conversation(instruction)
+        self._autosave_session()
+
     # ── CLI 主循环 ──
 
     def run_tui(self):
@@ -1040,7 +1109,7 @@ multi 操作支持一次修改多处：
 
         # 一行速览，完整命令清单收进 /help
         print(f"{Fore.CYAN}/help 全部命令 · /quit 退出 · /tui 图形界面 · "
-              f"/model 换模型 · /resume 恢复会话 · @文件路径 读文件给 AI{Style.RESET_ALL}")
+              f"/model 换模型 · /resume 恢复会话 · /plan 规划模式 · @文件路径 读文件给 AI{Style.RESET_ALL}")
 
         # 历史会话提示（opencode 式 /resume）
         try:
@@ -1154,6 +1223,15 @@ multi 操作支持一次修改多处：
                 # /model 命令族 — OpenAI 引擎多模型在线增删切换
                 if user_input == '/model' or user_input.startswith('/model '):
                     self.handle_model_command(user_input[7:].strip())
+                    continue
+
+                # /plan 进入 PLAN 模式（只读规划 → 审批 → 执行）
+                if user_input == '/plan' or user_input.startswith('/plan '):
+                    sub = user_input[6:].strip() if user_input.startswith('/plan ') else ''
+                    self.handle_plan_command(sub)
+                    continue
+                if user_input == '/build':
+                    self.handle_build_command()
                     continue
 
                 # /resume 会话恢复（opencode 式自动持久化 + 一键恢复）
@@ -1418,6 +1496,8 @@ multi 操作支持一次修改多处：
                 self.process_conversation(user_input)
                 # 自动持久化当前会话（opencode 式 /resume 落盘）
                 self._autosave_session()
+                # Plan 模式下：把本轮最后一条 assistant 内容记为当前计划
+                self._sync_current_plan()
             except KeyboardInterrupt:
                 user_id_display = f"[用户ID: {self.user_id}]"
                 print(f"\n{Fore.GREEN}再见! {user_id_display}{Style.RESET_ALL}")

@@ -18,6 +18,65 @@ MODE_NAMES = {
     MODE_MANUAL: "人工确认",
 }
 
+# ── Plan 模式只读白名单（黑名单法）──
+# 值为 "*" 表示该工具整类视为写/有副作用，一律拦截；
+# 值为列表时，仅当首个操作词命中列表中的写操作关键字才拦截；
+# 值为 [] 表示该工具整类只读，一律放行（调研必需）；
+# 未登记的未知工具默认拦截（保守）。
+PLAN_WRITE_RULES = {
+    # 整类拦截
+    "cmd_executor": "*",
+    "browser_auto": "*",
+    "network_tools": "*",
+    "scheduler": "*",
+    # 仅部分操作拦截
+    "code_editor": ["write", "create", "append", "edit", "insert", "delete_lines",
+                    "multi", "replace", "rename", "move"],
+    "git_tools": ["commit", "push", "checkout", "reset", "merge", "revert", "clean",
+                  "stash", "tag", "fetch", "pull", "branch -", "branch delete",
+                  "branch -d", "branch -D", "remote add", "remote set", "amend"],
+    "file_manager": ["write", "delete", "move", "copy", "rename", "mkdir", "rm",
+                     "create", "save", "touch"],
+    "sub_agent": ["run", "dispatch", "execute", "spawn", "create", "new", "task", "assign"],
+    "auto_engineer": ["run", "test", "build", "fix", "format", "apply", "generate",
+                      "scaffold", "create", "refactor", "exec"],
+    "memory": ["write", "save", "add", "set", "delete", "edit", "update", "forget"],
+    # 整类放行（只读探索必需）
+    "tool_search": [],
+    "ai_search": [],
+    "code_search": [],
+}
+
+
+def plan_is_write_operation(tool_name: str, tool_args) -> bool:
+    """Plan 模式下判断一次工具调用是否属于「写操作」（应被拦截）。
+
+    返回 True 表示会修改状态/文件/系统，应拦截；False 表示只读，可放行。
+    """
+    rules = PLAN_WRITE_RULES.get(tool_name)
+    if rules is None:
+        # 未登记的未知工具：保守拦截
+        return True
+    if rules == "*":
+        return True
+    if not rules:
+        return False
+    args_l = str(tool_args).strip().lower()
+    parts = args_l.split()
+    op = parts[0] if parts else ""
+    for kw in rules:
+        kwp = kw.split()
+        if len(kwp) == 1:
+            # 单字关键字：精确匹配操作词，或作为其前缀/后缀（避免 "editor" 误中 "edit"）
+            if op == kw or op.startswith(kw) or op.endswith(kw):
+                return True
+        else:
+            # 多词规则，如 "remote add" / "branch -d"
+            if args_l.startswith(kw) or " ".join(parts[:len(kwp)]) == kw:
+                return True
+    return False
+
+
 class SafetyLayer:
     """统一安全检查层"""
 
@@ -51,6 +110,14 @@ class SafetyLayer:
         检查工具调用是否安全
         返回: (允许执行, 消息)
         """
+        # ── Plan 模式只读约束（最高优先级，先于所有安全模式判断）──
+        # plan 模式下只允许只读调研工具，写操作一律暂挂，待 /build 批准后执行。
+        cli = self.cli
+        if cli is not None and getattr(cli, 'plan_mode', False):
+            if plan_is_write_operation(tool_name, tool_args):
+                return False, "PLAN 模式：写操作已暂挂（只读调研中）。请在 /build 批准后执行。"
+            return True, ""
+
         # 无限制模式：直接放行
         if self.mode == MODE_UNRESTRICTED:
             return True, ""
