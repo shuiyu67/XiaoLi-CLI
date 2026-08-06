@@ -192,9 +192,11 @@ class _ModuleCollector(ast.NodeVisitor):
         self._collect_uses(node.value)
 
     def _collect_tuple_names(self, target, scope):
-        """递归收集赋值目标名字 (含 a, b = ... 解包)"""
+        """递归收集赋值目标名字 (含 a, b = ... / a, *rest = ... 解包)"""
         if isinstance(target, ast.Name):
             scope.setdefault(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._collect_tuple_names(target.value, scope)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for elt in target.elts:
                 self._collect_tuple_names(elt, scope)
@@ -290,6 +292,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
     def _collect_target(self, target: ast.AST, scope: Dict[str, str]):
         if isinstance(target, ast.Name):
             scope[target.id] = "变量"
+        elif isinstance(target, ast.Starred):
+            self._collect_target(target.value, scope)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for elt in target.elts:
                 self._collect_target(elt, scope)
@@ -357,6 +361,11 @@ class _ScopeAnalyzer(ast.NodeVisitor):
             for n in ast.walk(gen.target):
                 if isinstance(n, ast.Name):
                     self._declare(n.id)
+            # 推导式 if 条件里的 walrus (key := ...) 先于 elt 求值 → 提前登记
+            for cond in gen.ifs:
+                for n in ast.walk(cond):
+                    if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name):
+                        self._declare(n.target.id)
         self.generic_visit(node)
 
     def visit_ListComp(self, node): self._visit_comprehension(node)
@@ -412,6 +421,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                                       lst=sub.func.value.id)
         self.generic_visit(node)
 
+    visit_AsyncFor = visit_For
+
     def visit_With(self, node: ast.With):
         if self.scope_stack:
             for item in node.items:
@@ -423,6 +434,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                     if isinstance(n, ast.Name):
                         self._declare(n.id)
         self.generic_visit(node)
+
+    visit_AsyncWith = visit_With
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler):
         if node.name:
@@ -518,9 +531,11 @@ def _check_syntax(source: str) -> Tuple[List[Dict], Optional[ast.Module]]:
 
 
 def _flow_collect_stores(target, defined: set):
-    """登记赋值目标到确定集合"""
+    """登记赋值目标到确定集合 (含 a, *rest = ... 星号解包)"""
     if isinstance(target, ast.Name):
         defined.add(target.id)
+    elif isinstance(target, ast.Starred):
+        _flow_collect_stores(target.value, defined)
     elif isinstance(target, (ast.Tuple, ast.List)):
         for elt in target.elts:
             _flow_collect_stores(elt, defined)
@@ -569,20 +584,19 @@ def _flow_check_loads(node, locals_set, defined, analyzer):
 
 
 def _flow_check_comp(node, locals_set, defined, analyzer):
-    """推导式: target 在 elt/条件内确定有值 (Python3 推导式独立作用域, 不泄漏到外层)"""
+    """推导式: target 在 elt/条件内确定有值 (Python3 推导式独立作用域, 不泄漏到外层)。
+    嵌套推导式按 gen 交错: gen1.iter → gen1.target → gen2.iter(可用外层 target) → ... → ifs → elt"""
     d = set(defined)
     for gen in node.generators:
         _flow_check_loads(gen.iter, locals_set, d, analyzer)
-    for gen in node.generators:
         _flow_collect_stores(gen.target, d)
+        for cond in gen.ifs:
+            _flow_check_loads(cond, locals_set, d, analyzer)  # walrus 在此登记
     if isinstance(node, ast.DictComp):
         _flow_check_loads(node.key, locals_set, d, analyzer)
         _flow_check_loads(node.value, locals_set, d, analyzer)
     else:
         _flow_check_loads(node.elt, locals_set, d, analyzer)
-    for gen in node.generators:
-        for cond in gen.ifs:
-            _flow_check_loads(cond, locals_set, d, analyzer)
 
 
 def _match_bound_names(pattern) -> set:
@@ -613,11 +627,11 @@ def _match_bound_names(pattern) -> set:
 
 
 def _flow_terminates(stmts) -> bool:
-    """语句列表是否必然终止 (末尾 return/raise, 或 if 两分支都终止)"""
+    """语句列表是否必然终止/不流出 (return/raise/continue/break, 或 if 两分支都终止)"""
     if not stmts:
         return False
     last = stmts[-1]
-    if isinstance(last, (ast.Return, ast.Raise)):
+    if isinstance(last, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
         return True
     if isinstance(last, ast.If):
         return _flow_terminates(last.body) and _flow_terminates(last.orelse)
@@ -643,7 +657,7 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             if isinstance(stmt.target, ast.Name):
                 defined.add(stmt.target.id)
             _flow_check_loads(stmt.value, locals_set, defined, analyzer)
-        elif isinstance(stmt, ast.For):
+        elif isinstance(stmt, (ast.For, ast.AsyncFor)):
             _flow_check_loads(stmt.iter, locals_set, defined, analyzer)
             d0 = set(defined)
             d_inner = set(defined)
@@ -661,7 +675,12 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             _flow_statements(stmt.body, locals_set, d_inner, analyzer)
             d_orelse = set(d0)
             _flow_statements(stmt.orelse, locals_set, d_orelse, analyzer)
-            defined.clear(); defined.update(d_orelse)
+            is_true_loop = isinstance(stmt.test, ast.Constant) and stmt.test.value is True
+            if is_true_loop:
+                # while True: 循环体必执行至少一次 → 循环体赋值确定 (aiohttp message 场景)
+                defined.clear(); defined.update(d_inner)
+            else:
+                defined.clear(); defined.update(d_orelse)
         elif isinstance(stmt, ast.If):
             _flow_check_loads(stmt.test, locals_set, defined, analyzer)
             d1 = set(defined)
@@ -699,7 +718,7 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
                 d_main = d_else                 # 正常路径流出 → handler 变量在正常路径不确定
             _flow_statements(stmt.finalbody, locals_set, d_main, analyzer)  # finally 总是执行
             defined.clear(); defined.update(d_main)
-        elif isinstance(stmt, ast.With):
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
             for item in stmt.items:
                 _flow_check_loads(item.context_expr, locals_set, defined, analyzer)
                 if item.optional_vars:

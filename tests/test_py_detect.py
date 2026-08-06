@@ -500,6 +500,78 @@ class TestDataFlow:
                "            return 0\n")
         assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
 
+    def test_continue_branch_terminates(self, pd):
+        """elif 分支 continue → 不流出, 后续 fdata 确定 (requests/models.py 场景)"""
+        src = ("def f(fp):\n"
+               "    if isinstance(fp, str):\n"
+               "        d = fp\n"
+               "    elif hasattr(fp, 'read'):\n"
+               "        d = fp.read()\n"
+               "    elif fp is None:\n"
+               "        continue\n"
+               "    else:\n"
+               "        d = fp\n"
+               "    return d\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_break_branch_terminates(self, pd):
+        src = ("def f(items):\n"
+               "    for x in items:\n"
+               "        if x > 10:\n"
+               "            break\n"
+               "        else:\n"
+               "            y = x\n"
+               "    return y\n")
+        assert "E004" in {d["code"] for d in pd.analyze(src, "t.py")}  # break 路径 y 未定义
+
+    # ── 第三方库压测回归 (async with/for, 星号解包, while True, 嵌套推导式) ──
+    def test_async_with_bind_ok(self, pd):
+        src = ("async def f():\n"
+               "    async with get() as resp:\n"
+               "        return resp.status\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_async_for_bind_ok(self, pd):
+        src = ("async def f():\n"
+               "    async for msg in ws:\n"
+               "        return msg.data\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_starred_unpack_ok(self, pd):
+        """a, *rest = ... 星号解包不得误报 (aiohttp multipart parts 场景)"""
+        src = ("def f(h):\n"
+               "    a, *parts = h.split(';')\n"
+               "    while parts:\n"
+               "        parts.pop(0)\n"
+               "    return a\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_while_true_body_defines(self, pd):
+        """while True: 循环体必执行至少一次 → 其赋值确定 (aiohttp client_reqrep message)"""
+        src = ("def f():\n"
+               "    while True:\n"
+               "        m = read()\n"
+               "        if m:\n"
+               "            break\n"
+               "    return m\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_nested_comp_outer_target_in_inner_iter(self, pd):
+        """嵌套推导式: 内层 iter 可用外层 target (aiohttp cookiejar cookie 场景)"""
+        src = ("def f(items):\n"
+               "    return [m for (d, p), c in items for name, m in c.items()]\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_comp_if_walrus_elt_uses(self, pd):
+        """推导式 if 里的 walrus 先于 elt 求值 (aiohttp cookiejar key 场景)"""
+        src = ("def f(items):\n"
+               "    expirations = {}\n"
+               "    return [key for (d, p), c in items for name, m in c.items()\n"
+               "            if (key := (d, p, name)) in expirations]\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
