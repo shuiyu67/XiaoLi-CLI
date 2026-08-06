@@ -7,15 +7,27 @@ import threading
 import time
 from colorama import Fore, Style
 
-# 延迟导入 ollama，避免程序启动时卡住
-# 如果导入失败，ollama_client 将为 None
-try:
-    import ollama
-    ollama_client = ollama
-except Exception as e:
-    print(f"{Fore.YELLOW}警告: 无法导入 ollama 库: {e}{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}请确保已安装 ollama 包 (pip install ollama){Style.RESET_ALL}")
-    ollama_client = None
+# 真正的惰性导入：只有真正用到 ollama 引擎时才 import ollama，
+# 避免 xiaoli-cli 启动 / 加载所有引擎时因 ollama SDK 初始化
+# （其内部 platform.machine() -> WMI 查询）在某些环境下卡住。
+_ollama_client = None
+_ollama_import_tried = False
+
+
+def _ollama():
+    """惰性获取 ollama SDK 客户端；导入失败返回 None（仅尝试一次）。"""
+    global _ollama_client, _ollama_import_tried
+    if _ollama_import_tried:
+        return _ollama_client
+    _ollama_import_tried = True
+    try:
+        import ollama
+        _ollama_client = ollama
+    except Exception as e:
+        _ollama_client = None
+        print(f"{Fore.YELLOW}警告: 无法导入 ollama 库: {e}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}请确保已安装 ollama 包 (pip install ollama){Style.RESET_ALL}")
+    return _ollama_client
 
 # 添加项目根目录到sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -121,13 +133,10 @@ Ollama AI引擎插件帮助信息
         self.thinking_start_marker = "<thinking>"
         self.thinking_end_marker = "</thinking>"
 
-        # 检测Ollama服务是否运行
-        self.is_service_running = self.check_ollama_service()
-        
-        if self.is_service_running:
-            _vprint(f"{Fore.GREEN}Ollama服务检测成功,引擎已启用{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.RED}Ollama服务未运行,引擎将不可用{Style.RESET_ALL}")
+        # 惰性服务检测：不在构造时急切点服务（避免无 ollama / 沙箱环境下
+        # import ollama 卡顿）。首次真正使用时（generate_response 等）才检测并缓存。
+        self._service_checked = False
+        self._service_running = False
     
     @staticmethod
     def _parse_num_ctx(value):
@@ -149,11 +158,11 @@ Ollama AI引擎插件帮助信息
     def check_ollama_service(self):
         """检测Ollama服务是否运行"""
         # 检查 ollama 库是否可用
-        if ollama_client is None:
+        if _ollama() is None:
             return False
         try:
             # 尝试调用Ollama API获取版本信息
-            response = ollama_client.list()
+            response = _ollama().list()
             # 如果没有异常,说明服务运行正常
             return True
         except Exception as e:
@@ -165,6 +174,22 @@ Ollama AI引擎插件帮助信息
         """当前引擎支持的最大输入 token 数（统一 API，供上下文压缩使用）。
         本地 Ollama 由配置 max_token_k 换算的 num_ctx 决定。"""
         return self.num_ctx
+
+    @property
+    def is_service_running(self):
+        """惰性检测 Ollama 服务是否运行：首次访问时才 import ollama 并点服务。
+
+        这样 AICLI() 构造 / 加载所有引擎时不会因 import ollama 卡住
+        （沙箱或 ollama 未安装的环境也能正常启动 CLI，仅真正选用本引擎时才校验）。
+        """
+        if not self._service_checked:
+            self._service_running = self.check_ollama_service()
+            self._service_checked = True
+            if self._service_running:
+                _vprint(f"{Fore.GREEN}Ollama服务检测成功,引擎已启用{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}Ollama服务未运行,引擎将不可用{Style.RESET_ALL}")
+        return self._service_running
 
     def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
         """
@@ -210,12 +235,12 @@ Ollama AI引擎插件帮助信息
 
             # 使用Ollama Python库调用API（FC 不支持时降级为无工具重试一次）
             try:
-                response = ollama_client.chat(**kwargs)
+                response = _ollama().chat(**kwargs)
             except Exception as _fc_err:
                 if fc_enabled and "tool" in str(_fc_err).lower():
                     self._mark_fc_unsupported()
                     kwargs.pop("tools", None)
-                    response = ollama_client.chat(**kwargs)
+                    response = _ollama().chat(**kwargs)
                 else:
                     raise
 
@@ -377,7 +402,7 @@ Ollama AI引擎插件帮助信息
         })
         
         # 使用Ollama Python库调用API
-        response = ollama_client.chat(
+        response = _ollama().chat(
             model=self.model,
             messages=messages,
             stream=False
@@ -400,7 +425,7 @@ Ollama AI引擎插件帮助信息
             return ["错误:Ollama服务未运行"]
         
         try:
-            response = ollama_client.list()
+            response = _ollama().list()
             models = [model["name"] for model in response["models"]]
             return models
         except Exception as e:
@@ -480,7 +505,7 @@ Ollama AI引擎插件帮助信息
             print(f"{Fore.YELLOW}正在拉取模型 {model_name}...{Style.RESET_ALL}")
             
             # 使用Ollama Python库拉取模型
-            response = ollama_client.pull(model_name, stream=True)
+            response = _ollama().pull(model_name, stream=True)
             
             # 逐块处理响应
             for part in response:
