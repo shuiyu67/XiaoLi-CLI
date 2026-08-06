@@ -1,16 +1,19 @@
 """
 本地 Python 智能检测插件 (py_detect)
 ===================================
-纯本地、零第三方依赖的代码检测引擎——为 xiaoli-cli「纯本地」而生。
+纯本地、零第三方依赖、零 AI 模型的代码检测引擎——为 xiaoli-cli「纯本地」而生。
 
 设计目标:
-  1. 只依赖标准库 (ast / tokenize)，低配电脑无压力，永不联网。
+  1. 只依赖标准库 (ast / tokenize / difflib)，低配电脑（连 1B 模型都跑不动）
+     也秒级运行，永不联网、永不卡死。
   2. 三层检测算法:
      ① 语法层   — tokenize + ast.parse 精确定位语法错误 (行列 + 原因)
      ② 语义层   — 作用域感知: 未定义变量 / 重复定义 / 未使用导入
      ③ 反模式层 — 可变默认参数 / 裸 except / ==None / 迭代中修改列表 /
                    覆盖内置名 / import * / 除零 / 方法缺 self / 死代码
-  3. 每条诊断带「中文解释 + 修复建议」(规则模板, 零 AI)。
+  3. 算法智能解释 (不靠 AI 模型): 每条诊断按代码上下文动态生成——
+     拼写纠错建议 (difflib 相似名)、带函数名/参数名的修复示例、
+     改后代码片段。纯算法推理，任何设备跑得动。
   4. 结果纯文本结构化 (code:line:col 前缀), 方便回喂给 AI 与用户。
 
 操作:
@@ -21,11 +24,12 @@
 """
 
 import ast
+import difflib
 import os
 import tokenize
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # ── 内置名集合 (判定「覆盖内置」与「未定义」用) ──
 if isinstance(__builtins__, dict):
@@ -51,6 +55,83 @@ RULES: Dict[str, Tuple[str, str, str]] = {
     "W011": ("警告", "除零风险 (字面量 0 作除数)", "修复: 除之前判断除数是否为 0，或改用安全除法。"),
     "I001": ("提示", "建议用 isinstance 替代 type 比较", "修复: 用 isinstance(x, int) 更健壮 (支持继承)。"),
 }
+
+
+def _smart_explain(code: str, ctx: dict) -> Tuple[str, str]:
+    """算法智能解释：按代码上下文动态生成「针对性标题 + 修复建议」。
+
+    纯算法 (模板渲染 + 名字注入 + 相似度), 不调用任何 AI 模型。
+    ctx 常见键: name / func / arg / lst / op / typ / suggestion / first_line / prev / prev_line
+    """
+    sev, title, base_fix = RULES[code]
+
+    if code == "E002":
+        name = ctx.get("name", "")
+        sugg = ctx.get("suggestion", "")
+        if name:
+            title = f"使用了未定义的变量 {name}"
+            if sugg:
+                fix = (f"修复: 变量 {name} 未定义——你是不是想写「{sugg}」？"
+                       f"先给它赋值/导入；若是闭包或动态注入(globals()/exec)可忽略。")
+            else:
+                fix = (f"修复: 变量 {name} 未定义。先给它赋值或导入；"
+                       f"若是闭包或动态注入(globals()/exec)可忽略。")
+            return title, fix
+
+    elif code == "W004":
+        func = ctx.get("func", "")
+        arg = ctx.get("arg", "")
+        if func and arg:
+            fix = (f"修复: 改写成 def {func}({arg}=None):  {arg} = {arg} if {arg} is not None else 默认值"
+                   f"——避免所有调用共享同一个可变对象。")
+            return title, fix
+
+    elif code == "W005":
+        obj = ctx.get("name", "x")
+        op = ctx.get("op", "is")
+        fix = f"修复: 应写成 if {obj} {op} None: ——用身份比较，语义更准确。"
+        return title, fix
+
+    elif code == "W006":
+        lst = ctx.get("lst", "lst")
+        fix = f"修复: 先复制再迭代: for x in {lst}[:]: ——或在循环外用新列表收集，避免跳过/漏项。"
+        return title, fix
+
+    elif code == "W007":
+        func = ctx.get("func", "")
+        if func:
+            fix = (f"修复: 方法 {func} 首参数应为 self(实例方法)或 cls(@classmethod)；"
+                   f"若是独立函数请移出类。")
+            return title, fix
+
+    elif code == "E003":
+        name = ctx.get("name", "")
+        first = ctx.get("first_line")
+        if name and first:
+            fix = f"修复: {name} 已在第 {first} 行定义过——删掉其中一个，或改名避免覆盖。"
+            return title, fix
+
+    elif code == "W008":
+        name = ctx.get("name", "")
+        if name:
+            fix = (f"修复: 别用内置名 {name} 当变量，换个名字(如 {name}_val / data / items)，"
+                   f"避免覆盖内置行为导致诡异 bug。")
+            return title, fix
+
+    elif code == "I001":
+        obj = ctx.get("name", "x")
+        typ = ctx.get("typ", "int")
+        fix = f"修复: 用 isinstance({obj}, {typ}) 更健壮 (支持子类，且是 Python 官方推荐写法)。"
+        return title, fix
+
+    elif code == "W009":
+        prev = ctx.get("prev", "return")
+        prev_line = ctx.get("prev_line")
+        if prev_line:
+            fix = f"修复: 第 {prev_line} 行 {prev} 之后的代码永远不会执行——删除它，或把逻辑放到 {prev} 之前。"
+            return title, fix
+
+    return title, base_fix
 
 
 class _ModuleCollector(ast.NodeVisitor):
@@ -144,13 +225,16 @@ class _ScopeAnalyzer(ast.NodeVisitor):
         self.module_scope = module_scope
         self.scope_stack: List[Dict[str, str]] = []     # 函数/类作用域栈
         self.additional_defs: set = set()               # 顶层推导式/walrus/循环变量等
+        self.defined_names: set = set(module_scope)     # 全部已定义名 (拼写纠错用)
         self.issues: List[Dict] = []
 
     # ── 工具 ──
-    def _add(self, code: str, lineno: int, col: int, extra: str = ""):
-        sev, title, fix = RULES[code]
+    def _add(self, code: str, lineno: int, col: int, extra: str = "", **ctx):
+        title, fix = _smart_explain(code, ctx)
         self.issues.append({
-            "code": code, "severity": sev, "title": title,
+            "code": code,
+            "severity": RULES[code][0],
+            "title": title,
             "line": lineno, "col": col + 1,
             "text": self._line_text(lineno), "fix": fix, "extra": extra,
         })
@@ -158,6 +242,15 @@ class _ScopeAnalyzer(ast.NodeVisitor):
     def _declare(self, name: str):
         """无条件登记一个已定义名字 (顶层也生效, 避免误报)"""
         self.additional_defs.add(name)
+        self.defined_names.add(name)
+
+    def _suggest(self, name: str) -> str:
+        """拼写纠错: 在已定义名字里找最接近的 (difflib, 纯算法)"""
+        try:
+            matches = difflib.get_close_matches(name, self.defined_names, n=1, cutoff=0.6)
+            return matches[0] if matches else ""
+        except Exception:
+            return ""
 
     def _line_text(self, lineno: int) -> str:
         if 0 < lineno <= len(self.lines):
@@ -196,7 +289,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
             is_static = "staticmethod" in decos or "classmethod" in decos
             args0 = node.args.args[0].arg if node.args.args else None
             if not is_static and args0 not in ("self", "cls"):
-                self._add("W007", node.lineno, node.col_offset, f"方法 {node.name} 缺 self/cls")
+                self._add("W007", node.lineno, node.col_offset,
+                          extra=f"方法 {node.name} 缺 self/cls", func=node.name)
         scope: Dict[str, str] = {}
         for arg in node.args.args + node.args.kwonlyargs:
             scope[arg.arg] = "参数"
@@ -204,13 +298,19 @@ class _ScopeAnalyzer(ast.NodeVisitor):
             scope[node.args.vararg.arg] = "参数"
         if node.args.kwarg:
             scope[node.args.kwarg.arg] = "参数"
-        # 可变默认参数 (经典坑: 默认值跨调用共享)
-        for d in node.args.defaults:
-            if isinstance(d, (ast.List, ast.Dict, ast.Set)):
-                self._add("W004", node.lineno, node.col_offset, f"可变默认参数: {node.name}")
+        # 可变默认参数 (经典坑: 默认值跨调用共享) —— 动态注入函数名/参数名
+        n_defaults = len(node.args.defaults)
+        if n_defaults:
+            for arg, d in zip(node.args.args[-n_defaults:], node.args.defaults):
+                if isinstance(d, (ast.List, ast.Dict, ast.Set)):
+                    self._add("W004", node.lineno, node.col_offset,
+                              extra=f"可变默认参数: {node.name}.{arg.arg}",
+                              func=node.name, arg=arg.arg)
         for d in node.args.kw_defaults:
             if d is not None and isinstance(d, (ast.List, ast.Dict, ast.Set)):
-                self._add("W004", node.lineno, node.col_offset, f"可变默认参数: {node.name}")
+                self._add("W004", node.lineno, node.col_offset,
+                          extra=f"可变默认参数: {node.name}",
+                          func=node.name, arg="kw")
         self.scope_stack.append(scope)
         self.generic_visit(node)
         self.scope_stack.pop()
@@ -252,7 +352,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                 if self.scope_stack:
                     self.scope_stack[-1][t.id] = "变量"
                 if t.id in _BUILTINS:
-                    self._add("W008", node.lineno, node.col_offset, f"覆盖内置名: {t.id}")
+                    self._add("W008", node.lineno, node.col_offset,
+                              extra=f"覆盖内置名: {t.id}", name=t.id)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
@@ -260,7 +361,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
             if self.scope_stack:
                 self.scope_stack[-1][node.target.id] = "变量"
             if node.target.id in _BUILTINS:
-                self._add("W008", node.lineno, node.col_offset, f"覆盖内置名: {node.target.id}")
+                self._add("W008", node.lineno, node.col_offset,
+                          extra=f"覆盖内置名: {node.target.id}", name=node.target.id)
         self.generic_visit(node)
 
     def visit_AugAssign(self, node: ast.AugAssign):
@@ -282,7 +384,8 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                     if sub.func.attr in ("append", "remove", "pop", "clear", "insert", "extend", "sort", "reverse"):
                         if isinstance(sub.func.value, ast.Name) and sub.func.value.id in iter_names:
                             self._add("W006", sub.lineno, sub.col_offset,
-                                      f"迭代中修改列表: {sub.func.value.id}")
+                                      extra=f"迭代中修改列表: {sub.func.value.id}",
+                                      lst=sub.func.value.id)
         self.generic_visit(node)
 
     def visit_With(self, node: ast.With):
@@ -312,16 +415,30 @@ class _ScopeAnalyzer(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name):
         if isinstance(node.ctx, ast.Load):
             if node.id not in _BUILTINS and not self._in_scope(node.id):
-                self._add("E002", node.lineno, node.col_offset, f"未定义变量: {node.id}")
+                self._add("E002", node.lineno, node.col_offset,
+                          extra=f"未定义变量: {node.id}",
+                          name=node.id, suggestion=self._suggest(node.id))
         self.generic_visit(node)
 
     def visit_Compare(self, node: ast.Compare):
-        if len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
-            for side in (node.left, *node.comparators):
+        if len(node.ops) == 1 and isinstance(node.ops[0], (ast.Eq, ast.NotEq)):
+            sides = [node.left, *node.comparators]
+            is_eq = isinstance(node.ops[0], ast.Eq)
+            op_word = "is" if is_eq else "is not"
+            for side in sides:
                 if isinstance(side, ast.Constant) and isinstance(side.value, (type(None), bool)):
-                    self._add("W005", node.lineno, node.col_offset, f"用 == 比较 {side.value!r}")
+                    others = [s for s in sides if s is not side]
+                    obj = others[0].id if others and isinstance(others[0], ast.Name) else "x"
+                    self._add("W005", node.lineno, node.col_offset,
+                              extra=f"用 == 比较 {side.value!r}",
+                              name=obj, op=op_word)
                 if isinstance(side, ast.Call) and isinstance(side.func, ast.Name) and side.func.id == "type":
-                    self._add("I001", node.lineno, node.col_offset, "type() 比较")
+                    others = [s for s in sides if s is not side]
+                    obj = (side.args[0].id
+                           if side.args and isinstance(side.args[0], ast.Name) else "x")
+                    typ = others[0].id if others and isinstance(others[0], ast.Name) else "int"
+                    self._add("I001", node.lineno, node.col_offset,
+                              extra="type() 比较", name=obj, typ=typ)
         self.generic_visit(node)
 
     def visit_BinOp(self, node: ast.BinOp):
@@ -337,8 +454,10 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                 for i, stmt in enumerate(fn.body[:-1]):
                     if isinstance(stmt, (ast.Return, ast.Raise)):
                         nxt = fn.body[i + 1]
+                        prev = "return" if isinstance(stmt, ast.Return) else "raise"
                         self._add("W009", nxt.lineno, nxt.col_offset,
-                                  f"{type(stmt).__name__} 后不可达")
+                                  extra=f"{prev} 后不可达",
+                                  prev=prev, prev_line=stmt.lineno)
                         break
 
 
@@ -390,7 +509,9 @@ def analyze(source: str, filename: str = "<string>") -> List[Dict]:
     for name, nodes in collector.def_nodes.items():
         if len(nodes) > 1:
             for node in nodes[1:]:
-                analyzer._add("E003", node.lineno, node.col_offset, f"重复定义: {name}")
+                analyzer._add("E003", node.lineno, node.col_offset,
+                              extra=f"重复定义: {name}",
+                              name=name, first_line=nodes[0].lineno)
 
     issues.extend(analyzer.issues)
     return issues

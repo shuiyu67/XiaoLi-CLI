@@ -221,6 +221,63 @@ class TestHandle:
         assert "check" in mcp["inputSchema"]["properties"]["operation"]["enum"]
 
 
+# ── 算法智能解释 (零 AI 模型, 纯算法动态生成) ──
+class TestSmartExplain:
+    def fix_of(self, issues, code):
+        for d in issues:
+            if d["code"] == code:
+                return d.get("fix", "")
+        return ""
+
+    def test_spell_suggestion(self, pd):
+        # 拼写纠错: 未定义变量 totl → 建议 total
+        src = "total = 0\ndef f():\n    return totl\n"
+        issues = pd.analyze(src, "t.py")
+        fix = self.fix_of(issues, "E002")
+        assert "total" in fix, fix
+        assert "totl" in fix, fix
+
+    def test_mutable_default_dynamic_fix(self, pd):
+        src = "def f(items=[]):\n    pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W004")
+        assert "def f(items=None)" in fix, fix
+
+    def test_eq_none_dynamic_fix(self, pd):
+        src = "if x == None:\n    pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W005")
+        assert "x is None" in fix, fix
+
+    def test_ne_none_dynamic_fix(self, pd):
+        src = "if x != None:\n    pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W005")
+        assert "x is not None" in fix, fix
+
+    def test_mutate_iter_dynamic_fix(self, pd):
+        src = "for x in items:\n    items.remove(x)\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W006")
+        assert "items[:]" in fix, fix
+
+    def test_dup_def_dynamic_line(self, pd):
+        src = "def f():\n    pass\ndef f():\n    pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "E003")
+        assert "第 1 行" in fix, fix
+
+    def test_dead_code_dynamic_line(self, pd):
+        src = "def f():\n    return 1\n    x = 2\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W009")
+        assert "第 2 行 return" in fix, fix
+
+    def test_method_self_dynamic(self, pd):
+        src = "class A:\n    def f():\n        pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "W007")
+        assert "self" in fix, fix
+
+    def test_type_compare_dynamic(self, pd):
+        src = "if type(x) == int:\n    pass\n"
+        fix = self.fix_of(pd.analyze(src, "t.py"), "I001")
+        assert "isinstance(x, int)" in fix, fix
+
+
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
     """AI 用 code_editor 改完 .py 文件后，系统自动跑 py_detect"""
