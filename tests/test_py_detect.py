@@ -378,6 +378,53 @@ class TestDataFlow:
         keys = [(d["code"], d["line"], d["col"]) for d in issues]
         assert len(keys) == len(set(keys)), f"存在重复诊断: {keys}"
 
+    # ── L3 误报回归 (真实项目扫描发现, 曾 422 条误报) ──
+    def test_with_as_var_ok(self, pd):
+        src = "def f():\n    with open('x') as fh:\n        return fh.read()\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_comprehension_var_ok(self, pd):
+        src = "def f(items):\n    return [x * 2 for x in items]\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_nested_comprehension_ok(self, pd):
+        src = ("def f(rows):\n"
+               "    names = ', '.join(t.get('name', '') for t in rows)\n"
+               "    return names\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_lambda_param_ok(self, pd):
+        src = "def f(issues):\n    return sorted(issues, key=lambda d: d['x'])\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_except_handler_var_ok(self, pd):
+        src = ("def f():\n"
+               "    try:\n"
+               "        risky()\n"
+               "    except ValueError as e:\n"
+               "        return str(e)\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_return_in_else_terminates(self, pd):
+        """else 分支 return 终止 → elif 分支流出时变量确定 (send_image 场景)"""
+        src = ("def f(args):\n"
+               "    if isinstance(args, str):\n"
+               "        p = 1\n"
+               "    elif isinstance(args, dict):\n"
+               "        p = 2\n"
+               "    else:\n"
+               "        return None\n"
+               "    return p\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_return_in_else_both_terminate(self, pd):
+        src = ("def f(x):\n"
+               "    if x:\n"
+               "        return 1\n"
+               "    else:\n"
+               "        return 2\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:

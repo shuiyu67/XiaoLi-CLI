@@ -517,11 +517,59 @@ def _flow_maybe_report(node, locals_set, defined, analyzer):
 
 
 def _flow_check_loads(node, locals_set, defined, analyzer):
-    """检查表达式树里的所有 Name Load"""
+    """检查表达式树里的所有 Name Load (作用域感知: 推导式/lambda 各自登记)"""
     if node is None:
         return
-    for sub in ast.walk(node):
-        _flow_maybe_report(sub, locals_set, defined, analyzer)
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+        _flow_check_comp(node, locals_set, defined, analyzer)
+        return
+    if isinstance(node, ast.DictComp):
+        _flow_check_comp(node, locals_set, defined, analyzer)
+        return
+    if isinstance(node, ast.Lambda):
+        d = set(defined)
+        for a in node.args.args + node.args.kwonlyargs:
+            d.add(a.arg)
+        if node.args.vararg:
+            d.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            d.add(node.args.kwarg.arg)
+        _flow_check_loads(node.body, locals_set, d, analyzer)
+        return
+    if isinstance(node, ast.Name):
+        _flow_maybe_report(node, locals_set, defined, analyzer)
+        return
+    for child in ast.iter_child_nodes(node):
+        _flow_check_loads(child, locals_set, defined, analyzer)
+
+
+def _flow_check_comp(node, locals_set, defined, analyzer):
+    """推导式: target 在 elt/条件内确定有值 (Python3 推导式独立作用域, 不泄漏到外层)"""
+    d = set(defined)
+    for gen in node.generators:
+        _flow_check_loads(gen.iter, locals_set, d, analyzer)
+    for gen in node.generators:
+        _flow_collect_stores(gen.target, d)
+    if isinstance(node, ast.DictComp):
+        _flow_check_loads(node.key, locals_set, d, analyzer)
+        _flow_check_loads(node.value, locals_set, d, analyzer)
+    else:
+        _flow_check_loads(node.elt, locals_set, d, analyzer)
+    for gen in node.generators:
+        for cond in gen.ifs:
+            _flow_check_loads(cond, locals_set, d, analyzer)
+
+
+def _flow_terminates(stmts) -> bool:
+    """语句列表是否必然终止 (末尾 return/raise, 或 if 两分支都终止)"""
+    if not stmts:
+        return False
+    last = stmts[-1]
+    if isinstance(last, (ast.Return, ast.Raise)):
+        return True
+    if isinstance(last, ast.If):
+        return _flow_terminates(last.body) and _flow_terminates(last.orelse)
+    return False
 
 
 def _flow_statements(stmts, locals_set, defined, analyzer):
@@ -565,13 +613,23 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             d2 = set(defined)
             _flow_statements(stmt.body, locals_set, d1, analyzer)
             _flow_statements(stmt.orelse, locals_set, d2, analyzer)
-            defined.clear()
-            defined.update(d1 & d2)  # 合并点: 两分支都确定才算确定
+            t1 = _flow_terminates(stmt.body)
+            t2 = _flow_terminates(stmt.orelse)
+            if t1 and t2:
+                pass  # 两分支都终止, 无流出
+            elif t1:
+                defined.clear(); defined.update(d2)  # 只有 orelse 流出
+            elif t2:
+                defined.clear(); defined.update(d1)  # 只有 body 流出
+            else:
+                defined.clear(); defined.update(d1 & d2)  # 都流出 → 交集
         elif isinstance(stmt, ast.Try):
             d_main = set(defined)
             _flow_statements(stmt.body, locals_set, d_main, analyzer)
             for h in stmt.handlers:
-                d_h = set(defined)  # 异常路径独立, 不贡献确定
+                d_h = set(defined)
+                if h.name:
+                    d_h.add(h.name)  # except ... as e: e 在 handler 内确定
                 _flow_statements(h.body, locals_set, d_h, analyzer)
             _flow_statements(stmt.orelse, locals_set, d_main, analyzer)
             _flow_statements(stmt.finalbody, locals_set, d_main, analyzer)
@@ -579,6 +637,8 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
         elif isinstance(stmt, ast.With):
             for item in stmt.items:
                 _flow_check_loads(item.context_expr, locals_set, defined, analyzer)
+                if item.optional_vars:
+                    _flow_collect_stores(item.optional_vars, defined)  # with ... as f: f 确定
             _flow_statements(stmt.body, locals_set, defined, analyzer)
         elif isinstance(stmt, ast.Return):
             _flow_check_loads(stmt.value, locals_set, defined, analyzer)
