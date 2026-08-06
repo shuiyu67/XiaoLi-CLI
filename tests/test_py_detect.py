@@ -278,6 +278,39 @@ class TestSmartExplain:
         assert "isinstance(x, int)" in fix, fix
 
 
+# ── L2 jedi 语义验证后端 (可选, 无 jedi 自动降级) ──
+class TestJediBackend:
+    def test_import_star_false_positive_removed(self, pd):
+        pytest.importorskip("jedi")
+        # 规则引擎: import * 不收集 sin → 误报 E002; jedi: 能解析 math.sin → 消除
+        src = "from math import *\ndef f():\n    return sin(3.14)\n"
+        codes = {d["code"] for d in pd.analyze(src, "C:/tmp/x.py")}
+        assert "E002" not in codes
+        assert "W010" in codes  # import * 警告保留
+
+    def test_real_undefined_kept_with_jedi(self, pd):
+        pytest.importorskip("jedi")
+        src = "def f():\n    return totally_missing_xyz\n"
+        assert "E002" in {d["code"] for d in pd.analyze(src, "C:/tmp/x.py")}
+
+    def test_fallback_without_jedi(self, pd, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "jedi", None)  # import jedi 将失败
+        src = "from math import *\ndef f():\n    return sin(3.14)\n"
+        codes = {d["code"] for d in pd.analyze(src, "C:/tmp/x.py")}
+        assert "E002" in codes  # 无 jedi → 保留规则引擎判定 (行为不变)
+        assert "W010" in codes
+
+    def test_cross_file_symbol_no_error(self, pd, tmp_path):
+        pytest.importorskip("jedi")
+        helper = tmp_path / "helper.py"
+        helper.write_text("def helper_func():\n    return 1\n", encoding="utf-8")
+        main = tmp_path / "main.py"
+        src = "from helper import helper_func\ndef f():\n    return helper_func()\n"
+        issues = pd.analyze(src, str(main))
+        assert "E002" not in {d["code"] for d in issues}
+
+
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
     """AI 用 code_editor 改完 .py 文件后，系统自动跑 py_detect"""

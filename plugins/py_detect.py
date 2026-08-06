@@ -14,7 +14,10 @@
   3. 算法智能解释 (不靠 AI 模型): 每条诊断按代码上下文动态生成——
      拼写纠错建议 (difflib 相似名)、带函数名/参数名的修复示例、
      改后代码片段。纯算法推理，任何设备跑得动。
-  4. 结果纯文本结构化 (code:line:col 前缀), 方便回喂给 AI 与用户。
+  4. L2 语义验证后端 (可选): 检测到 jedi 时自动启用, 用语义推断二次确认
+     E002 未定义变量——消除「from x import * / 跨文件符号」等误报;
+     无 jedi 时自动降级为纯标准库模式, 行为完全不变。
+  5. 结果纯文本结构化 (code:line:col 前缀), 方便回喂给 AI 与用户。
 
 操作:
   check <文件> [行号]          - 检测整个文件 / 只检测某一行
@@ -29,7 +32,7 @@ import os
 import tokenize
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # ── 内置名集合 (判定「覆盖内置」与「未定义」用) ──
 if isinstance(__builtins__, dict):
@@ -487,8 +490,44 @@ def _check_syntax(source: str) -> Tuple[List[Dict], Optional[ast.Module]]:
     return issues, tree
 
 
+def _jedi_validate(source: str, path: str, issues: List[Dict]) -> List[Dict]:
+    """L2 语义验证后端 (可选增强): 用 jedi 对规则引擎的 E002 做二次确认。
+
+    - 有 jedi: 消除「跨文件符号 / from x import * 动态名 / 类型别名」等误报
+      (规则引擎只认本文件, jedi 能解析项目级/第三方库符号)
+    - 无 jedi: 原样返回 (纯标准库模式, 低配设备行为完全不变)
+    """
+    try:
+        import jedi
+    except Exception:
+        return issues
+    try:
+        if path and path not in ("<string>", "<buffer>"):
+            script = jedi.Script(code=source, path=path)
+        else:
+            script = jedi.Script(code=source)
+    except Exception:
+        return issues
+    out = []
+    for d in issues:
+        if d["code"] == "E002":
+            extra = d.get("extra", "")
+            name = extra.split(":", 1)[-1].strip() if ":" in extra else ""
+            # jedi 的行列与 ast 一致均为 1-based (与 LSP 的 0-based 不同!)
+            line1 = int(d.get("line", 1))
+            col1 = int(d.get("col", 1))
+            try:
+                inferred = script.infer(line1, col1)
+            except Exception:
+                inferred = []
+            if inferred:
+                continue  # jedi 能解析出符号 → 动态/跨文件定义, 消除规则引擎误报
+        out.append(d)
+    return out
+
+
 def analyze(source: str, filename: str = "<string>") -> List[Dict]:
-    """三层检测主入口: 返回诊断列表"""
+    """三层检测主入口 + L2 jedi 语义验证: 返回诊断列表"""
     issues, tree = _check_syntax(source)
     if tree is None:
         return issues
@@ -514,6 +553,7 @@ def analyze(source: str, filename: str = "<string>") -> List[Dict]:
                               name=name, first_line=nodes[0].lineno)
 
     issues.extend(analyzer.issues)
+    issues = _jedi_validate(source, filename, issues)   # L2: 语义二次确认 (可选)
     return issues
 
 
