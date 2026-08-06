@@ -19,3 +19,7 @@ pyflakes
 pycodestyle
 rope
 mccabe
+
+# 自研本地 LSP 服务器 / py_detect L2 语义验证后端
+# 纯 Python 语义引擎，装依赖即自动预装（L2 自动启用；无 jedi 自动降级为纯标准库模式）
+jedi

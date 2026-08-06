@@ -127,6 +127,7 @@ class Launcher:
             'colorama', 'openai', 'requests', 'ollama', 'pygame',
             'PIL', 'Pillow', 'cv2', 'opencv-python', 'numpy',
             'ascii_magic', 'tkinter', 'matplotlib', 'pandas',
+            'jedi',  # py_detect L2 语义验证后端 / 自研本地 LSP（纯 Python，预装即启用）
         }
 
     # ── 清屏 ──
