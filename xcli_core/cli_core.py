@@ -760,10 +760,11 @@ multi 操作支持一次修改多处：
                 if hasattr(self, 'memory_manager') and self.memory_manager:
                     engine = self.current_engine
                     prompt_tokens = getattr(engine, 'last_prompt_tokens', None) if engine else None
+                    # 统一 API：所有引擎必须返回 max_input_tokens（最大输入 token 数）
                     ctx = None
-                    if engine and hasattr(engine, 'context_window'):
+                    if engine:
                         try:
-                            ctx = engine.context_window()
+                            ctx = engine.max_input_tokens
                         except Exception:
                             ctx = None
                     ratio = get_system_config('compress_ratio', 0.7)

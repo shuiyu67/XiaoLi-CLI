@@ -113,6 +113,9 @@ Ollama AI引擎插件帮助信息
         
         # 共享对话历史引用（由CLI设置）
         self.shared_conversation_history = None
+
+        # 最近一次请求的 prompt token 数（供 token 感知压缩使用）
+        self.last_prompt_tokens = None
         
         # 直接启用思考标记，由主程序自动处理深度思考模型的响应
         self.thinking_start_marker = "<thinking>"
@@ -156,7 +159,13 @@ Ollama AI引擎插件帮助信息
         except Exception as e:
             # 如果出现异常,说明服务未运行
             return False
-    
+
+    @property
+    def max_input_tokens(self):
+        """当前引擎支持的最大输入 token 数（统一 API，供上下文压缩使用）。
+        本地 Ollama 由配置 max_token_k 换算的 num_ctx 决定。"""
+        return self.num_ctx
+
     def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
         """
         生成AI响应 - 使用Ollama API
@@ -203,6 +212,15 @@ Ollama AI引擎插件帮助信息
 
             # ── Function Calling: 检查 tool_calls ──
             message = response.get("message", {})
+            # 上报本轮 prompt token 数（Ollama 返回 prompt_eval_count），供 token 感知压缩
+            try:
+                if isinstance(response, dict):
+                    _pet = response.get("prompt_eval_count")
+                else:
+                    _pet = getattr(response, "prompt_eval_count", None)
+                self.last_prompt_tokens = int(_pet) if _pet else None
+            except Exception:
+                self.last_prompt_tokens = None
             tool_calls_raw = message.get("tool_calls")
             if tool_calls_raw:
                 # Ollama 的 tool_calls 格式: [{"function": {"name": ..., "arguments": {...}}}]

@@ -307,18 +307,18 @@ class MemoryManager:
         except (TypeError, ValueError):
             pass
 
-    def should_compress(self, conversation: list, prompt_tokens=None, context_window=None, ratio=None) -> bool:
+    def should_compress(self, conversation: list, prompt_tokens=None, max_input_tokens=None, ratio=None) -> bool:
         """
         判断是否需要压缩上下文。
         优先级:
-          1. token 感知: prompt_tokens/context_window >= ratio 触发（OpenAI 格式可拿到真实 token 数）
+          1. token 感知: prompt_tokens/max_input_tokens >= ratio 触发（引擎需返回 max_input_tokens）
           2. 兜底: 消息数超过 compress_threshold
         """
         if ratio is None:
             ratio = self.compress_ratio
-        if prompt_tokens and context_window:
+        if prompt_tokens and max_input_tokens:
             try:
-                if int(context_window) > 0 and (int(prompt_tokens) / int(context_window)) >= ratio:
+                if int(max_input_tokens) > 0 and (int(prompt_tokens) / int(max_input_tokens)) >= ratio:
                     return True
             except (TypeError, ValueError):
                 pass

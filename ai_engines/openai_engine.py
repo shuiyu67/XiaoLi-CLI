@@ -582,6 +582,11 @@ OpenAI 兼容格式引擎帮助信息
                 return win
         return 128000
 
+    @property
+    def max_input_tokens(self):
+        """当前引擎支持的最大输入 token 数（统一 API，供上下文压缩使用）。"""
+        return self.context_window()
+
     def list_models(self):
         """列出可用模型（调用 API 的 /models 端点）"""
         if not self.base_url:

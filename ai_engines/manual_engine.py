@@ -44,6 +44,8 @@ class ManualAI:
         self.conversation_history = []
         self.max_history = 10
         self._subprocess = None
+        # 最近一次请求的 prompt token 数（手动引擎无真实模型，恒为 None）
+        self.last_prompt_tokens = None
         self._session_id = str(int(time.time()))
         self._started = False
 
@@ -239,6 +241,11 @@ while True:
         except:
             time.sleep(0.3)
 '''
+
+    @property
+    def max_input_tokens(self):
+        """当前引擎支持的最大输入 token 数（统一 API）。手动引擎无真实模型，给名义上限。"""
+        return 128000
 
     def generate_response(self, user_input, tool_results=None, system_prompt=None):
         """生成响应 — 转发给另一个终端的人工"""
