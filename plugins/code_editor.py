@@ -627,6 +627,60 @@ else:
         first = diag_text.splitlines()[0] if diag_text else ""
         return f"\n  LSP 诊断: {first}"
 
+    def _load_py_detect(self):
+        """延迟加载 py_detect 核心（plugins/py_detect.py），失败返回 None 并缓存"""
+        cached = getattr(self, "_py_detect_mod", "unset")
+        if cached != "unset":
+            return cached
+        try:
+            import importlib.util
+            plugin_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "py_detect.py")
+            if not os.path.exists(plugin_path):
+                self._py_detect_mod = None
+                return None
+            spec = importlib.util.spec_from_file_location("py_detect_core", plugin_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            self._py_detect_mod = mod
+            return mod
+        except Exception:
+            self._py_detect_mod = None
+            return None
+
+    def _auto_py_detect(self, filepath: str) -> str:
+        """写/改 .py 文件后自动智能检测（py_detect，纯本地零依赖）。
+
+        仅在 .py 文件且检测到问题时输出（截断为前 6 条，避免刷屏），
+        干净或非 py 文件静默返回空串——与 _auto_lsp_check 同风格。
+        """
+        if not filepath.lower().endswith(".py"):
+            return ""
+        mod = self._load_py_detect()
+        if mod is None:
+            return ""
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                source = f.read()
+            issues = mod.analyze(source, filepath)
+            if not issues:
+                return ""
+            order = {"错误": 0, "警告": 1, "提示": 2}
+            issues = sorted(issues, key=lambda d: (order.get(d["severity"], 9), d["line"], d["col"]))
+            n = len(issues)
+            n_e = sum(1 for d in issues if d["severity"] == "错误")
+            n_w = sum(1 for d in issues if d["severity"] == "警告")
+            n_i = sum(1 for d in issues if d["severity"] == "提示")
+            lines = [f"\n  [py_detect] 检测到 {n} 个问题 (错误 {n_e} · 警告 {n_w} · 提示 {n_i}):"]
+            for d in issues[:6]:
+                lines.append(f"    [{d['code']}] {d['severity']} @{d['line']}:{d['col']} {d['title']}"
+                             + (f" ({d['extra']})" if d.get("extra") else ""))
+            if n > 6:
+                lines.append(f"    … 还有 {n - 6} 条，py_detect check {filepath} 查看全部")
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
     # ══════════════════════════════════════
     #  Diff 弹窗系统
     # ══════════════════════════════════════
@@ -1003,7 +1057,7 @@ else:
 
         self._spawn_diff_popup(fp, before_content, new_content)
         result = f" 已编辑: {fp}\n\n{self._make_diff(old_text, new_text)}"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_multi_edit(self, path: str, rest: str) -> str:
@@ -1041,7 +1095,7 @@ else:
             f.write(content)
         self._spawn_diff_popup(fp, before_content, content)
         result = f" 批量编辑: {fp}\n" + "\n".join(results)
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_insert(self, path: str, rest: str) -> str:
@@ -1074,7 +1128,7 @@ else:
         after_content = ''.join(lines)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已在第 {line_num} 行插入 {len(insert_lines)} 行"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_delete_lines(self, path: str, rest: str) -> str:
@@ -1107,7 +1161,7 @@ else:
         after_content = ''.join(lines)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已删除第 {start}-{end} 行 ({len(deleted)} 行)"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_create(self, path: str, rest: str) -> str:
@@ -1123,7 +1177,7 @@ else:
             f.write(rest or "")
         self._spawn_diff_popup(fp, "", rest or "")
         result = f" 已创建: {fp} ({len(rest or '')} 字符)"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_write(self, path: str, rest: str) -> str:
@@ -1138,7 +1192,7 @@ else:
             f.write(rest)
         self._spawn_diff_popup(fp, before_content, rest)
         result = f" 已写入: {fp} ({len(rest)} 字符)"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     def _op_append(self, path: str, rest: str) -> str:
@@ -1153,7 +1207,7 @@ else:
         after_content = self._read_file_safe(fp)
         self._spawn_diff_popup(fp, before_content, after_content)
         result = f" 已追加: {fp} ({len(rest)} 字符)"
-        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp)
+        result += self._auto_syntax_check(fp) + self._auto_lsp_check(fp) + self._auto_py_detect(fp)
         return result
 
     # ══════════════════════════════════════
