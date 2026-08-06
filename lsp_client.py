@@ -18,6 +18,8 @@ import os
 import re
 import json
 import time
+import shutil
+import sys
 import threading
 import subprocess
 import logging
@@ -115,6 +117,14 @@ class LspClient:
         full_env = dict(os.environ)
         full_env.update(self.env)
         cmd = [self.command] + self.args
+        # 鲁棒性: command 为裸 "python"/"python3" 但 PATH 找不到时, 回退当前解释器
+        if cmd and os.path.basename(cmd[0]) in ("python", "python3") and os.path.dirname(cmd[0]) == "":
+            found = None
+            for cand in (cmd[0], cmd[0] + ".exe"):
+                if found is None and shutil.which(cand):
+                    found = cand
+            if not found:
+                cmd = [sys.executable] + self.args
         try:
             # 二进制模式：避免 CJK 字符数与 Content-Length 字节数不一致
             self.proc = subprocess.Popen(

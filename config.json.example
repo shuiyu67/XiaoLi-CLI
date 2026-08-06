@@ -19,10 +19,10 @@
     "max_history": 50
   },
   "lspServers": {
-    "_说明": "语言服务器（LSP）。键为语言ID或扩展名，值为启动命令。配置后重启即生效，工具 lsp__diagnostics/hover/definition/references/completion 自动可用，且 AI 写/改 .py 文件后会自动触发诊断并注入模型上下文。",
+    "_说明": "语言服务器（LSP）。键为语言ID或扩展名，值为启动命令。配置后重启即生效，工具 lsp__diagnostics/hover/definition/references/completion 自动可用，且 AI 写/改 .py 文件后会自动触发诊断并注入模型上下文。python 默认用自研本地服务器（jedi 语义 + py_detect 中文诊断，纯本地零安装）；换回 pylsp 则 command 改 \"pylsp\"、args 清空。",
     "python": {
-      "command": "pylsp",
-      "args": [],
+      "command": "python",
+      "args": ["-m", "xcli_core.local_lsp_server"],
       "disabled": false
     }
   }
