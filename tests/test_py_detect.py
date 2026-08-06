@@ -472,6 +472,34 @@ class TestDataFlow:
                "    return exc[:2] + (tb,)\n")
         assert "E004" in {d["code"] for d in pd.analyze(src, "t.py")}
 
+    # ── 标准库压测发现的回归 (walrus / match-case) ──
+    def test_walrus_in_condition_ok(self, pd):
+        """(x := ...) 在 if 条件里 → x 在 if 体内确定 (ast.py end_lineno 场景)"""
+        src = ("def f(node):\n"
+               "    if 'end' in node._attributes and (end := getattr(node, 'end', 0)) is not None:\n"
+               "        node.end = end + 1\n"
+               "    return node\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_match_case_bind_ok(self, pd):
+        """match/case 模式绑定变量在其 body 内确定 (dataclasses iterable 场景)"""
+        src = ("def f(v):\n"
+               "    match v:\n"
+               "        case iterable if not hasattr(iterable, '__next__'):\n"
+               "            return iterable\n"
+               "        case _:\n"
+               "            return None\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_match_after_use_ok(self, pd):
+        src = ("def h(v):\n"
+               "    match v:\n"
+               "        case [a, b]:\n"
+               "            return a + b\n"
+               "        case _:\n"
+               "            return 0\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:

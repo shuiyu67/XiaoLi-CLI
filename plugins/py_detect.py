@@ -219,6 +219,12 @@ class _ModuleCollector(ast.NodeVisitor):
             self.module_scope.setdefault(node.name, None)
         self.generic_visit(node)
 
+    def visit_Match(self, node: ast.Match):
+        for case in node.cases:
+            for n in _match_bound_names(case.pattern):
+                self.module_scope.setdefault(n, None)
+        self.generic_visit(node)
+
     def _first_name(self, target) -> Optional[str]:
         if isinstance(target, ast.Name):
             return target.id
@@ -429,6 +435,12 @@ class _ScopeAnalyzer(ast.NodeVisitor):
             self._add("W003", node.lineno, 0)
         self.generic_visit(node)
 
+    def visit_Match(self, node: ast.Match):
+        for case in node.cases:
+            for n in _match_bound_names(case.pattern):
+                self._declare(n)
+        self.generic_visit(node)
+
     # ── 表达式检测 ──
     def visit_Name(self, node: ast.Name):
         if isinstance(node.ctx, ast.Load):
@@ -546,6 +558,12 @@ def _flow_check_loads(node, locals_set, defined, analyzer):
     if isinstance(node, ast.Name):
         _flow_maybe_report(node, locals_set, defined, analyzer)
         return
+    if isinstance(node, ast.NamedExpr):
+        # walrus: (x := expr) 先赋值再使用 → 登记 target
+        if isinstance(node.target, ast.Name):
+            defined.add(node.target.id)
+        _flow_check_loads(node.value, locals_set, defined, analyzer)
+        return
     for child in ast.iter_child_nodes(node):
         _flow_check_loads(child, locals_set, defined, analyzer)
 
@@ -565,6 +583,33 @@ def _flow_check_comp(node, locals_set, defined, analyzer):
     for gen in node.generators:
         for cond in gen.ifs:
             _flow_check_loads(cond, locals_set, d, analyzer)
+
+
+def _match_bound_names(pattern) -> set:
+    """收集 match/case 模式里绑定的名字 (case 1 | 2 as x / case [a, b] / case {**rest} 等)"""
+    names = set()
+
+    def walk(p):
+        if p is None:
+            return
+        if isinstance(p, ast.MatchAs):
+            if p.name:
+                names.add(p.name)
+            walk(p.pattern)
+        elif isinstance(p, ast.MatchStar):
+            if p.name:
+                names.add(p.name)
+        elif isinstance(p, ast.MatchMapping):
+            if p.rest:
+                names.add(p.rest)
+            for v in p.patterns:
+                walk(v)
+        elif isinstance(p, (ast.MatchSequence, ast.MatchClass)):
+            for sub in p.patterns:
+                walk(sub)
+
+    walk(pattern)
+    return names
 
 
 def _flow_terminates(stmts) -> bool:
@@ -670,6 +715,15 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             for t in stmt.targets:
                 if isinstance(t, ast.Name):
                     defined.discard(t.id)
+        elif isinstance(stmt, ast.Match):
+            _flow_check_loads(stmt.subject, locals_set, defined, analyzer)
+            for case in stmt.cases:
+                d_case = set(defined)
+                for n in _match_bound_names(case.pattern):
+                    d_case.add(n)
+                _flow_check_loads(case.guard, locals_set, d_case, analyzer)
+                _flow_statements(case.body, locals_set, d_case, analyzer)
+            # match 后绑定变量不确定 (哪个 case 匹配未知) → defined 不变
         elif isinstance(stmt, ast.Expr):
             _flow_check_loads(stmt.value, locals_set, defined, analyzer)
 
@@ -769,6 +823,12 @@ def analyze(source: str, filename: str = "<string>") -> List[Dict]:
     _dataflow_check(tree, analyzer)                     # L3: 数据流 (部分路径未定义)
     issues.extend(analyzer.issues)                      # L1+L3 只 extend 一次, 避免重复
     issues = _jedi_validate(source, filename, issues)   # L2: 语义二次确认 (可选)
+    # import * 的文件: E002 可能是星号导入的名字 (静态无法展开) → 补提示
+    if collector.import_star_lines:
+        hint = "（本文件有 from x import *——该名字若来自星号导入，请显式导入以消除此提示）"
+        for d in issues:
+            if d["code"] == "E002":
+                d["fix"] = (d.get("fix", "").rstrip() + hint)
     return issues
 
 
