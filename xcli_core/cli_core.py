@@ -42,7 +42,7 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
     def process_thinking_response(self, response):
         """处理深度思考AI返回的内容, 分离思考和回复内容"""
         try:
-            response_data = json.loads(response)
+            response_data = self._loads_json(response)
             if isinstance(response_data, dict) and response_data.get('action') == 'use_tool':
                 return response
             if isinstance(response_data, dict):
@@ -310,13 +310,14 @@ multi 操作支持一次修改多处：
                 plugins.append(tool)
 
         if plugins:
-            # 工具名清单（与 FC tools 字段互补；不逐条重复 description，避免双重曝光）。
-            # 无 function-calling 能力的模型只能靠此清单知道有哪些工具，故保留名称。
+            # 工具名清单（纯 JSON 模式：不发送 FC schema，模型按 action JSON 调用）。
+            # 只列名字 + 由 tool_search 提供用法，避免重复曝光、省 token。
             names = ", ".join(t.get('name', '') for t in plugins)
             prompts.append(
-                "## 内置工具（已通过 function calling 的 tools 字段提供，调用前请先用 "
-                "tool_search 查询其详细用法与示例）\n"
-                f"工具名: {names}"
+                "## 内置工具（纯 JSON 模式：不发送 function calling 的 tools schema，"
+                "模型按下方 JSON 格式直接调用，调用前请先用 tool_search 查询其详细用法与示例）\n"
+                f"工具名: {names}\n"
+                '调用格式: {"action": "use_tool", "tool": "工具名", "args": "参数"}'
             )
 
         if skills:
@@ -356,6 +357,18 @@ multi 操作支持一次修改多处：
 
         return "\n".join(prompts)
 
+    def _loads_json(self, s):
+        """json.loads，但容忍未成对出现的反斜杠（Windows 路径 C:\\Users 常见）。
+
+        纯 JSON 模式下模型常把路径写成单反斜杠，直接 json.loads 会报非法转义。
+        这里先按标准解析；失败时把「未成对的反斜杠」转义后再试一次。
+        """
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            fixed = re.sub(r'(?<!\\)\\(?!\\\\)', r'\\\\', s)
+            return json.loads(fixed)
+
     def _parse_mixed_response(self, response):
         """
         解析混合响应，处理同时包含文本和JSON指令的内容
@@ -368,7 +381,7 @@ multi 操作支持一次修改多处：
             json_str = response[11:]
             json_str = "{" + json_str
             try:
-                parsed = json.loads(json_str)
+                parsed = self._loads_json(json_str)
                 if isinstance(parsed, dict):
                     return "", parsed
             except json.JSONDecodeError:
@@ -376,7 +389,7 @@ multi 操作支持一次修改多处：
 
         # 方法1: 直接解析为纯JSON
         try:
-            parsed = json.loads(response)
+            parsed = self._loads_json(response)
             if isinstance(parsed, (list, dict)):
                 return "", parsed
         except json.JSONDecodeError:
@@ -393,7 +406,7 @@ multi 操作支持一次修改多处：
                 content = content.replace('"', '\\"')
                 return f'"{content}"'
             fixed_response = re.sub(r'"([^"]*(?:\n[^"]*)*)"', fix_json_string, response, flags=re.DOTALL)
-            parsed = json.loads(fixed_response)
+            parsed = self._loads_json(fixed_response)
             if isinstance(parsed, (list, dict)):
                 return "", parsed
         except:
@@ -404,7 +417,7 @@ multi 操作支持一次修改多处：
         matches = re.findall(json_pattern, response, re.DOTALL)
         if matches:
             try:
-                json_data = json.loads(matches[-1])
+                json_data = self._loads_json(matches[-1])
                 if isinstance(json_data, (dict, list)):
                     text_content = re.sub(json_pattern, "", response, flags=re.DOTALL).strip()
                     text_content = re.sub(r"\n\s*\n", "\n\n", text_content).strip()
@@ -420,7 +433,7 @@ multi 操作支持一次修改多处：
             line = line.strip()
             if line.startswith("{") and line.endswith("}"):
                 try:
-                    parsed = json.loads(line)
+                    parsed = self._loads_json(line)
                     if isinstance(parsed, dict):
                         json_objects.append(parsed)
                         continue
@@ -458,7 +471,7 @@ multi 操作支持一次修改多处：
                         if in_json and brace_count == 0:
                             json_str = response[json_start:i+1]
                             try:
-                                json_data = json.loads(json_str)
+                                json_data = self._loads_json(json_str)
                                 if isinstance(json_data, dict) and json_data.get('action') in ['use_tool', 'continue']:
                                     text_content = response[:json_start].strip()
                                     return text_content, json_data
@@ -470,7 +483,7 @@ multi 操作支持一次修改多处：
         potential_jsons = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
         for json_str in potential_jsons:
             try:
-                json_data = json.loads(json_str)
+                json_data = self._loads_json(json_str)
                 if isinstance(json_data, dict) and json_data.get('action') in ['use_tool', 'continue']:
                     json_start = response.find(json_str)
                     text_content = response[:json_start].strip()
@@ -488,12 +501,12 @@ multi 操作支持一次修改多处：
                 if last_brace_pos != -1:
                     json_part = cleaned[last_brace_pos:]
                     if json_part.startswith('['):
-                        parsed = json.loads(json_part)
+                        parsed = self._loads_json(json_part)
                         if isinstance(parsed, list):
                             text_content = cleaned[:last_brace_pos].strip()
                             return text_content, parsed
                     else:
-                        parsed = json.loads(json_part)
+                        parsed = self._loads_json(json_part)
                         if isinstance(parsed, dict):
                             text_content = cleaned[:last_brace_pos].strip()
                             return text_content, parsed
@@ -788,7 +801,7 @@ multi 操作支持一次修改多处：
             return None
 
         try:
-            data = json.loads(response)
+            data = self._loads_json(response)
             if not data.get("_fc"):
                 return None
 
@@ -883,14 +896,9 @@ multi 操作支持一次修改多处：
             system_prompt = self._build_system_prompt(liugin_prompts)
             if not self.current_engine:
                 return "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
-            # TUI 模式也支持 FC
-            fc_tools = None
-            try:
-                from .fc_tools import mcp_to_openai_tools, prune_tools
-                fc_tools = prune_tools(mcp_to_openai_tools(self.liugin_manager), current_input)
-            except Exception:
-                pass
-            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=fc_tools)
+            # 纯 JSON 模式：不发送 FC tools schema，模型按 action JSON 调用，
+            # 由 _parse_mixed_response 解析、按名分发（任意工具，无 schema 门槛）。
+            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=None)
             return response
 
         # CLI 模式：带动画和跨平台 ESC 取消
@@ -972,16 +980,9 @@ multi 操作支持一次修改多处：
                 if not self.current_engine:
                     response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
                 else:
-                    # ── 收集 FC 工具定义（按当前输入动态裁剪）──
-                    fc_tools = None
-                    try:
-                        from .fc_tools import mcp_to_openai_tools, prune_tools
-                        fc_tools = prune_tools(mcp_to_openai_tools(self.liugin_manager), current_input)
-                    except Exception:
-                        fc_tools = None
-
+                    # 纯 JSON 模式：不发送 FC tools schema，模型按 action JSON 调用。
                     response_result[0] = self.current_engine.generate_response(
-                        current_input, system_prompt=system_prompt, tools=fc_tools
+                        current_input, system_prompt=system_prompt, tools=None
                     )
             except Exception as e:
                 response_result[0] = f"AI 响应生成失败: {e}"
