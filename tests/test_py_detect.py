@@ -311,6 +311,62 @@ class TestJediBackend:
         assert "E002" not in {d["code"] for d in issues}
 
 
+# ── L3 数据流: 部分路径未定义就用 (E004) ──
+class TestDataFlow:
+    def test_if_partial_path(self, pd):
+        src = "def f(flag):\n    if flag:\n        result = 1\n    return result\n"
+        assert 4 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_if_else_both_defined_ok(self, pd):
+        src = "def f(flag):\n    if flag:\n        r = 1\n    else:\n        r = 2\n    return r\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_for_zero_iteration(self, pd):
+        src = "def f(items):\n    for x in items:\n        total = x\n    return total\n"
+        assert 4 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_for_loop_var_defined_inside(self, pd):
+        src = "def f(items):\n    total = 0\n    for x in items:\n        total += x\n    return total\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_sequential_ok(self, pd):
+        src = "def f():\n    result = 1\n    return result\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_param_ok(self, pd):
+        src = "def f(x):\n    return x\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_global_in_function_ok(self, pd):
+        src = "g = 1\ndef f():\n    return g\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_augassign_before_def(self, pd):
+        src = "def f():\n    x = x + 1\n    return x\n"
+        assert 2 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_elif_missing_branch(self, pd):
+        src = "def f(a):\n    if a > 0:\n        v = 1\n    elif a < 0:\n        v = 2\n    return v\n"
+        assert 6 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_del_then_use(self, pd):
+        src = "def f():\n    x = 1\n    del x\n    return x\n"
+        assert 4 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_class_method_path(self, pd):
+        src = "class A:\n    def m(self, flag):\n        if flag:\n            r = 1\n        return r\n"
+        assert 5 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_e004_dynamic_fix(self, pd):
+        src = "def f(flag):\n    if flag:\n        result = 1\n    return result\n"
+        issues = pd.analyze(src, "t.py")
+        fix = ""
+        for d in issues:
+            if d["code"] == "E004":
+                fix = d.get("fix", "")
+        assert "result = None" in fix, fix
+
+
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
     """AI 用 code_editor 改完 .py 文件后，系统自动跑 py_detect"""

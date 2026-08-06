@@ -32,7 +32,7 @@ import os
 import tokenize
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 # ── 内置名集合 (判定「覆盖内置」与「未定义」用) ──
 if isinstance(__builtins__, dict):
@@ -45,6 +45,7 @@ RULES: Dict[str, Tuple[str, str, str]] = {
     "E001": ("错误", "语法错误", "修复: 检查该行附近——常见原因: 缺冒号、括号不匹配、引号未闭合、缩进错误。"),
     "E002": ("错误", "使用了未定义的变量", "修复: 先给变量赋值或导入它；若是闭包/动态注入(globals()/exec)可忽略。"),
     "E003": ("错误", "函数/类重复定义", "修复: 删掉其中一个定义，或改名避免覆盖。"),
+    "E004": ("错误", "变量可能未定义就使用（部分执行路径未赋值）", "修复: 使用前先赋初值（如 x = None），或确保所有分支都赋值。"),
     "W001": ("警告", "导入后未使用", "修复: 删除该 import，或补上使用处。"),
     "W002": ("警告", "裸 except", "修复: 写成 except Exception: 或指定具体异常类型，避免吞掉所有错误。"),
     "W003": ("警告", "捕获范围过宽 (except Exception)", "修复: 尽量捕获具体异常 (如 ValueError/KeyError)，避免隐藏 bug。"),
@@ -132,6 +133,13 @@ def _smart_explain(code: str, ctx: dict) -> Tuple[str, str]:
         prev_line = ctx.get("prev_line")
         if prev_line:
             fix = f"修复: 第 {prev_line} 行 {prev} 之后的代码永远不会执行——删除它，或把逻辑放到 {prev} 之前。"
+            return title, fix
+
+    elif code == "E004":
+        name = ctx.get("name", "")
+        if name:
+            fix = (f"修复: {name} 在某条执行路径上可能没赋值就被使用（运行时 UnboundLocalError）。"
+                   f"建议在使用前先赋初值: {name} = None（或按逻辑给默认值），或确保所有分支都赋值。")
             return title, fix
 
     return title, base_fix
@@ -490,6 +498,132 @@ def _check_syntax(source: str) -> Tuple[List[Dict], Optional[ast.Module]]:
     return issues, tree
 
 
+def _flow_collect_stores(target, defined: set):
+    """登记赋值目标到确定集合"""
+    if isinstance(target, ast.Name):
+        defined.add(target.id)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            _flow_collect_stores(elt, defined)
+
+
+def _flow_maybe_report(node, locals_set, defined, analyzer):
+    """单个 Name 使用点: 若为函数局部变量且当前路径上不确定 → E004"""
+    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+        nid = node.id
+        if nid in locals_set and nid not in defined:
+            analyzer._add("E004", node.lineno, node.col_offset,
+                          extra=f"可能未定义: {nid}", name=nid)
+
+
+def _flow_check_loads(node, locals_set, defined, analyzer):
+    """检查表达式树里的所有 Name Load"""
+    if node is None:
+        return
+    for sub in ast.walk(node):
+        _flow_maybe_report(sub, locals_set, defined, analyzer)
+
+
+def _flow_statements(stmts, locals_set, defined, analyzer):
+    """按路径合并逻辑扫描语句列表, 更新确定定义集合 defined。
+    保守原则: 拿不准就不报(宁漏勿误), 只报「某条路径确定未赋值就被用」。"""
+    for stmt in stmts:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue  # 嵌套定义不参与外层数据流
+        if isinstance(stmt, ast.Assign):
+            _flow_check_loads(stmt.value, locals_set, defined, analyzer)
+            for t in stmt.targets:
+                _flow_collect_stores(t, defined)
+        elif isinstance(stmt, ast.AnnAssign):
+            _flow_check_loads(stmt.value, locals_set, defined, analyzer)
+            if isinstance(stmt.target, ast.Name):
+                defined.add(stmt.target.id)
+        elif isinstance(stmt, ast.AugAssign):
+            _flow_maybe_report(stmt.target, locals_set, defined, analyzer)
+            if isinstance(stmt.target, ast.Name):
+                defined.add(stmt.target.id)
+            _flow_check_loads(stmt.value, locals_set, defined, analyzer)
+        elif isinstance(stmt, ast.For):
+            _flow_check_loads(stmt.iter, locals_set, defined, analyzer)
+            d0 = set(defined)
+            d_inner = set(defined)
+            _flow_collect_stores(stmt.target, d_inner)  # 循环体内 target 确定有值
+            _flow_statements(stmt.body, locals_set, d_inner, analyzer)
+            _flow_statements(stmt.orelse, locals_set, set(d0), analyzer)  # orelse 在 0 次循环也执行
+            # 循环体/orelse 的赋值可能 0 次执行 → 不贡献确定
+            defined.clear(); defined.update(d0)
+        elif isinstance(stmt, ast.While):
+            _flow_check_loads(stmt.test, locals_set, defined, analyzer)
+            d0 = set(defined)
+            d_inner = set(defined)
+            _flow_statements(stmt.body, locals_set, d_inner, analyzer)
+            _flow_statements(stmt.orelse, locals_set, d_inner, analyzer)
+            defined.clear(); defined.update(d0)
+        elif isinstance(stmt, ast.If):
+            _flow_check_loads(stmt.test, locals_set, defined, analyzer)
+            d1 = set(defined)
+            d2 = set(defined)
+            _flow_statements(stmt.body, locals_set, d1, analyzer)
+            _flow_statements(stmt.orelse, locals_set, d2, analyzer)
+            defined.clear()
+            defined.update(d1 & d2)  # 合并点: 两分支都确定才算确定
+        elif isinstance(stmt, ast.Try):
+            d_main = set(defined)
+            _flow_statements(stmt.body, locals_set, d_main, analyzer)
+            for h in stmt.handlers:
+                d_h = set(defined)  # 异常路径独立, 不贡献确定
+                _flow_statements(h.body, locals_set, d_h, analyzer)
+            _flow_statements(stmt.orelse, locals_set, d_main, analyzer)
+            _flow_statements(stmt.finalbody, locals_set, d_main, analyzer)
+            defined.clear(); defined.update(d_main)
+        elif isinstance(stmt, ast.With):
+            for item in stmt.items:
+                _flow_check_loads(item.context_expr, locals_set, defined, analyzer)
+            _flow_statements(stmt.body, locals_set, defined, analyzer)
+        elif isinstance(stmt, ast.Return):
+            _flow_check_loads(stmt.value, locals_set, defined, analyzer)
+            continue  # 之后不可达
+        elif isinstance(stmt, ast.Raise):
+            _flow_check_loads(stmt.exc, locals_set, defined, analyzer)
+            continue
+        elif isinstance(stmt, ast.Delete):
+            for t in stmt.targets:
+                if isinstance(t, ast.Name):
+                    defined.discard(t.id)
+        elif isinstance(stmt, ast.Expr):
+            _flow_check_loads(stmt.value, locals_set, defined, analyzer)
+
+
+def _dataflow_check(tree, analyzer):
+    """L3 数据流 (第一版): 检测「部分路径未定义就用」→ E004。
+    对每个函数: 收集局部变量(参数+赋值目标, 排除 global/nonlocal),
+    按 if/for/try 路径合并逻辑扫描, 使用点不在确定集合 → 报 E004。"""
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        locals_set = set()
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.Name) and isinstance(sub.ctx, (ast.Store, ast.Del)):
+                locals_set.add(sub.id)
+        for a in fn.args.args + fn.args.kwonlyargs:
+            locals_set.add(a.arg)
+        if fn.args.vararg:
+            locals_set.add(fn.args.vararg.arg)
+        if fn.args.kwarg:
+            locals_set.add(fn.args.kwarg.arg)
+        for sub in ast.walk(fn):
+            if isinstance(sub, (ast.Global, ast.Nonlocal)):
+                for n in sub.names:
+                    locals_set.discard(n)
+
+        defined = {a.arg for a in fn.args.args + fn.args.kwonlyargs}
+        if fn.args.vararg:
+            defined.add(fn.args.vararg.arg)
+        if fn.args.kwarg:
+            defined.add(fn.args.kwarg.arg)
+        _flow_statements(fn.body, locals_set, defined, analyzer)
+
+
 def _jedi_validate(source: str, path: str, issues: List[Dict]) -> List[Dict]:
     """L2 语义验证后端 (可选增强): 用 jedi 对规则引擎的 E002 做二次确认。
 
@@ -552,6 +686,8 @@ def analyze(source: str, filename: str = "<string>") -> List[Dict]:
                               extra=f"重复定义: {name}",
                               name=name, first_line=nodes[0].lineno)
 
+    issues.extend(analyzer.issues)
+    _dataflow_check(tree, analyzer)                     # L3: 数据流 (部分路径未定义)
     issues.extend(analyzer.issues)
     issues = _jedi_validate(source, filename, issues)   # L2: 语义二次确认 (可选)
     return issues
