@@ -203,12 +203,21 @@ Ollama AI引擎插件帮助信息
                 "options": {"num_ctx": self.num_ctx}
             }
 
-            # ── Function Calling: 注入工具定义 ──
-            if tools:
+            # ── Function Calling: 注入工具定义（仅引擎支持 FC 时下发）──
+            fc_enabled = bool(tools) and self._fc_supported()
+            if fc_enabled:
                 kwargs["tools"] = tools
 
-            # 使用Ollama Python库调用API
-            response = ollama_client.chat(**kwargs)
+            # 使用Ollama Python库调用API（FC 不支持时降级为无工具重试一次）
+            try:
+                response = ollama_client.chat(**kwargs)
+            except Exception as _fc_err:
+                if fc_enabled and "tool" in str(_fc_err).lower():
+                    self._mark_fc_unsupported()
+                    kwargs.pop("tools", None)
+                    response = ollama_client.chat(**kwargs)
+                else:
+                    raise
 
             # ── Function Calling: 检查 tool_calls ──
             message = response.get("message", {})
@@ -265,6 +274,22 @@ Ollama AI引擎插件帮助信息
 
         except Exception as e:
             return f"Ollama API调用失败: {str(e)}"
+
+    def _fc_supported(self):
+        """该 (base_url, model) 是否支持 FC。未探测过时默认 True（乐观，先试一次）"""
+        try:
+            from xcli_core.fc_tools import supports_fc
+            return supports_fc(self.base_url, self.model)
+        except Exception:
+            return False
+
+    def _mark_fc_unsupported(self):
+        """标记该 (base_url, model) 不支持 FC 并持久化"""
+        try:
+            from xcli_core.fc_tools import mark_fc_unsupported
+            mark_fc_unsupported(self.base_url, self.model)
+        except Exception:
+            pass
 
     def _build_messages_with_history(self, system_prompt, user_input):
         """构建包含历史记录的消息列表（支持 FC tool 消息）"""

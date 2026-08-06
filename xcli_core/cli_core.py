@@ -907,6 +907,38 @@ multi 操作支持一次修改多处：
 
         return f"未找到工具: {tool_name}"
 
+    def _build_fc_tools(self, current_input):
+        """构建本轮下发给引擎的 FC 工具子集，让引擎自行决定用 FC 结构化调用还是回退纯 JSON。
+
+        引擎不支持 FC（探测缓存未通过）时返回 None —— 引擎自动降级为纯 JSON 模式。
+        仅对带 `_fc_supported()` 的引擎下发 tools（Manual 等不支持的引擎不传 tools，
+        避免关键字参数错误）。
+        """
+        engine = self.current_engine
+        if not engine or not hasattr(engine, '_fc_supported'):
+            return None
+        try:
+            if not engine._fc_supported():
+                return None
+        except Exception:
+            return None
+        try:
+            from .fc_tools import mcp_to_openai_tools, prune_tools
+            all_tools = mcp_to_openai_tools(self.liugin_manager)
+            if not all_tools:
+                return None
+            return prune_tools(all_tools, current_input)
+        except Exception:
+            return None
+
+    def _call_engine_with_tools(self, current_input, system_prompt, fc_tools):
+        """调用当前引擎；fc_tools 非空时下发 FC 工具定义（tool_choice=auto，模型自选）。"""
+        if fc_tools:
+            return self.current_engine.generate_response(
+                current_input, system_prompt=system_prompt, tools=fc_tools)
+        return self.current_engine.generate_response(
+            current_input, system_prompt=system_prompt)
+
     def _generate_response_with_animation(self, current_input, liugin_prompts=None):
         """生成AI响应并显示等待动画 — 支持 ESC 跨平台取消"""
         # TUI 模式：不做动画
@@ -914,9 +946,10 @@ multi 操作支持一次修改多处：
             system_prompt = self._build_system_prompt(liugin_prompts)
             if not self.current_engine:
                 return "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
-            # 纯 JSON 模式：不发送 FC tools schema，模型按 action JSON 调用，
-            # 由 _parse_mixed_response 解析、按名分发（任意工具，无 schema 门槛）。
-            response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=None)
+            # 混合模式：下发 FC 工具定义，tool_choice=auto —— 模型可自行选择
+            # 用 FC 结构化调用，或回退到纯 JSON action（两种都会被正确处理）。
+            fc_tools = self._build_fc_tools(current_input)
+            response = self._call_engine_with_tools(current_input, system_prompt, fc_tools)
             return response
 
         # CLI 模式：带动画和跨平台 ESC 取消
@@ -998,10 +1031,9 @@ multi 操作支持一次修改多处：
                 if not self.current_engine:
                     response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
                 else:
-                    # 纯 JSON 模式：不发送 FC tools schema，模型按 action JSON 调用。
-                    response_result[0] = self.current_engine.generate_response(
-                        current_input, system_prompt=system_prompt, tools=None
-                    )
+                    # 混合模式：下发 FC 工具（tool_choice=auto），模型自选 FC 或纯 JSON
+                    fc_tools = self._build_fc_tools(current_input)
+                    response_result[0] = self._call_engine_with_tools(current_input, system_prompt, fc_tools)
             except Exception as e:
                 response_result[0] = f"AI 响应生成失败: {e}"
             finally:
