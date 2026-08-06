@@ -922,6 +922,10 @@ multi 操作支持一次修改多处：
                 return None
         except Exception:
             return None
+        # 工具结果续轮：模型只需决定「继续/收尾」，不需要 FC schema，省下每轮重发的 token。
+        # 若模型仍想调工具，走纯 JSON action（无需 schema 即可），行为等价、成本更低。
+        if current_input and str(current_input).lstrip().startswith("工具执行结果"):
+            return None
         try:
             from .fc_tools import mcp_to_openai_tools, prune_tools
             all_tools = mcp_to_openai_tools(self.liugin_manager)
