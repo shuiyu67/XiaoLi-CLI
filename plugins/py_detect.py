@@ -188,9 +188,16 @@ class _ModuleCollector(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign):
         for t in node.targets:
-            if isinstance(t, ast.Name):
-                self.module_scope.setdefault(t.id, None)
+            self._collect_tuple_names(t, self.module_scope)
         self._collect_uses(node.value)
+
+    def _collect_tuple_names(self, target, scope):
+        """递归收集赋值目标名字 (含 a, b = ... 解包)"""
+        if isinstance(target, ast.Name):
+            scope.setdefault(target.id, None)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._collect_tuple_names(elt, scope)
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
         if isinstance(node.target, ast.Name):
@@ -359,12 +366,12 @@ class _ScopeAnalyzer(ast.NodeVisitor):
     # ── 赋值/循环/上下文 ──
     def visit_Assign(self, node: ast.Assign):
         for t in node.targets:
-            if isinstance(t, ast.Name):
-                if self.scope_stack:
-                    self.scope_stack[-1][t.id] = "变量"
-                if t.id in _BUILTINS:
+            if self.scope_stack:
+                self._collect_target(t, self.scope_stack[-1])  # 含 a, b = ... 解包
+            for n in ast.walk(t):
+                if isinstance(n, ast.Name) and n.id in _BUILTINS:
                     self._add("W008", node.lineno, node.col_offset,
-                              extra=f"覆盖内置名: {t.id}", name=t.id)
+                              extra=f"覆盖内置名: {n.id}", name=n.id)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
@@ -597,16 +604,19 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             d_inner = set(defined)
             _flow_collect_stores(stmt.target, d_inner)  # 循环体内 target 确定有值
             _flow_statements(stmt.body, locals_set, d_inner, analyzer)
-            _flow_statements(stmt.orelse, locals_set, set(d0), analyzer)  # orelse 在 0 次循环也执行
-            # 循环体/orelse 的赋值可能 0 次执行 → 不贡献确定
-            defined.clear(); defined.update(d0)
+            d_orelse = set(d0)
+            _flow_statements(stmt.orelse, locals_set, d_orelse, analyzer)
+            # for-else: orelse 在循环无 break 时必执行(含 0 次) → 其赋值确定;
+            # 循环体赋值可能 0 次 → 不贡献
+            defined.clear(); defined.update(d_orelse)
         elif isinstance(stmt, ast.While):
             _flow_check_loads(stmt.test, locals_set, defined, analyzer)
             d0 = set(defined)
             d_inner = set(defined)
             _flow_statements(stmt.body, locals_set, d_inner, analyzer)
-            _flow_statements(stmt.orelse, locals_set, d_inner, analyzer)
-            defined.clear(); defined.update(d0)
+            d_orelse = set(d0)
+            _flow_statements(stmt.orelse, locals_set, d_orelse, analyzer)
+            defined.clear(); defined.update(d_orelse)
         elif isinstance(stmt, ast.If):
             _flow_check_loads(stmt.test, locals_set, defined, analyzer)
             d1 = set(defined)
@@ -625,14 +635,24 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
                 defined.clear(); defined.update(d1 & d2)  # 都流出 → 交集
         elif isinstance(stmt, ast.Try):
             d_main = set(defined)
-            _flow_statements(stmt.body, locals_set, d_main, analyzer)
+            _flow_statements(stmt.body, locals_set, d_main, analyzer)  # 正常完成 → body 赋值确定
+            d_else = set(d_main)
+            _flow_statements(stmt.orelse, locals_set, d_else, analyzer)
+            else_terminates = bool(stmt.orelse) and _flow_terminates(stmt.orelse)
+            # 异常路径 handler: 仅当正常路径(else)终止时, 异常路径才是唯一流出 → 变量确定
+            d_handlers = set()
             for h in stmt.handlers:
-                d_h = set(defined)
+                d_h = set(d_main)  # 异常可能发生在 body 任意点之后 → 复用 body 确定集
                 if h.name:
-                    d_h.add(h.name)  # except ... as e: e 在 handler 内确定
+                    d_h.add(h.name)
                 _flow_statements(h.body, locals_set, d_h, analyzer)
-            _flow_statements(stmt.orelse, locals_set, d_main, analyzer)
-            _flow_statements(stmt.finalbody, locals_set, d_main, analyzer)
+                if not _flow_terminates(h.body):
+                    d_handlers.update(d_h)
+            if else_terminates:
+                d_main = d_main | d_handlers   # 正常路径终止 → 仅异常路径流出
+            else:
+                d_main = d_else                 # 正常路径流出 → handler 变量在正常路径不确定
+            _flow_statements(stmt.finalbody, locals_set, d_main, analyzer)  # finally 总是执行
             defined.clear(); defined.update(d_main)
         elif isinstance(stmt, ast.With):
             for item in stmt.items:

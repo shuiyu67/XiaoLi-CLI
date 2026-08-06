@@ -425,6 +425,53 @@ class TestDataFlow:
                "        return 2\n")
         assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
 
+    # ── 真实项目扫描发现的回归 (元组解包 / for-else) ──
+    def test_tuple_unpack_no_undefined(self, pd):
+        """a, b = ... 解包赋值不得误报 E002 (xiaoli_chat.py RoPE 场景)"""
+        src = ("def f(x):\n"
+               "    r, i = x.float().unbind(-1)\n"
+               "    return r * i\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_for_else_fallback(self, pd):
+        """for-else: else 在无 break 时必执行(含 0 次) → 变量确定 (renpy gamedir 场景)"""
+        src = ("def f(cands):\n"
+               "    for g in cands:\n"
+               "        if g:\n"
+               "            break\n"
+               "    else:\n"
+               "        g = 'default'\n"
+               "    return g\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_for_else_break_keeps_checking(self, pd):
+        """循环体内赋值 + 无 orelse → 仍报 (0 次循环风险保留)"""
+        src = "def f(items):\n    for x in items:\n        total = x\n    return total\n"
+        assert 4 in code_lines(pd.analyze(src, "t.py"), "E004")
+
+    def test_try_else_return_handler_ok(self, pd):
+        """except 赋值 + else return 终止 → 仅异常路径流出, 变量确定 (jinja2 asyncsupport)"""
+        src = ("def g():\n"
+               "    try:\n"
+               "        work()\n"
+               "    except ValueError:\n"
+               "        exc = sys.exc_info()\n"
+               "    else:\n"
+               "        return\n"
+               "    return handle(exc)\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_try_handler_real_undefined_kept(self, pd):
+        """无 else: handler 变量在正常路径不确定 → 保留 E004 (jinja2 debug 真问题)"""
+        src = ("def d(code, gl, lo):\n"
+               "    try:\n"
+               "        exec(code, gl, lo)\n"
+               "    except ValueError:\n"
+               "        exc = sys.exc_info()\n"
+               "        tb = exc[2].tb_next\n"
+               "    return exc[:2] + (tb,)\n")
+        assert "E004" in {d["code"] for d in pd.analyze(src, "t.py")}
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
