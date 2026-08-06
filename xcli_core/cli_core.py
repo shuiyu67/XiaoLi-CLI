@@ -154,7 +154,20 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 你的思考过程:
 1. 需要 git 操作 → 先查 git_tools 怎么用
 2. {{"action": "use_tool", "tool": "tool_search", "args": "git_tools"}} → 发现 smart-commit 操作
-3. {{"action": "use_tool", "tool": "git_tools", "args": "smart-commit"}} → 自动提交"""
+3. {{"action": "use_tool", "tool": "git_tools", "args": "smart-commit"}} → 自动提交        """
+
+        # 参数格式统一示例：无论用哪种工具，args 都是同一个字符串外壳，给 AI 一个速查锚点
+        unified_arg_example = """【参数格式统一示例】
+所有工具共用同一套 JSON 外壳，`args` 永远是【字符串】（不是 JSON 对象）：
+{"action":"use_tool","tool":"<工具名>","args":"<操作> <参数>"}
+
+高频工具的 args 写法（照抄即可）：
+- code_editor : "edit 文件 旧<<<>>>新"  |  "read_range 文件 起 止"  |  "create 文件 内容"
+- code_search : "find . 关键词 *.py"  |  "structure ."
+- git_tools   : "status"  |  "commit 说明文字"
+- cmd_executor: "dir"  |  "python main.py"
+说明：多行内容（如 edit 的代码片段）直接换行写在 args 里，无需转义；一次可返回多个 JSON 指令。
+调用方式可选：纯 JSON（默认）或 function calling（引擎支持时），两种都会被正确处理。"""
 
         if liugin_prompts:
             prompt = f"""{base_prompt}
@@ -162,6 +175,8 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 {liugin_prompts}
 
 {tool_search_rule}
+
+{unified_arg_example}
 
 【工具调用格式】
 在回复中包含 JSON 指令来执行操作：
@@ -229,6 +244,8 @@ multi 操作支持一次修改多处：
             prompt = f"""{base_prompt}
 
 {tool_search_rule}
+
+{unified_arg_example}
 
 【工具调用格式】
 {{"action": "use_tool", "tool": "工具名", "args": "参数"}}
@@ -841,11 +858,11 @@ multi 操作支持一次修改多处：
                 tool_result_msg = {
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": result[:5000] if result else "执行完成"
+                    "content": result if result else "执行完成"
                 }
                 self.shared_conversation_history.append(tool_result_msg)
 
-                results.append(f"[{tool_name}]: {result[:200] if result else '完成'}")
+                results.append(f"[{tool_name}]: {result if result else '完成'}")
 
             # 返回工具结果，供下一轮 AI 处理
             return "工具执行结果:\n" + "\n".join(results)
