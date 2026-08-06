@@ -686,9 +686,8 @@ def analyze(source: str, filename: str = "<string>") -> List[Dict]:
                               extra=f"重复定义: {name}",
                               name=name, first_line=nodes[0].lineno)
 
-    issues.extend(analyzer.issues)
     _dataflow_check(tree, analyzer)                     # L3: 数据流 (部分路径未定义)
-    issues.extend(analyzer.issues)
+    issues.extend(analyzer.issues)                      # L1+L3 只 extend 一次, 避免重复
     issues = _jedi_validate(source, filename, issues)   # L2: 语义二次确认 (可选)
     return issues
 

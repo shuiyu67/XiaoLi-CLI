@@ -366,6 +366,18 @@ class TestDataFlow:
                 fix = d.get("fix", "")
         assert "result = None" in fix, fix
 
+    def test_no_duplicate_diagnostics(self, pd):
+        """L1+L3 合并不得产生重复诊断 (回归: 曾因 extend 两次全部重复)"""
+        src = ("import os\n"
+               "from math import *\n"
+               "def f(flag):\n"
+               "    if flag:\n"
+               "        r = build()\n"
+               "    return r\n")
+        issues = pd.analyze(src, "t.py")
+        keys = [(d["code"], d["line"], d["col"]) for d in issues]
+        assert len(keys) == len(set(keys)), f"存在重复诊断: {keys}"
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:
