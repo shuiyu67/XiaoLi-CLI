@@ -23,7 +23,10 @@ class MemoryManager:
         self.memory_file = os.path.join(project_dir, "MEMORY.md")
         self.chat_dir = os.path.join(project_dir, "chat_history")
         self.compress_threshold = 50  # 超过 50 条消息触发压缩（兜底）
-        self.compress_ratio = 0.7    # token 感知压缩阈值：used/context_window >= 0.7 触发
+        self.compress_ratio = 0.7    # token 感知压缩阈值：used/max_input_tokens >= 0.7 触发
+        self.keep_recent = 12        # 压缩时保留最近 N 条（编码常跨多轮，略高于原 10）
+        self.max_summary_chars = 1500  # 摘要前单条消息截断上限（原硬编码 200，编码场景丢代码）
+        self.compressed_blobs = []  # 累积的压缩摘要（避免二次摘要失真）
         self._ensure_dirs()
 
     def _ensure_dirs(self):
@@ -324,52 +327,88 @@ class MemoryManager:
                 pass
         return len(conversation) > self.compress_threshold
 
-    def compress_context(self, conversation: list, engine=None) -> list:
+    def _is_compressed_marker(self, m: dict) -> bool:
+        """判断一条消息是否是我们自己产出的压缩摘要（避免二次摘要失真）"""
+        return bool(m.get("role") == "system"
+                    and str(m.get("content", "")).startswith("[上下文压缩]"))
+
+    def _prepare_for_summary(self, msg: dict) -> str:
+        """把单条消息转成摘要输入：保真优先——保留工具调用 JSON，长内容截断但尽量留代码块。"""
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            return f"[{role}]: (非文本/结构化内容，长度 {len(str(content))})\n"
+
+        is_tool = ('"action": "use_tool"' in content) or ('"tool":' in content)
+        cap = self.max_summary_chars
+
+        if len(content) <= cap:
+            body = content
+        else:
+            # 尽量保留代码块（```...```）以保真编码上下文
+            fences = re.findall(r"```.*?```", content, re.DOTALL)
+            if fences:
+                kept = "\n".join(fences[:2])
+                if len(kept) > cap:
+                    kept = kept[:cap] + "\n...(截断)"
+                body = f"(内容过长已截断，保留代码块)\n{kept}"
+            else:
+                body = content[:cap] + "\n...(截断)"
+
+        marker = " [工具调用]" if is_tool else ""
+        return f"[{role}]{marker}: {body}\n"
+
+    def compress_context(self, conversation: list, engine=None, keep_recent=None) -> list:
         """
-        压缩对话历史
-        策略: 保留最近 10 条 + 用 AI 总结前面的内容
+        压缩对话历史。
+        策略: 保留最近 keep_recent 条 + 用当前引擎 AI 总结前面的内容。
+        关键改进:
+          - keep_recent 可配置（默认 12，编码常跨多轮）
+          - 已压缩摘要(标记消息)不再二次摘要，避免失真累积
+          - 摘要按角色分条，保留工具调用/代码修改结构
         """
-        if len(conversation) <= 10:
+        if keep_recent is None:
+            keep_recent = self.keep_recent
+        if len(conversation) <= keep_recent:
             return conversation
 
-        keep_recent = 10
-        to_compress = conversation[:-keep_recent]
         recent = conversation[-keep_recent:]
+        prefix = conversation[:-keep_recent]
+        # 只摘要尚未压缩过的"真消息"，跳过历史摘要本身 → 不二次失真
+        new_to_compress = [m for m in prefix if not self._is_compressed_marker(m)]
+        if not new_to_compress:
+            # 前缀全是历史摘要，没有新内容可压，保持现状即可（不丢摘要）
+            return conversation
 
-        # 尝试用 AI 生成摘要
-        summary = self._ai_summarize(to_compress, engine)
+        summary = self._ai_summarize(new_to_compress, engine)
+        block = f"[上下文压缩] 之前 {len(new_to_compress)} 条对话摘要:\n{summary}"
+        self.compressed_blobs.append(block)
 
-        # 构建压缩后的历史
-        compressed = [{
-            "role": "system",
-            "content": f"[上下文压缩] 以下是之前 {len(to_compress)} 条对话的摘要:\n{summary}"
-        }]
+        # 累积所有摘要合并为单条 system（而非每次重压旧摘要）
+        merged = "\n\n".join(self.compressed_blobs)
+        compressed = [{"role": "system", "content": merged}]
         compressed.extend(recent)
         return compressed
 
     def _ai_summarize(self, messages: list, engine=None) -> str:
-        """用 AI 生成对话摘要"""
+        """用当前引擎生成对话摘要（保真优先）"""
         if not engine:
             return self._simple_summarize(messages)
 
-        # 构建摘要请求
-        conversation_text = ""
-        for msg in messages:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                conversation_text += f"[{role}]: {content[:200]}\n"
+        conversation_text = "".join(self._prepare_for_summary(m) for m in messages)
 
         prompt = (
-            "请用简洁的中文总结以下对话的关键信息（工具调用、代码修改、重要决策）。"
-            "控制在 200 字以内。\n\n"
+            "请用简洁中文总结以下对话的关键信息，要求:\n"
+            "1. 按角色(用户/助手)分条，保留每条的要点；\n"
+            "2. 重点保留: 工具调用名称与参数、代码修改点(读/改/创建的文件与位置)、重要决策；\n"
+            "3. 控制总体在 400 字以内，不要编造未提及的信息。\n\n"
             f"{conversation_text}"
         )
 
         try:
             summary = engine.generate_response(
                 prompt,
-                system_prompt="你是摘要生成器。只输出摘要，不要多余内容。"
+                system_prompt="你是摘要生成器。只输出结构化摘要，不要多余内容。"
             )
             if summary and len(summary) > 10:
                 return summary
@@ -379,23 +418,25 @@ class MemoryManager:
         return self._simple_summarize(messages)
 
     def _simple_summarize(self, messages: list) -> str:
-        """简单摘要（不依赖 AI）"""
+        """简单摘要（不依赖 AI，保真优先）"""
         topics = []
         tool_calls = []
+        edits = []
         for msg in messages:
             content = msg.get("content", "")
             role = msg.get("role", "")
-            if role == "user" and isinstance(content, str):
+            if not isinstance(content, str):
+                continue
+            if role == "user":
                 # 提取用户请求
                 if len(content) < 100:
                     topics.append(content)
                 else:
                     topics.append(content[:50] + "...")
-            if role == "assistant" and isinstance(content, str):
+            if role == "assistant":
                 # 提取工具调用
                 if '"action": "use_tool"' in content or '"tool":' in content:
                     try:
-                        # 尝试解析工具名
                         for part in content.split('"tool":'):
                             if len(part) > 2:
                                 tool_name = part.split('"')[1] if '"' in part else ""
@@ -403,12 +444,19 @@ class MemoryManager:
                                     tool_calls.append(tool_name)
                     except Exception:
                         pass
+                # 提取代码编辑点（edit 命令）
+                for m in re.finditer(r'edit\s+(\S+)', content):
+                    fn = m.group(1)
+                    if fn not in edits:
+                        edits.append(fn)
 
         summary_parts = []
         if topics:
             summary_parts.append(f"讨论了 {len(topics)} 个话题: {'; '.join(topics[:5])}")
         if tool_calls:
             summary_parts.append(f"使用了工具: {', '.join(tool_calls[:8])}")
+        if edits:
+            summary_parts.append(f"编辑了文件: {', '.join(edits[:8])}")
         summary_parts.append(f"共 {len(messages)} 条对话")
 
         return "。".join(summary_parts)
