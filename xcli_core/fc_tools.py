@@ -47,7 +47,117 @@ def mcp_to_openai_tools(plugin_manager) -> List[Dict]:
     builtin_tools = _get_builtin_tools()
     tools.extend(builtin_tools)
 
-    return tools
+    # ── 去重：同名工具只保留首个 ──
+    # 来源：get_mcp_tools() 的缓存里已含 memory/scheduler/lsp 等，
+    # 下方 _get_builtin_tools() 又追加了一遍，导致同名重复（约 17% 的 FC token 是垃圾）。
+    # 按 function.name 去重，消除双重曝光，对真实工具无影响。
+    seen = set()
+    deduped = []
+    for t in tools:
+        fname = (t.get("function") or {}).get("name", "")
+        if fname in seen:
+            continue
+        seen.add(fname)
+        deduped.append(t)
+    return deduped
+
+
+# ══════════════════════════════════════════════════════════════════
+#  动态工具裁剪（方案 B：按场景分层）
+#
+#  把 40+ 的 FC 工具全量发给模型，每轮要重发数千 token schema，且
+#  模型要在大列表里选对工具，决策面大、易选错、成本高。
+#  这里按「当前用户输入」的信号，只下发本轮相关的工具子集：
+#    - ALWAYS_KEEP：始终保留（含强制 tool_search 规则依赖、记忆、定时）
+#    - 外部桥接工具（含 "mcp__"）默认保留（用户显式配置，误杀代价高）
+#    - 命中关键词信号才追加对应工具（代码/文件/git/shell/浏览器/搜索/子agent/工程化）
+#  纯聊天时模型只背 ~10 个核心工具而非 40+，FC token 可降约 70%+。
+# ══════════════════════════════════════════════════════════════════
+
+# 始终保留的工具（与系统提示里的强制规则/记忆机制强绑定）
+ALWAYS_KEEP = {
+    "tool_search",   # 系统提示的「强制工具查询规则」依赖它
+    "memory",        # 持久化记忆
+    "scheduler",     # 定时任务
+}
+
+# 信号：关键词集合 → 追加「以此前缀开头」的工具
+_SIGNAL_RULES = [
+    # 代码 / 文件操作：Python 等源码信号命中时，连 pylsp 的 lsp__* 一起给
+    (
+        {"写", "创建", "新建", "修改", "编辑", "代码", "脚本", "函数", "bug", "修复",
+         "调试", "重构", "文件", "报错", "语法", "实现", "module", "def ", "import ",
+         "class ", "print(", ".py", ".js", ".ts", ".java", ".go", ".cpp", ".c", ".rs"},
+        ["code_editor", "code_search", "file_manager", "lsp__", "syntax_check", "check"],
+    ),
+    # 版本控制
+    (
+        {"git", "提交", "commit", "分支", "branch", "版本", "diff", "stash", "merge", "rebase"},
+        ["git_tools"],
+    ),
+    # Shell 命令
+    (
+        {"命令", "shell", "终端", "执行", "运行", "cmd", "bash", "powershell", "terminal"},
+        ["cmd_executor"],
+    ),
+    # 浏览器
+    (
+        {"浏览器", "网页", "点击", "browser", "打开网页", "截图", "scroll", "页面"},
+        ["browser_auto"],
+    ),
+    # 联网 / 搜索 / HTTP
+    (
+        {"搜索", "联网", "http", "请求", "url", "curl", "api", "查一下", "上网", "fetch"},
+        ["network_tools", "ai_search"],
+    ),
+    # 子 Agent 并行
+    (
+        {"子agent", "并行", "subagent", "sub_agent", "多智能体"},
+        ["sub_agent"],
+    ),
+    # 工程化自动化
+    (
+        {"测试", "test", "lint", "build", "自动化", "工程化", "ci", "部署", "deploy"},
+        ["auto_engineer"],
+    ),
+]
+
+
+def prune_tools(fc_tools: List[Dict], user_input: str) -> List[Dict]:
+    """
+    按当前用户输入动态裁剪 FC 工具子集。
+
+    返回保留下来的工具列表。无输入或空列表时原样返回（不裁剪）。
+    规则见模块顶部 _SIGNAL_RULES / ALWAYS_KEEP 注释。
+    """
+    if not fc_tools:
+        return fc_tools
+
+    text = (user_input or "").lower()
+
+    keep_prefixes = set()
+    for keywords, prefixes in _SIGNAL_RULES:
+        if any(kw in text for kw in keywords):
+            keep_prefixes.update(prefixes)
+
+    out = []
+    for t in fc_tools:
+        name = (t.get("function") or {}).get("name", "")
+        # 1) 常驻工具
+        if name in ALWAYS_KEEP:
+            out.append(t)
+            continue
+        # 2) 外部桥接工具（用户显式配置）默认保留，避免误杀
+        if "mcp__" in name:
+            out.append(t)
+            continue
+        # 3) 命中当前轮信号 → 追加（前缀匹配，如 lsp__diagnostics 命中 "lsp__"）
+        if any(name.startswith(p) for p in keep_prefixes):
+            out.append(t)
+            continue
+        # 4) 其余（未命中信号的低频工具）本轮裁剪掉
+
+    return out
 
 
 def _extract_fc_def(plugin) -> Optional[Dict]:

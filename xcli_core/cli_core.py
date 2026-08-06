@@ -310,11 +310,14 @@ multi 操作支持一次修改多处：
                 plugins.append(tool)
 
         if plugins:
-            prompts.append("## 内置工具（使用 tool_search 查询详细用法）：")
-            for tool in plugins:
-                tool_name = tool.get('name', '')
-                tool_desc = tool.get('description', '')
-                prompts.append(f"- {tool_name}: {tool_desc}")
+            # 工具名清单（与 FC tools 字段互补；不逐条重复 description，避免双重曝光）。
+            # 无 function-calling 能力的模型只能靠此清单知道有哪些工具，故保留名称。
+            names = ", ".join(t.get('name', '') for t in plugins)
+            prompts.append(
+                "## 内置工具（已通过 function calling 的 tools 字段提供，调用前请先用 "
+                "tool_search 查询其详细用法与示例）\n"
+                f"工具名: {names}"
+            )
 
         if skills:
             prompts.append("\n## 扩展技能（已加载详细指令）：")
@@ -883,8 +886,8 @@ multi 操作支持一次修改多处：
             # TUI 模式也支持 FC
             fc_tools = None
             try:
-                from .fc_tools import mcp_to_openai_tools
-                fc_tools = mcp_to_openai_tools(self.liugin_manager)
+                from .fc_tools import mcp_to_openai_tools, prune_tools
+                fc_tools = prune_tools(mcp_to_openai_tools(self.liugin_manager), current_input)
             except Exception:
                 pass
             response = self.current_engine.generate_response(current_input, system_prompt=system_prompt, tools=fc_tools)
@@ -969,13 +972,11 @@ multi 操作支持一次修改多处：
                 if not self.current_engine:
                     response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
                 else:
-                    # ── 收集 FC 工具定义 ──
+                    # ── 收集 FC 工具定义（按当前输入动态裁剪）──
                     fc_tools = None
                     try:
-                        from .fc_tools import mcp_to_openai_tools
-                        fc_tools = mcp_to_openai_tools(self.liugin_manager)
-                        if fc_tools:
-                            fc_tools = fc_tools  # 已经是列表
+                        from .fc_tools import mcp_to_openai_tools, prune_tools
+                        fc_tools = prune_tools(mcp_to_openai_tools(self.liugin_manager), current_input)
                     except Exception:
                         fc_tools = None
 
