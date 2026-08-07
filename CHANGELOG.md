@@ -16,6 +16,10 @@
   - 上一版修复导致聊天界面完全看不到情话，改为：非 TTY 在请求开始输出一句随机情话（`💭` 前缀，只打一次、零残帧）
   - `love.txt` 读取时过滤 `http/https` 行，避免把反战标语 / 网址当情话甩出
   - 真 TTY 逐帧情话 + spinner 动画、TUI 模式均不受影响
+- **修复文件管理器跨平台路径串台**（本次提交）
+  - 模型在 Windows 主机上常给出 Linux/Mac 风格绝对路径（如 `/home/user/Desktop`、`/Users/<谁>/Desktop`、`/root/Desktop`），`os.path.abspath` 在 Windows 下会错误地拼成 `C:\home\user\Desktop` 并报「路径不存在」
+  - 新增 `_resolve_cross_platform_path`：Windows 下把 `/home/<用户>/…`、`/Users/<用户>/…`、`/root/…` 统一映射到当前用户家目录对应位置（`~/Desktop` 等）；Linux/Mac 下这些路径本身合法，原样保留
+  - `file_manager` 全部 10 个操作（list/read/write/append/copy/move/delete/search/info/mkdir）的路径解析均改用该归一化函数
 
 ### 🛠 工程
 

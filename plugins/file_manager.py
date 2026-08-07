@@ -3,12 +3,37 @@
 聚焦文件系统操作，代码编辑交给 code_editor
 """
 import os
+import re
 import json
 import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List
+
+
+# ── 跨平台路径归一化 ──────────────────────────────────────────────
+# 模型常给出 Linux/Mac 风格绝对路径（如 /home/<user>/Desktop、
+# /Users/<user>/Desktop、/root/Desktop）。在 Windows 下 os.path.abspath 会
+# 错误地拼成 C:\home\user\Desktop。这里把这类路径映射到当前用户家目录
+# 对应位置；Linux/Mac 下这些路径本身合法，原样保留。
+_HOME_OR_USER_RE = re.compile(r'^/(?:home|Users)/[^/]+(/.*)?$')
+_ROOT_RE = re.compile(r'^/root(/.*)?$')
+
+
+def _resolve_cross_platform_path(path: str) -> str:
+    """把模型给出的路径归一化到当前平台后再转绝对路径。"""
+    if os.name == 'nt' and path:
+        p = path.replace('\\', '/')
+        m = _HOME_OR_USER_RE.match(p)
+        if m:
+            rest = (m.group(1) or '').lstrip('/')
+            return os.path.join(os.path.expanduser('~'), rest)
+        m = _ROOT_RE.match(p)
+        if m:
+            rest = (m.group(1) or '').lstrip('/')
+            return os.path.join(os.path.expanduser('~'), rest)
+    return os.path.abspath(path)
 
 # 添加项目根目录到 path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -158,7 +183,7 @@ class Liugin:
                 path = args[i]
             i += 1
 
-        path = os.path.abspath(path)
+        path = _resolve_cross_platform_path(path)
         if not os.path.isdir(path):
             return ToolResult.not_found(f"目录: {path}")
 
@@ -193,7 +218,7 @@ class Liugin:
     def _op_read(self, args: List[str]):
         if not args:
             return ToolResult.missing("文件路径")
-        file_path = os.path.abspath(args[0])
+        file_path = _resolve_cross_platform_path(args[0])
         max_lines = None
         i = 1
         while i < len(args):
@@ -235,7 +260,7 @@ class Liugin:
     def _op_write(self, args: List[str]):
         if len(args) < 2:
             return ToolResult.fail("格式: write <文件> -c <内容>", ErrorCode.MISSING_ARGS)
-        fp = os.path.abspath(args[0])
+        fp = _resolve_cross_platform_path(args[0])
         content = None
         i = 1
         while i < len(args):
@@ -256,7 +281,7 @@ class Liugin:
     def _op_append(self, args: List[str]):
         if len(args) < 2:
             return ToolResult.fail("格式: append <文件> -c <内容>", ErrorCode.MISSING_ARGS)
-        fp = os.path.abspath(args[0])
+        fp = _resolve_cross_platform_path(args[0])
         content = None
         i = 1
         while i < len(args):
@@ -278,7 +303,7 @@ class Liugin:
     def _op_copy(self, args: List[str]):
         if len(args) < 2:
             return ToolResult.missing("源和目标路径")
-        src, dst = os.path.abspath(args[0]), os.path.abspath(args[1])
+        src, dst = _resolve_cross_platform_path(args[0]), _resolve_cross_platform_path(args[1])
         if not os.path.exists(src):
             return ToolResult.not_found(f"源: {src}")
         os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
@@ -291,7 +316,7 @@ class Liugin:
     def _op_move(self, args: List[str]):
         if len(args) < 2:
             return ToolResult.missing("源和目标路径")
-        src, dst = os.path.abspath(args[0]), os.path.abspath(args[1])
+        src, dst = _resolve_cross_platform_path(args[0]), _resolve_cross_platform_path(args[1])
         if not os.path.exists(src):
             return ToolResult.not_found(f"源: {src}")
         os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
@@ -301,7 +326,7 @@ class Liugin:
     def _op_delete(self, args: List[str]):
         if not args:
             return ToolResult.missing("路径")
-        path = os.path.abspath(args[0])
+        path = _resolve_cross_platform_path(args[0])
         recursive = "-r" in args
         if not os.path.exists(path):
             return ToolResult.not_found(f"路径: {path}")
@@ -321,7 +346,7 @@ class Liugin:
     def _op_search(self, args: List[str]):
         if not args:
             return ToolResult.missing("搜索目录")
-        directory = os.path.abspath(args[0])
+        directory = _resolve_cross_platform_path(args[0])
         pattern, content_search = None, None
         i = 1
         while i < len(args):
@@ -363,7 +388,7 @@ class Liugin:
     def _op_info(self, args: List[str]):
         if not args:
             return ToolResult.missing("路径")
-        path = os.path.abspath(args[0])
+        path = _resolve_cross_platform_path(args[0])
         if not os.path.exists(path):
             return ToolResult.not_found(f"路径: {path}")
 
@@ -383,7 +408,7 @@ class Liugin:
     def _op_mkdir(self, args: List[str]):
         if not args:
             return ToolResult.missing("目录路径")
-        path = os.path.abspath(args[0])
+        path = _resolve_cross_platform_path(args[0])
         if os.path.exists(path):
             return ToolResult.fail(f"已存在: {path}", ErrorCode.INVALID_ARGS)
         os.makedirs(path, exist_ok=True)
