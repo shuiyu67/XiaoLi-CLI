@@ -4,6 +4,42 @@
 
 ---
 
+## v8.0.4 (2026-08-08) — 稳定性 & 存储升级
+
+### 🚀 重大改进
+
+- **会话数据改用 SQLite 存储**（替代原先每个会话一个 JSON 文件）
+  - 新增 `xcli_core/session.py` SQLite 后端：库文件 `chat_history/conversations.db`，启用 WAL 模式、`check_same_thread=False`
+  - 两张表：`sessions(id,title,created_at,updated_at,engine,model,messages)` 与 `snapshots(name,saved_at,messages)`
+  - **首次启动自动迁移**：扫描旧的 `chat_history/*.json`，`id`+`messages` 结构写入 `sessions`、纯 `conversation` 结构写入 `snapshots`，迁移后移入 `_migrated_json/` 并写 `.migrated` 标记；迁移包在 try/except 中，绝不阻塞启动
+  - `/chat save|list|open` 与 `/resume` 命令改走 SQLite；`memory.py` 关键词搜索同时检索数据库会话，向后兼容未迁移的 JSON
+  - `SessionManager` 的类名与 `new_session/save/list_sessions/resolve/load` 接口保持不变，旧调用方（`cli_history.py`、`tests/test_session.py`）零改动
+
+### 🐛 Bug 修复 / 体验
+
+- **去掉「一直打印加载动画」的根源**
+  - 移除流式显示：`_typeprint` 改为一次整段打印（去掉逐字符 `time.sleep` 打字机循环）
+  - 移除常驻加载动画：`_generate_response_with_animation` 去掉 `show_animation` 线程、`love_sentences`、`animation_running` 事件与逐帧输出；TTY 仅打印一行静态 `💭 思考中… (按 ESC 取消)`，完成后清除该行
+  - 经核查 OpenAI / Ollama 引擎本就用 `stream: False`，「流式」实为打字机 + 逐帧动画，本次一并去除
+
+### ✨ 新功能
+
+- **展示给用户的消息过长自动截断（仅展示层，存储完整）**
+  - `cli_display.py` 新增 `_truncate_for_display`：超过 `max_chars=4000` 字符 / `max_lines=160` 行时，保留前若干行与字符，末尾追加 `… (展示已折叠，完整内容共 N 字符 / M 行，已完整保存到会话)`
+  - 底层会话数据（`messages`）不做任何截断，完整保存
+
+### 🛠 工程
+
+- **工具调用解析更稳，减少因格式错误浪费 token**
+  - `_loads_json` 升级为 4 级兜底修复：①标准 → ②未配对反斜杠转义 → ③字符串内未转义换行/制表符（`\n`/`\t` 修正）→ ④多余尾逗号删除（`{...",}`），全局统一复用
+  - 新增 `_extract_last_action_json`：扫描所有「成对错括号」对象（字符串感知，追踪 `in_str`/`esc`），返回键集合与 `CONTROL_KEYS={"action","continue","need_continue","think_more","message"}` 相交的最后一个候选；开头即 `[` 纯数组（多次工具调用）直接返回数组；替代原先脆弱的「方法5/6/7」正则抓取
+  - `_build_fc_tools` 去除「续轮剥离 Function Calling 工具」逻辑，续轮也始终下发 FC 工具，模型可用结构化调用而非散文 JSON
+  - 配套独立校验脚本 8 用例全过（含未转义换行、纯数组、尾逗号、正文误触发不应判为工具等边界）
+
+- 版本号统一更新至 v8.0.4（含 README 中英 badge、`about.txt`、`xcli_core/constants.py` 中央 `VERSION`、TUI banner、LSP/MCP `clientInfo.version`）
+
+---
+
 ## v8.0.3 (2026-08-07) — 体验增强
 
 ### ✨ 新功能

@@ -248,7 +248,7 @@ class MemoryManager:
                 md_file, keyword_lower, name, limit - len(results)
             ))
 
-        # 搜索聊天记录
+        # 搜索聊天记录（遗留 JSON 文件，兼容迁移前的历史）
         for json_file in sorted(glob.glob(os.path.join(self.chat_dir, "*.json")), reverse=True):
             if len(results) >= limit:
                 break
@@ -256,6 +256,42 @@ class MemoryManager:
             results.extend(self._search_json_file(
                 json_file, keyword_lower, name, limit - len(results)
             ))
+
+        # 搜索聊天记录（SQLite conversations.db，迁移后的主存储）
+        db_path = os.path.join(self.chat_dir, "conversations.db")
+        if os.path.exists(db_path):
+            try:
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(db_path)
+                conn.row_factory = _sqlite3.Row
+                rows = conn.execute(
+                    "SELECT id, messages FROM sessions "
+                    "UNION ALL SELECT name AS id, messages FROM snapshots"
+                ).fetchall()
+                conn.close()
+                for row in rows:
+                    if len(results) >= limit:
+                        break
+                    try:
+                        msgs = json.loads(row["messages"] or "[]")
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        msgs = []
+                    text = "\n".join(
+                        str(m.get("content", "")) for m in msgs
+                        if isinstance(m, dict)
+                    )
+                    source = f"chat/{row['id']}"
+                    for i, line in enumerate(text.split("\n"), 1):
+                        if keyword_lower in line.lower():
+                            results.append({
+                                "source": source,
+                                "line": i,
+                                "snippet": line.strip()[:120],
+                            })
+                            if len(results) >= limit:
+                                break
+            except Exception:
+                pass
 
         return results[:limit]
 

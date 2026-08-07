@@ -39,9 +39,24 @@ class DisplayMixin:
         else:
             print(message)
 
+    def _truncate_for_display(self, content, max_chars=4000, max_lines=160):
+        """仅用于「展示层」的截断：过长时折叠，不影响底层存储的对话数据。"""
+        if not content:
+            return content
+        lines = content.split('\n')
+        if len(lines) > max_lines or len(content) > max_chars:
+            kept = "\n".join(lines[:max_lines])
+            kept = kept[:max_chars]
+            hidden = len(content) - len(kept)
+            note = f"\n\n… (展示已折叠，完整内容共 {len(content)} 字符 / {len(lines)} 行，已完整保存到会话)"
+            return kept + note
+        return content
+
     def _display_response(self, content, is_continue=False):
-        """统一显示 AI 响应，支持 TUI 和 CLI 模式"""
+        """统一显示 AI 响应，支持 TUI 和 CLI 模式（仅展示层截断，不改存储）"""
         user_id_display = f"[用户ID: {self.user_id}]"
+        # 仅展示截断：存储用的 shared_conversation_history 仍是完整内容
+        content = self._truncate_for_display(content)
         response_lines = content.split('\n')
         if self.tui_output_callback:
             for i, line in enumerate(response_lines):
@@ -98,14 +113,14 @@ class DisplayMixin:
                 self._output(f"{color}          {line}{Style.RESET_ALL}")
 
     def _typeprint(self, text, color=None, delay=0.01):
-        """逐字输出文本，实现打字机效果"""
-        for char in text:
-            if color:
-                print(f"{color}{char}{Style.RESET_ALL}", end="", flush=True)
-            else:
-                print(char, end="", flush=True)
-            time.sleep(delay)
-        print()
+        """输出文本（已取消逐字打字机效果，改为一次性完整输出）。
+
+        保留方法签名以兼容潜在调用方；不再逐字符 sleep，避免「流式显示」。
+        """
+        if color:
+            print(f"{color}{text}{Style.RESET_ALL}")
+        else:
+            print(text)
 
     # ── 图片显示 ──
 

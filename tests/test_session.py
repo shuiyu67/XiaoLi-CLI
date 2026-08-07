@@ -65,15 +65,11 @@ def test_title_generated_from_first_user_msg(tmp_history):
 
 def test_list_sessions_sorted_desc(tmp_history):
     mgr = SessionManager(tmp_history)
-    # 写入两个会话，并强制 s1 的更新时间更早，制造稳定可排序差
-    s1 = mgr.new_session(); mgr.save(s1, [{"role": "user", "content": "旧会话A"}])
-    path1 = os.path.join(tmp_history, f"{s1.id}.json")
-    with open(path1, "r", encoding="utf-8") as f:
-        d = json.load(f)
-    d["updated_at"] = "2020-01-01 00:00:00"
-    with open(path1, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False)
-    s2 = mgr.new_session(); mgr.save(s2, [{"role": "user", "content": "新会话B"}])
+    # 写入两个会话，并用 updated_at 覆盖制造稳定可排序差（SQLite 后端）
+    s1 = mgr.new_session()
+    mgr.save(s1, [{"role": "user", "content": "旧会话A"}], updated_at="2020-01-01 00:00:00")
+    s2 = mgr.new_session()
+    mgr.save(s2, [{"role": "user", "content": "新会话B"}], updated_at="2026-08-08 00:00:00")
     sessions = mgr.list_sessions()
     assert len(sessions) == 2
     # 倒序：更新的在前（updated_at 时间戳更大）

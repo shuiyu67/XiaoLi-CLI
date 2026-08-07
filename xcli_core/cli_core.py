@@ -375,16 +375,44 @@ multi 操作支持一次修改多处：
         return "\n".join(prompts)
 
     def _loads_json(self, s):
-        """json.loads，但容忍未成对出现的反斜杠（Windows 路径 C:\\Users 常见）。
+        """json.loads，带多级容错修复（模型输出的 JSON 常常不规整）。
 
-        纯 JSON 模式下模型常把路径写成单反斜杠，直接 json.loads 会报非法转义。
-        这里先按标准解析；失败时把「未成对的反斜杠」转义后再试一次。
+        尝试顺序：
+          1) 标准解析
+          2) 未成对的反斜杠转义（Windows 路径 C:\\Users 常见）
+          3) 字符串内的未转义换行/制表符（多行 args 常见）
+          4) 去掉对象/数组里多余的尾随逗号（模型高频错误）
         """
         try:
             return json.loads(s)
         except json.JSONDecodeError:
+            pass
+        # 2) 反斜杠修复
+        try:
             fixed = re.sub(r'(?<!\\)\\(?!\\\\)', r'\\\\', s)
             return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        # 3) 字符串内未转义换行/制表符修复
+        try:
+            repaired = re.sub(
+                r'"([^"]*(?:\n[^"]*)*)"',
+                lambda m: '"' + (m.group(1)
+                                 .replace('\\', '\\\\')
+                                 .replace('\n', '\\n')
+                                 .replace('\r', '\\r')
+                                 .replace('\t', '\\t')
+                                 .replace('"', '\\"')) + '"',
+                s, flags=re.DOTALL)
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+        # 4) 尾随逗号修复
+        try:
+            trimmed = re.sub(r',\s*([}\]])', r'\1', s)
+            return json.loads(trimmed)
+        except json.JSONDecodeError:
+            raise
 
     def _parse_mixed_response(self, response):
         """
@@ -465,69 +493,87 @@ multi 操作支持一次修改多处：
             else:
                 return text_content, json_objects
 
-        # 方法5: 查找内联的JSON对象
-        json_start_markers = [
-            '{"action": "use_tool"', '{"action": "continue"',
-            '{"action":"use_tool"', '{"action":"continue"',
-            '{ "action": "use_tool"', '{ "action": "continue"',
-            '{ "action":"use_tool"', '{ "action":"continue"'
-        ]
-        for marker in json_start_markers:
-            json_start = response.find(marker)
-            if json_start != -1:
-                brace_count = 0
-                in_json = False
-                for i in range(json_start, len(response)):
-                    char = response[i]
-                    if char == '{':
-                        if not in_json:
-                            in_json = True
-                        brace_count += 1
-                    elif char == '}':
-                        brace_count -= 1
-                        if in_json and brace_count == 0:
-                            json_str = response[json_start:i+1]
-                            try:
-                                json_data = self._loads_json(json_str)
-                                if isinstance(json_data, dict) and json_data.get('action') in ['use_tool', 'continue']:
-                                    text_content = response[:json_start].strip()
-                                    return text_content, json_data
-                            except json.JSONDecodeError:
-                                pass
-                            break
+        # 方法5: 稳健抽取最后一个「控制指令」JSON（兼容长文本后格式不规整的情况）。
+        # 结构化 FC 已是主路径；这里是纯 JSON 兜底：不再依赖脆弱的 marker 匹配，
+        # 而是扫描所有平衡括号的 JSON 对象，取最后一个含控制键的，最大限度避免
+        # 「长篇文本 + 格式错乱的工具调用」被解析失败、白白浪费 token。
+        text_before, json_data = self._extract_last_action_json(response)
+        if json_data is not None:
+            return text_before, json_data
 
-        # 方法6: 通用JSON对象查找
-        potential_jsons = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
-        for json_str in potential_jsons:
+        return response, None
+
+    def _extract_last_action_json(self, response):
+        """在可能夹杂长篇正文的响应里，稳健抽取最后一个控制指令 JSON。
+
+        控制指令指含以下任一字段的 JSON 对象：
+          action / continue / need_continue / think_more / message
+        返回 (text_before, json_data)；找不到返回 (response, None)。
+        """
+        # 整段就是 JSON 数组（多个工具调用）时直接返回，保留并发执行能力
+        stripped = response.strip()
+        if stripped.startswith('['):
             try:
-                json_data = self._loads_json(json_str)
-                if isinstance(json_data, dict) and json_data.get('action') in ['use_tool', 'continue']:
-                    json_start = response.find(json_str)
-                    text_content = response[:json_start].strip()
-                    return text_content, json_data
+                arr = self._loads_json(stripped)
+                if isinstance(arr, list) and arr:
+                    return "", arr
             except json.JSONDecodeError:
-                continue
+                pass
 
-        # 方法7: 批量JSON
+        CONTROL_KEYS = {"action", "continue", "need_continue", "think_more", "message"}
+        candidates = []  # (start_index, parsed_dict)
+        n = len(response)
+        i = 0
+        while i < n:
+            if response[i] == '{':
+                # 从 i 起做括号/字符串感知的平衡解析，取出一个完整 JSON 对象
+                depth = 0
+                in_str = False
+                esc = False
+                end = -1
+                for j in range(i, n):
+                    c = response[j]
+                    if in_str:
+                        if esc:
+                            esc = False
+                        elif c == '\\':
+                            esc = True
+                        elif c == '"':
+                            in_str = False
+                        continue
+                    if c == '"':
+                        in_str = True
+                    elif c == '{':
+                        depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end = j
+                            break
+                if end != -1:
+                    frag = response[i:end + 1]
+                    try:
+                        obj = self._loads_json(frag)
+                    except json.JSONDecodeError:
+                        obj = None
+                    if isinstance(obj, dict) and (set(obj.keys()) & CONTROL_KEYS):
+                        candidates.append((i, obj))
+                    i = end + 1
+                    continue
+            i += 1
+
+        if candidates:
+            start, obj = candidates[-1]
+            return response[:start].strip(), obj
+
+        # 退路：整段若为 JSON 数组（如 [{"action":"use_tool"}, ...]）
         try:
-            cleaned = response.strip()
-            for action in ['use_tool', 'continue']:
-                last_brace_pos = cleaned.rfind(f'{{"action": "{action}"')
-                if last_brace_pos == -1:
-                    last_brace_pos = cleaned.rfind(f'{{"action":"{action}"')
-                if last_brace_pos != -1:
-                    json_part = cleaned[last_brace_pos:]
-                    if json_part.startswith('['):
-                        parsed = self._loads_json(json_part)
-                        if isinstance(parsed, list):
-                            text_content = cleaned[:last_brace_pos].strip()
-                            return text_content, parsed
-                    else:
-                        parsed = self._loads_json(json_part)
-                        if isinstance(parsed, dict):
-                            text_content = cleaned[:last_brace_pos].strip()
-                            return text_content, parsed
-        except:
+            stripped = response.strip()
+            if stripped.startswith('['):
+                arr = self._loads_json(stripped)
+                if isinstance(arr, list) and arr:
+                    return "", arr
+        except json.JSONDecodeError:
             pass
 
         return response, None
@@ -922,10 +968,9 @@ multi 操作支持一次修改多处：
                 return None
         except Exception:
             return None
-        # 工具结果续轮：模型只需决定「继续/收尾」，不需要 FC schema，省下每轮重发的 token。
-        # 若模型仍想调工具，走纯 JSON action（无需 schema 即可），行为等价、成本更低。
-        if current_input and str(current_input).lstrip().startswith("工具执行结果"):
-            return None
+        # 工具结果续轮也下发 FC 工具：让模型在续轮里继续用结构化 function calling
+        # 调用工具，避免把工具调用写成散文 JSON（长文本后格式错乱会浪费 token）。
+        # 仅对带 _fc_supported() 的引擎下发 tools（Manual 等不支持的引擎不传 tools）。
         try:
             from .fc_tools import mcp_to_openai_tools, prune_tools
             all_tools = mcp_to_openai_tools(self.liugin_manager)
@@ -956,90 +1001,55 @@ multi 操作支持一次修改多处：
             response = self._call_engine_with_tools(current_input, system_prompt, fc_tools)
             return response
 
-        # CLI 模式：带动画和跨平台 ESC 取消
-        animation_running = threading.Event()
-        animation_running.set()
+        # CLI 模式：去掉流式显示与逐帧加载动画，改为「一次性等待 + 完整输出」。
+        # 仍用线程跑生成以支持 ESC 取消，但不再喷任何中间动画/情话帧。
         esc_pressed = threading.Event()
         response_ready = threading.Event()
         response_result = [None]  # 用列表存储，方便线程内修改
 
-        # 是否真实交互终端：非 TTY（管道 / 日志镜像 / 聊天前端捕获 stdout）时，
-        # \r 无法原地覆盖，逐帧动画会污染输出流，必须禁用。
+        # 是否真实交互终端：非 TTY（管道 / 日志镜像 / 聊天前端捕获 stdout）时
+        # 不打印任何等待提示，避免污染捕获流。
         is_tty = sys.stdout.isatty()
-
-        love_sentences = []
-        love_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), LOVE_FILE_PATH)
-        if os.path.exists(love_file_path):
-            try:
-                with open(love_file_path, 'r', encoding='utf-8') as f:
-                    love_sentences = [line.strip() for line in f.readlines()
-                                      if line.strip()
-                                      and not line.strip().lower().startswith(('http://', 'https://'))]
-            except Exception:
-                pass
-        if not love_sentences:
-            love_sentences = ["AI正在思考中...", "请稍等片刻...", "正在处理您的请求..."]
+        if is_tty:
+            # 仅一行静态提示，非动画
+            print(f"{Fore.MAGENTA}💭 思考中… (按 ESC 取消){Style.RESET_ALL}", end="", flush=True)
 
         # ── 跨平台 ESC 检测 ──
         def check_for_esc():
             """跨平台 ESC 键检测"""
             import platform
-            if platform.system() == 'Windows':
-                try:
-                    import msvcrt
-                    while animation_running.is_set():
+            while not response_ready.is_set() and not esc_pressed.is_set():
+                if platform.system() == 'Windows':
+                    try:
+                        import msvcrt
                         if msvcrt.kbhit():
                             key = msvcrt.getch()
                             if ord(key) == 27:  # ESC
                                 esc_pressed.set()
                                 break
                         time.sleep(0.05)
-                except ImportError:
-                    pass
-            else:
-                # Linux / macOS — 用 select 做非阻塞读取
-                import select
-                import sys
-                try:
-                    # 保存原始终端设置
-                    import tty, termios
-                    fd = sys.stdin.fileno()
-                    old_settings = termios.tcgetattr(fd)
+                    except ImportError:
+                        break
+                else:
+                    # Linux / macOS — 用 select 做非阻塞读取
+                    import select
                     try:
-                        tty.setcbreak(fd)  # cbreak 模式：无需回车即可读取
-                        while animation_running.is_set():
-                            if select.select([sys.stdin], [], [], 0.05)[0]:
-                                ch = sys.stdin.read(1)
+                        import sys as _sys
+                        import tty, termios
+                        fd = _sys.stdin.fileno()
+                        old_settings = termios.tcgetattr(fd)
+                        try:
+                            tty.setcbreak(fd)  # cbreak 模式：无需回车即可读取
+                            if select.select([_sys.stdin], [], [], 0.05)[0]:
+                                ch = _sys.stdin.read(1)
                                 if ord(ch) == 27:  # ESC
                                     esc_pressed.set()
                                     break
-                    finally:
-                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                except Exception:
-                    # 降级：无法检测 ESC，只能等 AI 完成
-                    pass
-
-        # ── 动画线程 ──
-        def show_animation():
-            # 非 TTY：不跑逐帧 \r 动画（避免残帧进入捕获流），但保留一句随机情话保人味
-            if not is_tty:
-                try:
-                    print(f"💭 {random.choice(love_sentences)}", flush=True)
-                except Exception:
-                    pass
-                return
-            last_change_time = time.time()
-            current_sentence = random.choice(love_sentences)
-            while animation_running.is_set():
-                current_time = time.time()
-                if current_time - last_change_time >= 5:
-                    current_sentence = random.choice(love_sentences)
-                    last_change_time = current_time
-                animation_chars = "|/-\\"
-                char_idx = int((current_time * 10) % len(animation_chars))
-                display_sentence = current_sentence[:47] + "..." if len(current_sentence) > 50 else current_sentence
-                print(f"\r{Fore.MAGENTA}{display_sentence} {animation_chars[char_idx]}{Style.RESET_ALL}", end="", flush=True)
-                time.sleep(0.1)
+                        finally:
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    except Exception:
+                        # 降级：无法检测 ESC，只能等 AI 完成
+                        break
 
         # ── AI 响应线程 ──
         def generate_in_thread():
@@ -1056,9 +1066,9 @@ multi 操作支持一次修改多处：
             finally:
                 response_ready.set()
 
-        # 启动三个线程
+        # 启动线程（生成 + ESC 检测）
         threads = []
-        for target in (show_animation, check_for_esc, generate_in_thread):
+        for target in (check_for_esc, generate_in_thread):
             t = threading.Thread(target=target, daemon=True)
             t.start()
             threads.append(t)
@@ -1070,19 +1080,16 @@ multi 操作支持一次修改多处：
 
             # ESC 被按下 → 取消
             if esc_pressed.is_set():
-                # 清除动画行
                 if is_tty:
                     print("\r" + " " * 80 + "\r", end="", flush=True)
                 print(f"\n{Fore.YELLOW}⚡ AI 请求已取消 (ESC){Style.RESET_ALL}")
                 return "[AI请求已取消]"
 
-            # 响应正常返回
+            # 响应正常返回：清除等待行，不做逐字流式打印。
+            # 完整结果由 process_conversation 统一经 _display_response 透出（含展示层截断）。
             response = response_result[0]
-            if response:
-                # 清除动画行后再输出
-                if is_tty:
-                    print("\r" + " " * 80 + "\r", end="", flush=True)
-                self._typeprint(response, Fore.CYAN)
+            if is_tty:
+                print("\r" + " " * 80 + "\r", end="", flush=True)
 
             if response and self.shared_conversation_history is not None:
                 self.shared_conversation_history.append({
@@ -1093,7 +1100,6 @@ multi 操作支持一次修改多处：
             return response
 
         finally:
-            animation_running.clear()
             for t in threads:
                 t.join(timeout=1)
 
