@@ -963,6 +963,10 @@ multi 操作支持一次修改多处：
         response_ready = threading.Event()
         response_result = [None]  # 用列表存储，方便线程内修改
 
+        # 是否真实交互终端：非 TTY（管道 / 日志镜像 / 聊天前端捕获 stdout）时，
+        # \r 无法原地覆盖，逐帧动画会污染输出流，必须禁用。
+        is_tty = sys.stdout.isatty()
+
         love_sentences = []
         love_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), LOVE_FILE_PATH)
         if os.path.exists(love_file_path):
@@ -1015,6 +1019,13 @@ multi 操作支持一次修改多处：
 
         # ── 动画线程 ──
         def show_animation():
+            # 非 TTY：只输出一行静态提示，不跑逐帧 \r 动画（避免残帧进入捕获流）
+            if not is_tty:
+                try:
+                    print("⏳ AI 正在思考中…", flush=True)
+                except Exception:
+                    pass
+                return
             last_change_time = time.time()
             current_sentence = random.choice(love_sentences)
             while animation_running.is_set():
@@ -1058,7 +1069,8 @@ multi 操作支持一次修改多处：
             # ESC 被按下 → 取消
             if esc_pressed.is_set():
                 # 清除动画行
-                print("\r" + " " * 80 + "\r", end="", flush=True)
+                if is_tty:
+                    print("\r" + " " * 80 + "\r", end="", flush=True)
                 print(f"\n{Fore.YELLOW}⚡ AI 请求已取消 (ESC){Style.RESET_ALL}")
                 return "[AI请求已取消]"
 
@@ -1066,7 +1078,8 @@ multi 操作支持一次修改多处：
             response = response_result[0]
             if response:
                 # 清除动画行后再输出
-                print("\r" + " " * 80 + "\r", end="", flush=True)
+                if is_tty:
+                    print("\r" + " " * 80 + "\r", end="", flush=True)
                 self._typeprint(response, Fore.CYAN)
 
             if response and self.shared_conversation_history is not None:
