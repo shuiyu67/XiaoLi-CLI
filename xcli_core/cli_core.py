@@ -972,7 +972,9 @@ multi 操作支持一次修改多处：
         if os.path.exists(love_file_path):
             try:
                 with open(love_file_path, 'r', encoding='utf-8') as f:
-                    love_sentences = [line.strip() for line in f.readlines() if line.strip()]
+                    love_sentences = [line.strip() for line in f.readlines()
+                                      if line.strip()
+                                      and not line.strip().lower().startswith(('http://', 'https://'))]
             except Exception:
                 pass
         if not love_sentences:
@@ -1019,10 +1021,10 @@ multi 操作支持一次修改多处：
 
         # ── 动画线程 ──
         def show_animation():
-            # 非 TTY：只输出一行静态提示，不跑逐帧 \r 动画（避免残帧进入捕获流）
+            # 非 TTY：不跑逐帧 \r 动画（避免残帧进入捕获流），但保留一句随机情话保人味
             if not is_tty:
                 try:
-                    print("⏳ AI 正在思考中…", flush=True)
+                    print(f"💭 {random.choice(love_sentences)}", flush=True)
                 except Exception:
                     pass
                 return
