@@ -86,7 +86,8 @@ def _smart_explain(code: str, ctx: dict) -> Tuple[str, str]:
         func = ctx.get("func", "")
         arg = ctx.get("arg", "")
         if func and arg:
-            fix = (f"修复: 改写成 def {func}({arg}=None):  {arg} = {arg} if {arg} is not None else 默认值"
+            default_text = ctx.get("default_text", "默认值")
+            fix = (f"修复: 改写成 def {func}({arg}=None):  {arg} = {arg} if {arg} is not None else {default_text}"
                    f"——避免所有调用共享同一个可变对象。")
             return title, fix
 
@@ -138,8 +139,12 @@ def _smart_explain(code: str, ctx: dict) -> Tuple[str, str]:
     elif code == "E004":
         name = ctx.get("name", "")
         if name:
-            fix = (f"修复: {name} 在某条执行路径上可能没赋值就被使用（运行时 UnboundLocalError）。"
-                   f"建议在使用前先赋初值: {name} = None（或按逻辑给默认值），或确保所有分支都赋值。")
+            if ctx.get("del_flag"):
+                fix = (f"修复: {name} 被 del 之后又使用（运行时 UnboundLocalError）。"
+                       f"若不再需要该变量，删除 del 语句；若仍需使用，请去掉 del 或在使用后再删。")
+            else:
+                fix = (f"修复: {name} 在某条执行路径上可能没赋值就被使用（运行时 UnboundLocalError）。"
+                       f"建议在使用前先赋初值: {name} = None（或按逻辑给默认值），或确保所有分支都赋值。")
             return title, fix
 
     return title, base_fix
@@ -331,9 +336,13 @@ class _ScopeAnalyzer(ast.NodeVisitor):
         if n_defaults:
             for arg, d in zip(node.args.args[-n_defaults:], node.args.defaults):
                 if isinstance(d, (ast.List, ast.Dict, ast.Set)):
+                    try:
+                        default_text = ast.unparse(d)
+                    except Exception:
+                        default_text = "默认值"
                     self._add("W004", node.lineno, node.col_offset,
                               extra=f"可变默认参数: {node.name}.{arg.arg}",
-                              func=node.name, arg=arg.arg)
+                              func=node.name, arg=arg.arg, default_text=default_text)
         for d in node.args.kw_defaults:
             if d is not None and isinstance(d, (ast.List, ast.Dict, ast.Set)):
                 self._add("W004", node.lineno, node.col_offset,
@@ -562,8 +571,10 @@ def _flow_maybe_report(node, locals_set, defined, analyzer):
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
         nid = node.id
         if nid in locals_set and nid not in defined:
+            del_names = getattr(analyzer, "_flow_del_names", set()) or set()
             analyzer._add("E004", node.lineno, node.col_offset,
-                          extra=f"可能未定义: {nid}", name=nid)
+                          extra=f"可能未定义: {nid}", name=nid,
+                          del_flag=nid in del_names)
 
 
 def _flow_check_loads(node, locals_set, defined, analyzer):
@@ -826,6 +837,14 @@ def _dataflow_check(tree, analyzer):
             if isinstance(sub, (ast.Global, ast.Nonlocal)):
                 for n in sub.names:
                     locals_set.discard(n)
+        # 收集被 del 的变量 (E004 建议区分「del 后使用」场景)
+        del_names = set()
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.Delete):
+                for t in sub.targets:
+                    if isinstance(t, ast.Name):
+                        del_names.add(t.id)
+        analyzer._flow_del_names = del_names
 
         defined = {a.arg for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs}
         if fn.args.vararg:
