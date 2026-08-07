@@ -4,6 +4,25 @@
 
 ---
 
+## v8.0.2 (2026-08-07) — 小修复版本
+
+### 🐛 Bug 修复
+
+- **加载动画在非 TTY 环境不再污染输出流**（提交 `c81914a`）
+  - `_generate_response_with_animation` 的 `show_animation` 用 `print("\r...")` 逐帧（约 10 帧/秒）输出 `love.txt` 情话 + spinner，仅真终端能原地覆盖；被聊天前端 / WebSocket 桥 / 管道 / 日志镜像捕获时每帧变成一行垃圾混进对话显示
+  - 加 `sys.stdout.isatty()` 守卫：非 TTY 只输出单行提示、不跑逐帧 `\r` 动画
+  - TUI 模式（`tui_output_callback`）本就跳过动画，不受影响
+- **非 TTY 环境保留情话「人味」**（提交 `1c52482`）
+  - 上一版修复导致聊天界面完全看不到情话，改为：非 TTY 在请求开始输出一句随机情话（`💭` 前缀，只打一次、零残帧）
+  - `love.txt` 读取时过滤 `http/https` 行，避免把反战标语 / 网址当情话甩出
+  - 真 TTY 逐帧情话 + spinner 动画、TUI 模式均不受影响
+
+### 🛠 工程
+
+- 版本号统一更新至 v8.0.2（含 README 中英 badge、`about.txt`、`xcli_core/constants.py` 中央 `VERSION`、TUI banner、LSP/MCP `clientInfo.version`）
+
+---
+
 ## v8.0.1 (2026-08-07) — Release
 
 ### ✨ 新增功能

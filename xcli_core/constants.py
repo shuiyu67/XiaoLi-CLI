@@ -7,7 +7,7 @@ LOVE_FILE_PATH = "love.txt"
 DEFAULT_MAX_HISTORY = 999999  # 无限制对话历史
 
 # 版本号（v8.0 基于 v5.4.1 重新立项）
-VERSION = "8.0.1"
+VERSION = "8.0.2"
 VERSION_NAME = "小狸 Pro-CLI"
 
 import os
