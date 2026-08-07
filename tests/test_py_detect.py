@@ -572,6 +572,28 @@ class TestDataFlow:
         assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
         assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
 
+    # ── 顶级库压测回归 (posonlyargs / 常量迭代源) ──
+    def test_posonly_args_collected(self, pd):
+        """def f(a, /, b): a 是位置专用参数, 不得误报 (pydantic Self | str 场景)"""
+        src = ("def inner(class_, /):\n"
+               "    return class_.__name__\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_const_iter_always_runs(self, pd):
+        """for f in ('a','b','c'): 常量非空 → 循环变量确定 (pydantic v1 host 场景)"""
+        src = ("def f(parts):\n"
+               "    for k in ('a', 'b', 'c'):\n"
+               "        host = parts[k]\n"
+               "        if host:\n"
+               "            break\n"
+               "    return host\n")
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_range_const_iter(self, pd):
+        src = "def f():\n    for i in range(3):\n        x = i\n    return x\n"
+        assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
 
 # ── code_editor 写文件后自动检测集成 ──
 class TestAutoDetectIntegration:

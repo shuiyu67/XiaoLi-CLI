@@ -320,7 +320,7 @@ class _ScopeAnalyzer(ast.NodeVisitor):
                 self._add("W007", node.lineno, node.col_offset,
                           extra=f"方法 {node.name} 缺 self/cls", func=node.name)
         scope: Dict[str, str] = {}
-        for arg in node.args.args + node.args.kwonlyargs:
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
             scope[arg.arg] = "参数"
         if node.args.vararg:
             scope[node.args.vararg.arg] = "参数"
@@ -626,6 +626,40 @@ def _match_bound_names(pattern) -> set:
     return names
 
 
+def _target_name_list(target) -> list:
+    """提取赋值目标的全部名字 (含解包/星号)"""
+    names = []
+    if isinstance(target, ast.Name):
+        names.append(target.id)
+    elif isinstance(target, ast.Starred):
+        names.extend(_target_name_list(target.value))
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            names.extend(_target_name_list(elt))
+    return names
+
+
+def _flow_iter_always_runs(iter_node) -> bool:
+    """迭代源是否为非空常量 → 循环体必执行至少一次"""
+    if isinstance(iter_node, (ast.Tuple, ast.List, ast.Set)):
+        return len(iter_node.elts) > 0
+    if isinstance(iter_node, ast.Constant):
+        v = iter_node.value
+        return isinstance(v, (str, bytes, list, tuple, dict, set)) and len(v) > 0
+    if isinstance(iter_node, ast.Call) and isinstance(iter_node.func, ast.Name) \
+            and iter_node.func.id == "range" and len(iter_node.args) >= 1:
+        try:
+            stop = iter_node.args[0].value
+            if len(iter_node.args) == 1:
+                return isinstance(stop, int) and stop > 0
+            if len(iter_node.args) >= 2 and isinstance(stop, int):
+                start = iter_node.args[1].value
+                return isinstance(start, int) and stop > start
+        except AttributeError:
+            return False
+    return False
+
+
 def _flow_terminates(stmts) -> bool:
     """语句列表是否必然终止/不流出 (return/raise/continue/break, 或 if 两分支都终止)"""
     if not stmts:
@@ -665,9 +699,17 @@ def _flow_statements(stmts, locals_set, defined, analyzer):
             _flow_statements(stmt.body, locals_set, d_inner, analyzer)
             d_orelse = set(d0)
             _flow_statements(stmt.orelse, locals_set, d_orelse, analyzer)
-            # for-else: orelse 在循环无 break 时必执行(含 0 次) → 其赋值确定;
-            # 循环体赋值可能 0 次 → 不贡献
-            defined.clear(); defined.update(d_orelse)
+            if _flow_iter_always_runs(stmt.iter):
+                # 常量非空迭代源 → 循环体必执行至少一次 → 循环体赋值确定
+                defined.clear(); defined.update(d_inner)
+            else:
+                if stmt.orelse and _flow_terminates(stmt.orelse):
+                    # for-else: else 终止(return/raise) → 仅 break 路径流出 → 循环变量确定
+                    for n in _target_name_list(stmt.target):
+                        d_orelse.add(n)
+                # else 非终止: orelse 在无 break 时必执行(含 0 次) → 其赋值确定;
+                # 循环体赋值可能 0 次 → 不贡献
+                defined.clear(); defined.update(d_orelse)
         elif isinstance(stmt, ast.While):
             _flow_check_loads(stmt.test, locals_set, defined, analyzer)
             d0 = set(defined)
@@ -758,7 +800,7 @@ def _dataflow_check(tree, analyzer):
         for sub in ast.walk(fn):
             if isinstance(sub, ast.Name) and isinstance(sub.ctx, (ast.Store, ast.Del)):
                 locals_set.add(sub.id)
-        for a in fn.args.args + fn.args.kwonlyargs:
+        for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs:
             locals_set.add(a.arg)
         if fn.args.vararg:
             locals_set.add(fn.args.vararg.arg)
@@ -769,7 +811,7 @@ def _dataflow_check(tree, analyzer):
                 for n in sub.names:
                     locals_set.discard(n)
 
-        defined = {a.arg for a in fn.args.args + fn.args.kwonlyargs}
+        defined = {a.arg for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs}
         if fn.args.vararg:
             defined.add(fn.args.vararg.arg)
         if fn.args.kwarg:
