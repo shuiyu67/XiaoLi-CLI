@@ -26,6 +26,7 @@ import time
 import shutil
 import base64
 import hashlib
+import http
 import platform
 import subprocess
 import tempfile
@@ -145,9 +146,17 @@ class OkHttpResponse:
         self.statusCode = status_code
         self.content = content
         self._headers = headers or {}
+        try:
+            self.statusMessage = http.HTTPStatus(status_code).phrase
+        except Exception:
+            self.statusMessage = ""
 
     def isSuccessful(self) -> bool:
         return 200 <= self.statusCode < 300
+
+    def json(self):
+        import json as _json
+        return _json.loads(self.content)
 
     def headers(self) -> dict:
         return self._headers
@@ -185,7 +194,7 @@ class OkHttpRequest:
     def build(self) -> "OkHttpRequest":
         return self
 
-    def execute(self) -> OkHttpResponse:
+    async def execute(self) -> OkHttpResponse:
         if requests is None and httpx is None:
             raise RuntimeError("需要安装 requests 或 httpx: pip install requests")
         lib = requests or httpx
@@ -230,6 +239,11 @@ class _OkHttp:
     @staticmethod
     def newBuilder() -> OkHttpBuilder:
         return OkHttpBuilder()
+
+    @staticmethod
+    def newClient() -> OkHttpClient:
+        # 真实 Operit 插件用 OkHttp.newClient() 而非 newBuilder().build()
+        return OkHttpClient()
 
 
 OkHttp = _OkHttp()
