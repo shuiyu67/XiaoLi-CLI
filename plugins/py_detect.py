@@ -351,6 +351,22 @@ class _ScopeAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
         self.scope_stack.pop()
 
+    def visit_Import(self, node: ast.Import):
+        if self.scope_stack:
+            for alias in node.names:
+                name = (alias.asname or alias.name).split(".")[0]
+                self.scope_stack[-1][name] = "导入"   # 函数内 import (局部导入)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        if self.scope_stack:
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                name = alias.asname or alias.name
+                self.scope_stack[-1][name] = "导入"
+        self.generic_visit(node)
+
     def visit_Lambda(self, node: ast.Lambda):
         for a in node.args.args:
             self._declare(a.arg)

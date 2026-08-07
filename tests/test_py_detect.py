@@ -580,6 +580,19 @@ class TestDataFlow:
         assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
         assert "E004" not in {d["code"] for d in pd.analyze(src, "t.py")}
 
+    def test_function_local_import_ok(self, pd):
+        """函数内 import 不得误报 E002 (标准库 aifc math / argparse copy 场景)"""
+        src = ("def f(x):\n"
+               "    import math\n"
+               "    return math.frexp(x)\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
+    def test_function_local_import_from_ok(self, pd):
+        src = ("def f():\n"
+               "    from math import sqrt\n"
+               "    return sqrt(4)\n")
+        assert "E002" not in {d["code"] for d in pd.analyze(src, "t.py")}
+
     def test_const_iter_always_runs(self, pd):
         """for f in ('a','b','c'): 常量非空 → 循环变量确定 (pydantic v1 host 场景)"""
         src = ("def f(parts):\n"
