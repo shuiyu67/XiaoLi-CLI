@@ -4,6 +4,26 @@
 
 ---
 
+## v8.0.1 (2026-08-07) — Release
+
+### ✨ 新增功能
+
+- **Operit 市场插件转译层全面落地**
+  - `plugins/operit_loader.py` 增强：`OkHttp.newClient()`、`OkHttpRequest.execute()` 改为异步、`OkHttpResponse` 新增 `json()` 与 `statusMessage()`（基于 `http.HTTPStatus`）
+  - `plugins/operit_translate.py` 新增：Operit `.ts` 插件 → xiaoli-cli `.py` 脚手架生成器（自动提取 METADATA、生成 `exports` 胶水，原 TS 作参考注释保留）
+  - 接入 5 个已全链路验证的 Operit 市场插件：
+    - `market_time` — 时间查询 / 格式化
+    - `market_duckduckgo` — 网页内容抓取与清洗
+    - `market_crossref` — Crossref 学术文献检索
+    - `market_network_test` — HTTP 连通性测试
+    - `market_reader` — 本地代码递归搜索
+
+### 🛠 工程
+
+- 版本号统一更新至 v8.0.1（含 README 中英 badge、`about.txt`、`xcli_core/constants.py` 中央 `VERSION`、TUI banner、LSP/MCP `clientInfo.version`）
+
+---
+
 ## v5.4.0 (2026-05-09) — Release
 
 ### ✨ 新增功能
