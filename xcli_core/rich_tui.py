@@ -28,7 +28,7 @@ class RichTUI:
         self.cli = cli
         # record=True 是关键：渲染过程被记录，可随时导出文本/SVG/HTML 自验
         self.console = Console(record=True, width=100)
-        self.version = "8.0.2"
+        self.version = "8.0.3"
         self.engine = ""
         self.model = ""
         self.mode = "普通"

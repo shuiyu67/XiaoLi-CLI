@@ -268,7 +268,7 @@ class LspClient:
                 "workspace": {"workspaceFolders": True,
                                "configuration": True},
             },
-            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.2"},
+            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.3"},
         })
         if isinstance(result, dict):
             self.capabilities = result.get("capabilities", {}) or {}

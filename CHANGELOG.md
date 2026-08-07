@@ -4,6 +4,27 @@
 
 ---
 
+## v8.0.3 (2026-08-07) — 体验增强
+
+### ✨ 新功能
+
+- **TUI 新增 Vim 风格键位**（默认开，可用 `/vim` 开关）
+  - 输入框**模态编辑**：`Esc` 在 NORMAL / INSERT 间切换；NORMAL 下
+    - 移动：`h j k l`、`w / b`（跳词）、`0 / $`（行首/行尾）、`^`（首个非空白）、`gg / G`（文首/文尾）
+    - 进入插入：`i / a / o`（插入/追加/下方新行）、`I / A / O`（行首/行尾/上方新行）
+    - 编辑：`dd`（删行）、`x`（删字）、`dw`（删词）、`d$`（删到行尾）、`u`（撤销）
+    - 普通模式下 `回车` = 下移一行（与 vim 一致）
+  - 核心状态机抽成纯模块 `xcli_core/vim_keys.py`（`VimInputState`，不依赖 textual），配 `tests/test_vim_keys.py` 单测，18 项动作全部验证通过
+  - 聊天区导航（输入框未聚焦时生效）：`j / k` 逐行滚动、`Ctrl+F / B` 翻页、`Ctrl+D / U` 半页、`Ctrl+Space` 切换焦点、`i` 聚焦并进入插入
+  - 输入框下方提示栏实时显示 `-- INSERT --` / `-- NORMAL --` 模式；`/help` 已补充 Vim 键位说明
+  - 可通过 `config.json` 的 `vim_mode: false` 默认关闭
+
+### 🛠 工程
+
+- 版本号统一更新至 v8.0.3（含 README 中英 badge、`about.txt`、`xcli_core/constants.py` 中央 `VERSION`、TUI banner、LSP/MCP `clientInfo.version`）
+
+---
+
 ## v8.0.2 (2026-08-07) — 小修复版本
 
 ### 🐛 Bug 修复

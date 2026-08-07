@@ -153,7 +153,7 @@ class McpClient:
         result = self._send("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.2"},
+            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.3"},
         })
         # 通知 server 初始化完成（无响应，无需等待）
         self._send("notifications/initialized", {}, is_notification=True)

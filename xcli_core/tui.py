@@ -11,6 +11,7 @@ if TEXTUAL_AVAILABLE:
     from textual.reactive import var
     from textual.binding import Binding
     from textual import on
+    from .vim_keys import VimInputState
     import os
     from rich.syntax import Syntax
     from rich.panel import Panel
@@ -560,6 +561,125 @@ if TEXTUAL_AVAILABLE:
                 return
             # 其他键正常处理
 
+
+    # ═══════════════════════════════════════════════════
+    #  Vim 风格模态输入框（NORMAL / INSERT）
+    # ═══════════════════════════════════════════════════
+
+    class VimSendTextArea(SendTextArea):
+        """
+        带 Vim 模态编辑的输入框。
+
+        模式：
+          INSERT  —— 默认，正常打字；Esc 进入 NORMAL
+          NORMAL  —— h/j/k/l 移动，i/a/o 进入插入，dd 删行，x 删字，
+                    w/b 跳词，0/$ 行首行尾，gg/G 文首文尾，u 撤销 …
+
+        坐标：VimInputState 用字符偏移 offset，这里负责与 TextArea 的
+        (row, col) 光标互相转换。所有 vim 逻辑都在 vim_keys.py（纯函数，
+        可单测）；本类只做「按键映射 + 把结果写回 TextArea」。
+        """
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.vim_enabled = True
+            self.vim = VimInputState(mode="INSERT")
+
+        # ── offset <-> (row, col) ──
+        def _cur_off(self) -> int:
+            r, c = self.cursor_location
+            text = self.text
+            lines = text.split("\n")
+            return sum(len(l) + 1 for l in lines[:r]) + c
+
+        def _set_off(self, off: int):
+            text = self.text
+            off = max(0, min(off, len(text)))
+            r = text.count("\n", 0, off)
+            line_start = text.rfind("\n", 0, off)
+            c = off - (line_start + 1)
+            self.cursor_location = (r, c)
+
+        # ── key 名字 -> vim token ──
+        @staticmethod
+        def _vim_token(key: str):
+            m = {
+                "escape": "escape", "h": "h", "l": "l", "j": "j", "k": "k",
+                "w": "w", "b": "b", "e": "e", "0": "0", "$": "$", "^": "^",
+                "g": "g", "G": "G", "d": "d", "x": "x", "u": "u",
+                "i": "i", "a": "a", "o": "o", "O": "O", "I": "I", "A": "A",
+                "left": "left", "right": "right", "up": "up", "down": "down",
+                "shift+i": "I", "shift+a": "A", "shift+o": "O",
+                "shift+g": "G", "shift+6": "^", "shift+4": "$",
+            }
+            return m.get(key)
+
+        def _notify_mode(self):
+            app = self.app
+            if hasattr(app, "_update_vim_mode_display"):
+                try:
+                    app._update_vim_mode_display()
+                except Exception:
+                    pass
+
+        def _apply(self, res):
+            try:
+                if res.text != self.text:
+                    self.text = res.text
+                self._set_off(res.offset)
+                self.vim.mode = res.mode
+                self.vim.pending = res.pending
+                if res.action == "undo":
+                    try:
+                        self.undo()
+                    except Exception:
+                        pass
+                self._notify_mode()
+            except Exception:
+                # 任何意外都不应让输入框崩；退回默认行为
+                pass
+
+        async def _on_key(self, event):
+            # 回车：INSERT（或 vim 关闭）发送；NORMAL 下移一行
+            if event.key in ("enter", "\r", "\n"):
+                if self.vim_enabled and self.vim.mode == "NORMAL":
+                    event.prevent_default()
+                    res = self.vim.feed(self.text, self._cur_off(), "j")
+                    self._apply(res)
+                else:
+                    event.prevent_default()
+                    try:
+                        self.app.action_send_message()
+                    except Exception:
+                        pass
+                return
+
+            if not self.vim_enabled:
+                return  # 退化为普通 TextArea
+
+            if self.vim.mode == "INSERT":
+                if event.key == "escape":
+                    event.prevent_default()
+                    res = self.vim.feed(self.text, self._cur_off(), "escape")
+                    self._apply(res)
+                # 其余键交给 TextArea 默认处理（打字）
+                return
+
+            # ── NORMAL 模式 ──
+            if event.key == "shift+enter":
+                token = "o"
+            else:
+                token = self._vim_token(event.key)
+            if token is None:
+                # ctrl+/shift+ 组合键放回去，让 App 级绑定处理（聚焦切换等）
+                if event.key.startswith("ctrl+") or event.key.startswith("shift+"):
+                    return
+                # 普通单键未映射：吞掉，避免 TextArea 在 NORMAL 下误编辑
+                event.prevent_default()
+                return
+            event.prevent_default()
+            res = self.vim.feed(self.text, self._cur_off(), token)
+            self._apply(res)
+
     # ═══════════════════════════════════════════════════
     #  TUI 主应用
     # ═══════════════════════════════════════════════════
@@ -583,6 +703,15 @@ if TEXTUAL_AVAILABLE:
             Binding("3", "tab_sessions", "会话", show=False),
             Binding("4", "tab_status", "状态", show=False),
             Binding("escape", "cancel", "取消", show=False),
+            # ── Vim 风格导航（输入框未聚焦时生效）──
+            Binding("j", "chat_down", "↓聊天", show=False),
+            Binding("k", "chat_up", "↑聊天", show=False),
+            Binding("i", "focus_insert", "插入", show=False),
+            Binding("ctrl+f", "chat_page_down", "翻页↓", show=True),
+            Binding("ctrl+b", "chat_page_up", "翻页↑", show=True),
+            Binding("ctrl+d", "chat_half_down", "半页↓", show=True),
+            Binding("ctrl+u", "chat_half_up", "半页↑", show=True),
+            Binding("ctrl+space", "toggle_focus", "聚焦切换", show=True),
         ]
 
         sidebar_visible = var(True)
@@ -605,8 +734,8 @@ if TEXTUAL_AVAILABLE:
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
                         with Container(id="input-wrapper"):
-                            yield SendTextArea(
-                                placeholder="输入消息... (回车发送, Shift+回车换行)",
+                            yield VimSendTextArea(
+                                placeholder="输入消息... (回车发送, Shift+回车换行, Esc 进 Vim 普通模式)",
                                 id="user-input",
                                 soft_wrap=True,
                                 tab_behavior="indent",
@@ -638,6 +767,8 @@ if TEXTUAL_AVAILABLE:
             self._switch_sidebar_tab("engine")
             # 精简欢迎(一行)
             self._render_welcome_compact()
+            # 初始化 Vim 键位开关（默认开，可被 config.vim_mode 关闭）
+            self._init_vim_mode()
             self.query_one("#user-input").focus()
             def _show_hint():
                 try:
@@ -645,6 +776,18 @@ if TEXTUAL_AVAILABLE:
                 except Exception:
                     pass
             self.set_timer(1.5, _show_hint)
+
+        def _init_vim_mode(self):
+            try:
+                ta = self.query_one("#user-input")
+            except Exception:
+                return
+            cfg = getattr(self.cli, "config", None)
+            enabled = True
+            if isinstance(cfg, dict) and "vim_mode" in cfg:
+                enabled = bool(cfg["vim_mode"])
+            ta.vim_enabled = enabled
+            self._update_vim_mode_display()
 
         # ── 欢迎界面 ──
 
@@ -667,7 +810,7 @@ if TEXTUAL_AVAILABLE:
                 "",
                 "  ╔══════════════════════════════════════════════╗",
                 "  ║                                              ║",
-                "  ║    小狸 Pro-CLI v8.0.2                        ║",
+                "  ║    小狸 Pro-CLI v8.0.3                        ║",
                 "  ║    智能编程助手 · 动画增强版                  ║",
                 "  ║                                              ║",
                 "  ╚══════════════════════════════════════════════╝",
@@ -711,7 +854,7 @@ if TEXTUAL_AVAILABLE:
                 ("", "msg-dim"),
                 ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
-                ("  ║    小狸 Pro-CLI v8.0.2                        ║", "msg-welcome"),
+                ("  ║    小狸 Pro-CLI v8.0.3                        ║", "msg-welcome"),
                 ("  ║    智能编程助手 · 动画增强版                  ║", "msg-welcome"),
                 ("  ║                                              ║", "msg-welcome"),
                 ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
@@ -1087,6 +1230,7 @@ if TEXTUAL_AVAILABLE:
                 'resume': lambda: self._tui_resume(args),
                 'snapshot': lambda: self._save_screenshot(),
                 'screenshot': lambda: self._save_screenshot(),
+                'vim': lambda: self._toggle_vim(),
             }
 
             handler = cmds.get(name)
@@ -1114,12 +1258,21 @@ if TEXTUAL_AVAILABLE:
   /tools         列出工具
   /status        系统状态
   /clear         清屏
+  /vim           开关 Vim 键位
 
   ⌨  快捷键:
   Ctrl+C     退出        Ctrl+L     清屏
   Ctrl+N     新对话      回车       发送消息
   Shift+回车 换行        F1         侧栏
-  Escape     取消生成    Tab        缩进"""
+  Escape     取消生成    Tab        缩进
+  Ctrl+Space 焦点切换    i          聚焦并输入
+  Ctrl+F/B   翻页下/上   Ctrl+D/U   半页下/上
+
+  VIM 输入(默认开): 输入框内 Esc 进普通模式
+    h j k l  移动    w/b  跳词    0/$  行首/行尾
+    i a o    插入/追加/换行      I A O  行首/行尾/上方
+    dd 删行   x 删字   u 撤销     gg/G 文首/文尾
+    普通模式下 回车 = 下移一行"""
             self._system(help_text)
 
         def _handle_manual(self, args):
@@ -1340,6 +1493,91 @@ if TEXTUAL_AVAILABLE:
                 self._remove_typing_indicator()
                 self._system("已取消")
                 self.is_generating = False
+
+        # ── Vim 风格：聊天区滚动 / 聚焦切换 ──
+        def _user_input(self):
+            return self.query_one("#user-input")
+
+        def _chat_scroll(self):
+            return self.query_one("#chat-scroll")
+
+        def action_toggle_focus(self):
+            """Ctrl+Space：在输入框与聊天区之间切换焦点。"""
+            ta = self._user_input()
+            if ta.has_focus:
+                self.screen.set_focus(None)
+            else:
+                ta.focus()
+                if getattr(ta, "vim_enabled", False):
+                    ta.vim.mode = "INSERT"
+                self._update_vim_mode_display()
+
+        def action_focus_insert(self):
+            """i：输入框未聚焦时聚焦并进入 INSERT（模仿 vim 按 i 开始输入）。"""
+            ta = self._user_input()
+            if ta.has_focus:
+                return
+            ta.focus()
+            if getattr(ta, "vim_enabled", False):
+                ta.vim.mode = "INSERT"
+            self._update_vim_mode_display()
+
+        def _guard_chat(self):
+            """聊天导航仅在输入框未聚焦时生效，避免与输入冲突。"""
+            return self._user_input().has_focus
+
+        def action_chat_down(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_down(3)
+
+        def action_chat_up(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_up(3)
+
+        def action_chat_page_down(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_page_down()
+
+        def action_chat_page_up(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_page_up()
+
+        def action_chat_half_down(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_relative(y=20)
+
+        def action_chat_half_up(self):
+            if self._guard_chat():
+                return
+            self._chat_scroll().scroll_relative(y=-20)
+
+        def _update_vim_mode_display(self):
+            """在输入框下方提示栏显示当前 Vim 模式。"""
+            try:
+                hint = self.query_one("#input-hint")
+                ta = self._user_input()
+            except Exception:
+                return
+            if not getattr(ta, "vim_enabled", False):
+                hint.update("  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P PLAN")
+                return
+            mode = getattr(getattr(ta, "vim", None), "mode", "INSERT")
+            tag = "-- INSERT --" if mode == "INSERT" else "-- NORMAL --"
+            hint.update(f"  {tag}  │  Esc 切模式  │  i插入 a追加 o换行  hjkl移动  dd删行 x删字  u撤销")
+
+        def _toggle_vim(self):
+            ta = self._user_input()
+            ta.vim_enabled = not getattr(ta, "vim_enabled", True)
+            if ta.vim_enabled:
+                self._system("Vim 键位: 开 (Esc 在 NORMAL/INSERT 间切换)")
+            else:
+                self._system("Vim 键位: 关 (普通输入)")
+            self._update_vim_mode_display()
 
         def _save_screenshot(self):
             """导出当前 TUI 屏幕截图（SVG）——AI 可据此自验实时渲染（/snapshot）"""
