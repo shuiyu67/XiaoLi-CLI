@@ -1130,7 +1130,9 @@ multi 操作支持一次修改多处：
     # ── CLI 主循环 ──
 
     def run_tui(self):
-        """运行 TUI 模式（v8.0 默认真·全屏 textual TUI；textual 不可用时回退 rich 面板）"""
+        """运行 TUI 模式（默认入口，opencode 式；textual 不可用时回退 rich 面板）"""
+        # 非交互静默初始化 diff 模式（TUI 启动不弹问题；用 /diff 可改）
+        self._ask_diff_popup_mode(interactive=False)
         if TEXTUAL_AVAILABLE:
             from .tui import XiaoliTUI
             app = XiaoliTUI(self)
@@ -1207,8 +1209,9 @@ multi 操作支持一次修改多处：
                 return getattr(tool.get('handler'), '__self__', None)
         return None
 
-    def _ask_diff_popup_mode(self):
-        """设置 diff 显示模式：已保存过就静默沿用，只有首次运行才交互询问"""
+    def _ask_diff_popup_mode(self, interactive=True):
+        """设置 diff 显示模式：已保存过就静默沿用；首次运行时 CLI 交互询问，
+        TUI（interactive=False）静默用默认内联模式，不阻塞启动。"""
         plugin_instance = self._get_code_editor_plugin()
         if plugin_instance is None:
             return
@@ -1216,6 +1219,10 @@ multi 操作支持一次修改多处：
         saved = get_system_config('diff_popup_mode', None)
         if saved is not None:
             plugin_instance.diff_popup_mode = bool(saved)
+            return
+
+        if not interactive:
+            plugin_instance.diff_popup_mode = False
             return
 
         print(f"\n{Fore.CYAN}  Diff 显示模式（AI 修改文件后的对比方式）:{Style.RESET_ALL}")
@@ -1674,4 +1681,11 @@ def main():
                     f"  {Fore.BLACK}{Style.BRIGHT}(--logo 看完整开机动画){Style.RESET_ALL}")
 
     cli = AICLI()
-    cli.run()
+    # opencode 式默认 TUI；--cli / --no-tui 回退命令行模式
+    if '--cli' in sys.argv or '--no-tui' in sys.argv:
+        cli.run()
+    else:
+        cli.run_tui()
+        # TUI 里 /cli 请求切换命令行时，接管进入 CLI 主循环
+        if getattr(cli, '_switch_to_cli', False):
+            cli.run()

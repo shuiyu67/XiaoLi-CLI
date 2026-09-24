@@ -111,8 +111,10 @@ Ollama AI引擎插件帮助信息
             self.max_history = 10
 
         # 解析 <input> 语法（询问用户）并换算成 num_ctx（token 数）
-        resolved_k = resolve_input_value(max_token_k, field_name="模型最大token大小(K)")
-        self.num_ctx = self._parse_num_ctx(resolved_k)
+        # 启动链路优化：解析挪到首次真正用到 num_ctx 时（惰性 property），
+        # 避免 <input:...> 配置值在启动时阻塞 stdin 询问。
+        self._max_token_k_raw = max_token_k
+        self._num_ctx = None
         
         # 共享对话历史引用（由CLI设置）
         self.shared_conversation_history = None
@@ -129,6 +131,23 @@ Ollama AI引擎插件帮助信息
         self._service_checked = False
         self._service_running = False
     
+    @property
+    def num_ctx(self):
+        """惰性解析：<input> 交互询问只在首次真正需要 num_ctx 时发生。
+        非交互环境（pytest/管道/服务，input 抛 OSError/EOFError）静默降级默认值。"""
+        if self._num_ctx is None:
+            try:
+                resolved_k = resolve_input_value(
+                    self._max_token_k_raw, field_name="模型最大token大小(K)")
+            except Exception:
+                resolved_k = None
+            self._num_ctx = self._parse_num_ctx(resolved_k)
+        return self._num_ctx
+
+    @num_ctx.setter
+    def num_ctx(self, value):
+        self._num_ctx = value
+
     @staticmethod
     def _parse_num_ctx(value):
         """把用户输入的 K 值换算成 token 数：32 / 32K → 32768。非法/空 → 4096"""

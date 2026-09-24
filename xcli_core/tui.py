@@ -27,7 +27,8 @@ if TEXTUAL_AVAILABLE:
     import asyncio
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical, VerticalScroll, Container
-    from textual.widgets import Static, TextArea
+    from textual.widgets import Static, TextArea, Input
+    from textual.screen import ModalScreen
     from textual.reactive import var
     from textual.binding import Binding
     from textual import on
@@ -161,6 +162,43 @@ if TEXTUAL_AVAILABLE:
     .plan-badge {{
         color: {_Theme.WARNING};
         text-style: bold;
+    }}
+
+    /* ── 命令面板 ── */
+    #pal-box {{
+        width: 76;
+        height: auto;
+        max-height: 24;
+        background: {_Theme.BG_LIGHT};
+        border: tall {_Theme.BORDER_FOCUS};
+        padding: 0 1 1 1;
+        margin: 2 4;
+    }}
+    #pal-title {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 0 1 0;
+    }}
+    #pal-input {{
+        background: {_Theme.BG};
+        border: tall {_Theme.BORDER};
+        margin: 0 0 1 0;
+    }}
+    #pal-list {{
+        height: auto;
+        max-height: 16;
+        scrollbar-color: {_Theme.BORDER};
+    }}
+    .pal-item {{
+        padding: 0 1;
+        color: {_Theme.TEXT};
+    }}
+    .pal-sel {{
+        background: {_Theme.GLOW} 45%;
+        color: {_Theme.TEXT};
+        text-style: bold;
+    }}
+    .pal-dim {{
+        color: {_Theme.TEXT_DIM};
     }}
 
     /* ── 中间消息流 ── */
@@ -490,6 +528,103 @@ if TEXTUAL_AVAILABLE:
 
 
     # ═══════════════════════════════════════════════════
+    #  命令面板（opencode command_list 式：ctrl+p 模糊搜命令/工具/引擎/会话）
+    # ═══════════════════════════════════════════════════
+
+    def _fuzzy_score(query: str, text: str) -> int:
+        """子序列模糊匹配打分：>0 = 命中。前缀命中 > 包含 > 子序列。"""
+        if not query:
+            return 1
+        q, t = query.lower(), text.lower()
+        if t.startswith(q):
+            return 1000 - len(t)
+        idx = t.find(q)
+        if idx >= 0:
+            return 500 - idx - len(t) // 10
+        ti = 0
+        for ch in q:
+            ti = t.find(ch, ti)
+            if ti < 0:
+                return 0
+            ti += 1
+        return 100 - len(t) // 10
+
+    class CommandPalette(ModalScreen):
+        """全功能模糊命令面板（opencode ctrl+p）。
+        items: [(label, desc, kind, payload)]，回车执行，Esc 关闭。"""
+        BINDINGS = [
+            Binding("escape", "dismiss", "关闭", show=False),
+            Binding("up", "cursor_up", "↑", show=False),
+            Binding("down", "cursor_down", "↓", show=False),
+            Binding("enter", "select", "执行", show=False),
+        ]
+
+        def __init__(self, items, **kwargs):
+            super().__init__(**kwargs)
+            self._items = items
+            self._filtered = list(items)
+            self._cursor = 0
+
+        def compose(self) -> ComposeResult:
+            with Container(id="pal-box"):
+                yield Static("  命令面板  │  输入模糊搜索  │  ↑↓ 选择  回车执行  Esc 关闭", id="pal-title")
+                yield Input(placeholder="搜索命令 / 工具 / 引擎 / 会话…", id="pal-input")
+                yield VerticalScroll(id="pal-list")
+
+        def on_mount(self):
+            self._render_list()
+            self.query_one("#pal-input").focus()
+
+        def _render_list(self):
+            lst = self.query_one("#pal-list")
+            lst.remove_children()
+            if not self._filtered:
+                lst.mount(Static("  (无匹配)", classes="pal-item pal-dim"))
+                return
+            for i, (label, desc, kind, _) in enumerate(self._filtered[:20]):
+                cls = "pal-item pal-sel" if i == self._cursor else "pal-item"
+                mark = {"cmd": "›", "tool": "⚙", "engine": "◈", "session": "≡"}.get(kind, "·")
+                lst.mount(Static(f"  {mark} {label:<18} {desc[:42]}", classes=cls))
+            lst.scroll_home(animate=False)
+
+        @on(Input.Changed, "#pal-input")
+        def _on_filter(self, event):
+            q = event.value.strip()
+            scored = []
+            for item in self._items:
+                s = _fuzzy_score(q, item[0] + " " + item[1])
+                if s > 0:
+                    scored.append((s, item))
+            scored.sort(key=lambda x: -x[0])
+            self._filtered = [it for _, it in scored]
+            self._cursor = 0
+            self._render_list()
+
+        @on(Input.Submitted, "#pal-input")
+        def _on_submit(self, event):
+            self.action_select()
+
+        def action_cursor_up(self):
+            if self._filtered:
+                self._cursor = (self._cursor - 1) % min(20, len(self._filtered))
+                self._render_list()
+
+        def action_cursor_down(self):
+            if self._filtered:
+                self._cursor = (self._cursor + 1) % min(20, len(self._filtered))
+                self._render_list()
+
+        def action_select(self):
+            if not self._filtered:
+                self.dismiss(None)
+                return
+            pick = self._filtered[min(self._cursor, len(self._filtered) - 1)]
+            self.dismiss(pick)
+
+        def action_dismiss(self):
+            self.dismiss(None)
+
+    # ═══════════════════════════════════════════════════
     #  自定义 TextArea：回车发送，Shift+回车换行
     # ═══════════════════════════════════════════════════
 
@@ -501,6 +636,22 @@ if TEXTUAL_AVAILABLE:
                 event.prevent_default()
                 try:
                     self.app.action_send_message()
+                except Exception:
+                    pass
+                return
+            # 斜杠命令补全（opencode prompt.autocomplete.complete = tab）
+            if event.key == "tab" and self.text.strip().startswith("/") and "\n" not in self.text:
+                event.prevent_default()
+                try:
+                    self.app.action_complete_slash()
+                except Exception:
+                    pass
+                return
+            # 空输入上/下 = 历史翻找（opencode history_previous/next）
+            if event.key in ("up", "down") and not self.text.strip():
+                event.prevent_default()
+                try:
+                    self.app.action_history_step(event.key == "up")
                 except Exception:
                     pass
                 return
@@ -642,7 +793,11 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+enter", "send_message", "发送", show=False),
             Binding("shift+enter", "newline", "换行", show=False),
             Binding("f1", "toggle_sidebar", "侧栏", show=True),
-            Binding("ctrl+p", "toggle_plan", "PLAN", show=True),
+            Binding("ctrl+p", "command_palette", "面板", show=True),
+            Binding("ctrl+o", "toggle_plan", "PLAN", show=True),
+            Binding("f2", "cycle_model", "换模型", show=True),
+            Binding("f3", "history_search", "历史", show=True),
+            Binding("f4", "toggle_tool_fold", "折叠", show=True),
             Binding("1", "tab_engine", "引擎", show=False),
             Binding("2", "tab_files", "文件", show=False),
             Binding("3", "tab_sessions", "会话", show=False),
@@ -670,6 +825,9 @@ if TEXTUAL_AVAILABLE:
             self.bridge = _TUIBridge(cli)
             self._thinking_widget = None
             self._typing_widget = None
+            self._input_history = []   # 历史输入（f3/上翻）
+            self._hist_idx = None
+            self._tool_folded = True   # 工具调用折叠开关（f4）
 
         def compose(self) -> ComposeResult:
             # ── 顶栏 (opencode: 左品牌 | 中工作区 | 右模型/状态) ──
@@ -699,7 +857,7 @@ if TEXTUAL_AVAILABLE:
                                 tab_behavior="indent",
                             )
                         yield Static(
-                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P PLAN",
+                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P 面板",
                             id="input-hint"
                         )
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
@@ -1031,10 +1189,16 @@ if TEXTUAL_AVAILABLE:
                 i += 1
 
         def _tool_ok(self, name, args):
-            self._add(f"  ⚙ {name}: {args[:60]}  ✓", "msg-tool-ok")
+            if self._tool_folded:
+                self._add(f"  ⚙ {name}  ✓", "msg-tool-ok")
+            else:
+                self._add(f"  ⚙ {name}: {args[:60]}  ✓", "msg-tool-ok")
 
         def _tool_err(self, name, args):
-            self._add(f"  ⚙ {name}: {args[:60]}  ✗", "msg-tool-err")
+            if self._tool_folded:
+                self._add(f"  ⚙ {name}  ✗", "msg-tool-err")
+            else:
+                self._add(f"  ⚙ {name}: {args[:60]}  ✗", "msg-tool-err")
 
         def _show_thinking(self):
             """显示动画思考指示器"""
@@ -1099,8 +1263,13 @@ if TEXTUAL_AVAILABLE:
             if not text:
                 return
 
-            # 清空输入框
+            # 清空输入框 + 记录历史（f3 回溯 / 上下键翻找）
             text_area.clear()
+            if not self._input_history or self._input_history[-1] != text:
+                self._input_history.append(text)
+                if len(self._input_history) > 200:
+                    self._input_history = self._input_history[-200:]
+            self._hist_idx = None
 
             if text.startswith('/'):
                 self._handle_command(text)
@@ -1116,12 +1285,177 @@ if TEXTUAL_AVAILABLE:
 
         @on(TextArea.Changed, "#user-input")
         def on_textarea_changed(self, event):
-            """输入框内容变化时调整高度"""
+            """输入框内容变化：调高度 + 斜杠命令补全提示"""
             text_area = event.text_area
             line_count = text_area.text.count('\n') + 1
             wrapper = self.query_one("#input-wrapper")
             new_height = min(max(line_count + 1, 4), 12)
             wrapper.styles.height = new_height
+            self._update_slash_suggest(text_area.text)
+
+        # ── 斜杠命令补全（opencode prompt.autocomplete 式）──
+
+        def _slash_matches(self, text: str):
+            """输入以 / 开头时返回匹配命令名列表（模糊，最多 8 个）"""
+            q = text.strip().lstrip('/')
+            if not text.startswith('/') or ' ' in text.strip():
+                return []
+            out = []
+            for name in self._command_table():
+                s = _fuzzy_score(q, name)
+                if s > 0:
+                    out.append((s, name))
+            out.sort(key=lambda x: -x[0])
+            return [n for _, n in out[:8]]
+
+        def _update_slash_suggest(self, text: str):
+            """把补全候选渲染到输入提示行"""
+            try:
+                hint = self.query_one("#input-hint")
+            except Exception:
+                return
+            matches = self._slash_matches(text)
+            if matches:
+                hint.update("  Tab 补全 › " + "  ".join(f"/{m}" for m in matches))
+                hint.add_class("visible")
+            else:
+                self._update_vim_mode_display()
+
+        def action_complete_slash(self):
+            """Tab：补全斜杠命令（唯一候选直接补全，多候选补公共前缀）"""
+            ta = self._user_input()
+            text = ta.text
+            matches = self._slash_matches(text)
+            if not matches:
+                return
+            if len(matches) == 1:
+                ta.text = f"/{matches[0]} "
+            else:
+                prefix = os.path.commonprefix(matches)
+                if prefix and len(prefix) > len(text.strip().lstrip('/')):
+                    ta.text = f"/{prefix}"
+
+        # ── 命令面板 / 模型切换 / 历史 / 工具折叠（opencode 体验三件套）──
+
+        _cmd_docs = {
+            'help': '帮助信息', 'quit': '退出', 'q': '退出', 'exit': '退出',
+            'cli': '切到命令行模式', 'clear': '清屏', 'cls': '清屏',
+            'model': '切换 AI 引擎', 'engine': '切换 AI 引擎', 'about': '关于',
+            'status': '系统状态', 'tools': '列出工具', 'engines': '列出引擎',
+            'tui': '已在 TUI', 'manual': 'manual 引擎', 'plan': 'PLAN 规划模式',
+            'build': '批准 PLAN 执行', 'sessions': '历史会话', 'session': '会话操作',
+            'resume': '恢复会话', 'snapshot': '导出截图', 'screenshot': '导出截图',
+            'vim': 'Vim 键位开关', 'palette': '打开命令面板',
+        }
+
+        def _palette_items(self):
+            """汇总面板条目：命令 + 工具 + 引擎 + 会话"""
+            items = []
+            for name, fn in self._command_table().items():
+                doc = self._cmd_docs.get(name, "")
+                items.append((f"/{name}", doc or "命令", "cmd", name))
+            for t in self.bridge.tools():
+                items.append((t.get('name', '?'), (t.get('description', '') or '')[:42], "tool", t.get('name', '')))
+            cur = self.bridge.current_engine()
+            for name in self.bridge.engines():
+                mark = "（当前）" if name == cur else ""
+                items.append((name, f"切换引擎{mark}", "engine", name))
+            for s in self.bridge.sessions()[:10]:
+                title = (s.title or s.id)[:36]
+                items.append((title, f"恢复会话 {s.id} · {self._format_rel_time(s.updated_at)}", "session", s.id))
+            return items
+
+        def action_command_palette(self):
+            """ctrl+p：模糊命令面板（命令/工具/引擎/会话）"""
+            def _on_pick(pick):
+                if not pick:
+                    return
+                label, desc, kind, payload = pick
+                if kind == "cmd":
+                    self._handle_command(f"/{payload}")
+                elif kind == "engine":
+                    self._switch_model(payload)
+                elif kind == "session":
+                    self._tui_resume(str(payload))
+                elif kind == "tool":
+                    self._system(f"  工具 {payload}: 在对话中直接说出需求，AI 会自动调用")
+            self.push_screen(CommandPalette(self._palette_items()), _on_pick)
+
+        def action_cycle_model(self):
+            """f2：循环切换引擎（opencode model_cycle_recent）"""
+            engines = self.bridge.engines()
+            if not engines:
+                self._error("无可用引擎")
+                return
+            cur = self.bridge.current_engine()
+            try:
+                idx = engines.index(cur)
+            except ValueError:
+                idx = -1
+            nxt = engines[(idx + 1) % len(engines)]
+            self._switch_model(nxt)
+
+        def action_history_search(self):
+            """f3：翻出最近一条历史输入到输入框（连按回溯更早）"""
+            self.action_history_step(previous=True)
+
+        def action_history_step(self, previous=True):
+            """历史翻找：previous=True 往更早翻，False 往回（opencode up/down）"""
+            if not self._input_history:
+                self._system("暂无输入历史")
+                return
+            if self._hist_idx is None:
+                if previous:
+                    self._hist_idx = len(self._input_history) - 1
+                else:
+                    return
+            else:
+                delta = -1 if previous else 1
+                self._hist_idx += delta
+                if self._hist_idx >= len(self._input_history):
+                    self._hist_idx = None
+                    self._user_input().text = ""
+                    return
+                self._hist_idx = max(0, self._hist_idx)
+            ta = self._user_input()
+            ta.text = self._input_history[self._hist_idx]
+            ta.focus()
+            self._update_vim_mode_display()
+
+        def action_toggle_tool_fold(self):
+            """f4：工具调用折叠/展开"""
+            self._tool_folded = not self._tool_folded
+            self._system("工具调用显示: " + ("折叠" if self._tool_folded else "展开"))
+            self._update_sidebar()
+
+        def _command_table(self):
+            """命令名 -> handler(args)（供面板与 _handle_command 共用；统一收一个可选 args）"""
+            return {
+                'help': lambda a="": self._show_help(),
+                'quit': lambda a="": self.exit(),
+                'q': lambda a="": self.exit(),
+                'exit': lambda a="": self.exit(),
+                'cli': lambda a="": self._switch_cli(),
+                'clear': lambda a="": self.action_clear(),
+                'cls': lambda a="": self.action_clear(),
+                'model': lambda a="": self._switch_model(a),
+                'engine': lambda a="": self._switch_model(a),
+                'about': lambda a="": self._system(f" 小狸 Pro-CLI v{VERSION} - 智能编程助手"),
+                'status': lambda a="": self._show_status(),
+                'tools': lambda a="": self._show_tools(),
+                'engines': lambda a="": self._show_engines(),
+                'tui': lambda a="": self._system("已在 TUI 模式中"),
+                'manual': lambda a="": self._handle_manual(a),
+                'plan': lambda a="": self._tui_plan(a),
+                'build': lambda a="": self._tui_build(),
+                'sessions': lambda a="": self._tui_sessions(),
+                'session': lambda a="": self._tui_session(a),
+                'resume': lambda a="": self._tui_resume(a),
+                'snapshot': lambda a="": self._save_screenshot(),
+                'screenshot': lambda a="": self._save_screenshot(),
+                'vim': lambda a="": self._toggle_vim(),
+                'palette': lambda a="": self.action_command_palette(),
+            }
 
         # ── 命令处理 ──
 
@@ -1130,35 +1464,9 @@ if TEXTUAL_AVAILABLE:
             name = parts[0].lower()
             args = parts[1] if len(parts) > 1 else ""
 
-            cmds = {
-                'help': lambda: self._show_help(),
-                'quit': lambda: self.exit(),
-                'q': lambda: self.exit(),
-                'exit': lambda: self.exit(),
-                'cli': lambda: self._switch_cli(),
-                'clear': lambda: self.action_clear(),
-                'cls': lambda: self.action_clear(),
-                'model': lambda: self._switch_model(args),
-                'engine': lambda: self._switch_model(args),
-                'about': lambda: self._system(f" 小狸 Pro-CLI v{VERSION} - 智能编程助手"),
-                'status': lambda: self._show_status(),
-                'tools': lambda: self._show_tools(),
-                'engines': lambda: self._show_engines(),
-                'tui': lambda: self._system("已在 TUI 模式中"),
-                'manual': lambda: self._handle_manual(args),
-                'plan': lambda: self._tui_plan(args),
-                'build': lambda: self._tui_build(),
-                'sessions': lambda: self._tui_sessions(),
-                'session': lambda: self._tui_session(args),
-                'resume': lambda: self._tui_resume(args),
-                'snapshot': lambda: self._save_screenshot(),
-                'screenshot': lambda: self._save_screenshot(),
-                'vim': lambda: self._toggle_vim(),
-            }
-
-            handler = cmds.get(name)
+            handler = self._command_table().get(name)
             if handler:
-                handler()
+                handler(args)
                 return
             if name in self.cli.liugin_commands:
                 try:
@@ -1173,23 +1481,23 @@ if TEXTUAL_AVAILABLE:
 
         def _show_help(self):
             help_text = """   命令:
-  /help          帮助信息
-  /quit          退出
-  /cli           切换命令行模式
-  /model <引擎>  切换 AI 引擎
-  /engines       列出引擎
-  /tools         列出工具
-  /status        系统状态
-  /clear         清屏
-  /vim           开关 Vim 键位
+  /help          帮助信息      /palette  命令面板
+  /quit          退出          /cli      切命令行
+  /model <引擎>  切换 AI 引擎  /engines  列出引擎
+  /tools         列出工具      /status   系统状态
+  /clear         清屏          /vim      开关 Vim 键位
+  /sessions      历史会话      /resume   恢复会话
+  /plan /build   PLAN 规划/批准
 
-  ⌨  快捷键:
-  Ctrl+C     退出        Ctrl+L     清屏
-  Ctrl+N     新对话      回车       发送消息
-  Shift+回车 换行        F1         侧栏
-  Escape     取消生成    Tab        缩进
-  Ctrl+Space 焦点切换    i          聚焦并输入
-  Ctrl+F/B   翻页下/上   Ctrl+D/U   半页下/上
+  ⌨  快捷键 (opencode 对标):
+  Ctrl+P     命令面板(模糊搜)  F2       循环换模型
+  F3/↑↓     历史输入翻找      F4       工具调用折叠
+  Ctrl+O     PLAN 开关         Ctrl+N   新对话
+  Ctrl+L     清屏              F1       侧栏
+  回车发送   Shift+回车换行    Esc      取消生成
+  Ctrl+F/B   翻页下/上         Ctrl+D/U 半页下/上
+  Ctrl+Space 焦点切换          i        聚焦并输入
+  输入 / 开头 Tab 补全命令
 
   VIM 输入(默认开): 输入框内 Esc 进普通模式
     h j k l  移动    w/b  跳词    0/$  行首/行尾
@@ -1217,6 +1525,7 @@ if TEXTUAL_AVAILABLE:
         def _switch_cli(self):
             self._system("切换到命令行模式...")
             self.cli.tui_output_callback = None
+            self.cli._switch_to_cli = True
             self.exit()
 
         def _switch_model(self, name):
@@ -1374,12 +1683,14 @@ if TEXTUAL_AVAILABLE:
 
         def _write_raw(self, msg):
             if '✅' in msg or 'OK 工具' in msg:
-                self._add(f"  {msg}", "msg-tool-ok")
+                self._add(f"  {msg}" if not self._tool_folded else f"  ⚙ ✓", "msg-tool-ok")
             elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
-                self._add(f"  {msg}", "msg-tool-err")
+                self._add(f"  {msg}" if not self._tool_folded else f"  ⚙ ✗", "msg-tool-err")
             elif '🤖' in msg:
                 self._add(f"  ● {msg.replace('🤖', '', 1).strip()}", "msg-ai")
             elif '工具' in msg and ('调用' in msg or '执行' in msg):
+                if self._tool_folded:
+                    return  # 折叠模式下吞掉工具流水行，只留结果标记
                 self._add(f"  {msg}", "msg-tool-ok")
             else:
                 self._add(f"  {msg}", "msg-dim")

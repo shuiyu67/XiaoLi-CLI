@@ -1,32 +1,13 @@
 # 小狸 Pro-CLI 依赖
-# 生成于 2026-08-05 21:10（2026-09-24 修正包名映射）
+# 生成于 2026-09-24 19:08
 
-Pillow              # import PIL
+PIL
 ascii_magic
 colorama
-opencv-python       # import cv2
+cv2
+jedi
 numpy
 ollama
 openai
-pygame
 requests
-# tkinter 是标准库，无需 pip 安装（Linux 需系统包 python3-tk）
-
-# LSP 智能感知（pylsp 作为工具之一：lsp__diagnostics/hover/definition/references/completion）
-# 写/改 .py 文件后自动触发诊断并注入模型上下文
-python-lsp-server
-pyflakes
-pycodestyle
-rope
-mccabe
-
-# 自研本地 LSP 服务器 / py_detect L2 语义验证后端
-# 纯 Python 语义引擎，装依赖即自动预装（L2 自动启用；无 jedi 自动降级为纯标准库模式）
-jedi
-
-# ── 已剥离到 xiaoli-cli-plugins 仓库的插件依赖（按需安装）──
-# operit_loader:      requests / httpx / pyautogui / android_pyapi
-# ai_image:           requests / websocket-client
-# image_generator:    websockets
-# audio_player:       colorama / pygame
-# speech_recognition: SpeechRecognition / pyaudio（可选引擎）
+tkinter
