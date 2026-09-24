@@ -33,13 +33,7 @@ except Exception:
 try:
     from xcli_core.tool_result import normalize_tool_text
 except Exception:
-    def normalize_tool_text(result, default="无结果"):
-        """兜底归一化：ToolResult / dict / str 统一成字符串"""
-        if result is None:
-            return default
-        if isinstance(result, dict):
-            return str(result.get("result", default))
-        return str(result)
+    from engine_fallbacks import normalize_tool_text
 
 # ── 常见模型的上下文窗口（token 数）──
 # OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。

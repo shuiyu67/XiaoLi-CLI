@@ -603,197 +603,22 @@ multi 操作支持一次修改多处：
 
             try:
                 text_content, json_data = self._parse_mixed_response(processed_response)
-
-                if json_data:
-                    if text_content:
-                        text_content = self._process_code_blocks(text_content)
-                        self.shared_conversation_history.append({
-                            "role": "assistant",
-                            "content": text_content
-                        })
-                        self._display_response(text_content)
-
-                    if isinstance(json_data, dict):
-                        response_data = json_data
-
-                        if response_data.get('action') == 'use_tool':
-                            canceled = self._execute_single_tool(response_data)
-                            if canceled:
-                                break
-                            break
-
-                        if (response_data.get('continue') is True or
-                              response_data.get('need_continue') is True or
-                              response_data.get('think_more') is True):
-                            continue_message = response_data.get('message', '')
-                            if continue_message:
-                                processed_response = continue_message
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": processed_response
-                                })
-                                self._display_response(processed_response, is_continue=True)
-                            loop_count += 1
-                        elif response_data.get('message'):
-                            message = response_data.get('message')
-                            if text_content:
-                                text_content = self._process_code_blocks(text_content)
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": text_content
-                                })
-                                self._display_response(text_content)
-                            self.shared_conversation_history.append({
-                                "role": "assistant",
-                                "content": message
-                            })
-                            self._display_response(message)
-                            break
-                        else:
-                            if text_content:
-                                text_content = self._process_code_blocks(text_content)
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": text_content
-                                })
-                                self._display_response(text_content)
-                            else:
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": processed_response
-                                })
-                            self._display_response(processed_response)
-                            break
-
-                    elif isinstance(json_data, list):
-                        tool_calls = [item for item in json_data if isinstance(item, dict) and item.get('action') == 'use_tool']
-                        if tool_calls:
-                            self._execute_concurrent_tools(tool_calls)
-                            break
-                        continue_items = [item for item in json_data if isinstance(item, dict) and
-                                         (item.get('continue') is True or
-                                          item.get('need_continue') is True or
-                                          item.get('think_more') is True)]
-                        if continue_items:
-                            continue_message = continue_items[0].get('message', '')
-                            if continue_message:
-                                processed_response = continue_message
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": processed_response
-                                })
-                                self._display_response(processed_response, is_continue=True)
-                            loop_count += 1
-                        else:
-                            if text_content:
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": text_content
-                                })
-                            self._display_response(text_content or processed_response)
-                            break
-                else:
-                    display_content = text_content if text_content else processed_response
-                    self.shared_conversation_history.append({
-                        "role": "assistant",
-                        "content": display_content
-                    })
-                    self._display_response(display_content)
-                    break
+                signal = self._dispatch_round(text_content, json_data, processed_response, fallback=False)
             except json.JSONDecodeError:
                 text_content, json_data = self._parse_mixed_response(processed_response)
-                if json_data:
-                    if text_content:
-                        text_content = self._process_code_blocks(text_content)
-                        self.shared_conversation_history.append({
-                            "role": "assistant",
-                            "content": text_content
-                        })
-                        self._display_response(text_content)
+                signal = self._dispatch_round(text_content, json_data, processed_response, fallback=True)
 
-                    if isinstance(json_data, dict):
-                        response_data = json_data
-                        if response_data.get('action') == 'continue':
-                            continue_content = response_data.get('content', '')
-                            if continue_content:
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": continue_content
-                                })
-                                self._display_response(continue_content)
-                            continue
-
-                        if response_data.get('action') == 'use_tool':
-                            canceled = self._execute_single_tool(response_data)
-                            if canceled:
-                                break
-                            break
-
-                        if (response_data.get('continue') is True or
-                              response_data.get('need_continue') is True or
-                              response_data.get('think_more') is True):
-                            continue_message = response_data.get('message', '')
-                            if continue_message:
-                                processed_response = continue_message
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": processed_response
-                                })
-                                self._display_response(processed_response, is_continue=True)
-                            loop_count += 1
-                        else:
-                            message = response_data.get('message', '')
-                            if message:
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": message
-                                })
-                                self._display_response(message)
-                                loop_count += 1
-                            else:
-                                if text_content:
-                                    self.shared_conversation_history.append({
-                                        "role": "assistant",
-                                        "content": text_content
-                                    })
-                                self._display_response(text_content or processed_response)
-                                break
-
-                    elif isinstance(json_data, list):
-                        tool_calls = [item for item in json_data if isinstance(item, dict) and item.get('action') == 'use_tool']
-                        if tool_calls:
-                            self._execute_concurrent_tools(tool_calls)
-                            break
-                        continue_items = [item for item in json_data if isinstance(item, dict) and
-                                         (item.get('continue') is True or
-                                          item.get('need_continue') is True or
-                                          item.get('think_more') is True)]
-                        if continue_items:
-                            continue_message = continue_items[0].get('message', '')
-                            if continue_message:
-                                processed_response = continue_message
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": processed_response
-                                })
-                                self._display_response(processed_response, is_continue=True)
-                            loop_count += 1
-                        else:
-                            if text_content:
-                                self.shared_conversation_history.append({
-                                    "role": "assistant",
-                                    "content": text_content
-                                })
-                            self._display_response(text_content or processed_response)
-                            break
-                else:
-                    display_content = text_content if text_content else processed_response
-                    self.shared_conversation_history.append({
-                        "role": "assistant",
-                        "content": display_content
-                    })
-                    self._display_response(display_content)
+            # 信号：'pass'=不计数继续（action:continue）；'loop'=计数继续（think_more 等）；
+            #       'loop_break'=计数后结束（降级支特有）；'break'=结束
+            if signal == 'pass':
+                continue
+            if signal == 'loop':
+                loop_count += 1
+                continue
+            if signal == 'loop_break':
+                loop_count += 1
                 break
+            break
         else:
             self._output(f"AI 已达到最大循环次数 ({max_loops})，已停止自动处理")
             self.shared_conversation_history.append({
@@ -843,6 +668,116 @@ multi 操作支持一次修改多处：
                         )
             except Exception as e:
                 logger.warning(f"自动压缩上下文失败: {e}")
+
+    # ── 对话轮次分派（自 process_conversation 拆出，行为与原实现逐行等价）──
+
+    def _record(self, content, is_continue=False):
+        """记入助手消息并显示"""
+        self.shared_conversation_history.append({
+            "role": "assistant",
+            "content": content
+        })
+        self._display_response(content, is_continue=is_continue)
+
+    def _record_only(self, content):
+        """只记入助手消息（原文部分分支不立即显示）"""
+        self.shared_conversation_history.append({
+            "role": "assistant",
+            "content": content
+        })
+
+    def _dispatch_round(self, text_content, json_data, processed_response, fallback):
+        """单轮响应分派，返回 'break' | 'loop' | 'loop_break' | 'pass'"""
+        if not json_data:
+            display_content = text_content if text_content else processed_response
+            self._record(display_content)
+            return 'break'
+        if text_content:
+            text_content = self._process_code_blocks(text_content)
+            self._record(text_content)
+        if isinstance(json_data, dict):
+            if fallback:
+                return self._dispatch_dict_fallback(json_data, text_content, processed_response)
+            return self._dispatch_dict_primary(json_data, text_content, processed_response)
+        if isinstance(json_data, list):
+            signal = self._dispatch_list(json_data, text_content, processed_response)
+            # 降级支原文 loop_count += 1 后仍落全局 break
+            return 'loop_break' if (fallback and signal == 'loop') else signal
+        # 非 dict/list 的怪类型：正常支原文走完 if 链后落回 while 不计数继续；
+        # 降级支落 handler 末尾全局 break
+        return 'break' if fallback else 'pass'
+
+    def _dispatch_dict_primary(self, response_data, text_content, processed_response):
+        """dict 分派（正常支）"""
+        if response_data.get('action') == 'use_tool':
+            self._execute_single_tool(response_data)
+            return 'break'
+        if (response_data.get('continue') is True or
+                response_data.get('need_continue') is True or
+                response_data.get('think_more') is True):
+            continue_message = response_data.get('message', '')
+            if continue_message:
+                self._record(continue_message, is_continue=True)
+            return 'loop'
+        if response_data.get('message'):
+            message = response_data.get('message')
+            if text_content:
+                self._record(self._process_code_blocks(text_content))
+            self._record(message)
+            return 'break'
+        if text_content:
+            self._record(self._process_code_blocks(text_content))
+        else:
+            self._record_only(processed_response)
+        self._display_response(processed_response)
+        return 'break'
+
+    def _dispatch_dict_fallback(self, response_data, text_content, processed_response):
+        """dict 分派（JSONDecodeError 降级支：仅 action:continue 真正继续）"""
+        if response_data.get('action') == 'continue':
+            continue_content = response_data.get('content', '')
+            if continue_content:
+                self._record(continue_content)
+            return 'pass'
+        if response_data.get('action') == 'use_tool':
+            self._execute_single_tool(response_data)
+            return 'break'
+        if (response_data.get('continue') is True or
+                response_data.get('need_continue') is True or
+                response_data.get('think_more') is True):
+            continue_message = response_data.get('message', '')
+            if continue_message:
+                self._record(continue_message, is_continue=True)
+            return 'loop_break'
+        message = response_data.get('message', '')
+        if message:
+            self._record(message)
+            return 'loop_break'
+        if text_content:
+            self._record_only(text_content)
+        self._display_response(text_content or processed_response)
+        return 'break'
+
+    def _dispatch_list(self, json_data, text_content, processed_response):
+        """list 分派（正常/降级两支原文行为一致）"""
+        tool_calls = [item for item in json_data if isinstance(item, dict) and item.get('action') == 'use_tool']
+        if tool_calls:
+            self._execute_concurrent_tools(tool_calls)
+            return 'break'
+        continue_items = [item for item in json_data if isinstance(item, dict) and
+                          (item.get('continue') is True or
+                           item.get('need_continue') is True or
+                           item.get('think_more') is True)]
+        if continue_items:
+            continue_message = continue_items[0].get('message', '')
+            if continue_message:
+                self._record(continue_message, is_continue=True)
+            return 'loop'
+        if text_content:
+            self._record_only(text_content)
+        self._display_response(text_content or processed_response)
+        return 'break'
+
 
     def _extract_task_summary(self, user_input: str) -> str:
         """提取任务摘要用于通知显示"""
@@ -1305,6 +1240,316 @@ multi 操作支持一次修改多处：
         label = '弹窗模式' if popup else '主终端内显示'
         print(f"{Fore.GREEN}  ✓ Diff 显示模式: {label}{Style.RESET_ALL}")
 
+    def _handle_cli_command(self, user_input) -> bool:
+        """CLI 内置命令分发（自 _run_cli_loop 拆出，行为等价）。
+
+        返回 True = 命令已处理（继续下一轮输入）；False = 非命令（落入对话）。
+        """
+        # @agent 委派（opencode 式 Agents 体系化）
+        if user_input.startswith('@'):
+            self.handle_agent_command(user_input[1:].strip())
+            return True
+
+        if user_input == '/help':
+            self.show_help()
+            return True
+
+        if user_input.startswith('/help '):
+            liugin_name = user_input[6:].strip()
+            self.show_liugin_help(liugin_name)
+            return True
+
+        if user_input.startswith('/engine '):
+            engine_command = user_input[8:].strip()
+            parts = engine_command.split(' ', 1)
+            cmd = parts[0]
+            args = parts[1] if len(parts) > 1 else ''
+            if cmd in self.engine_commands:
+                self.engine_commands[cmd](args)
+            else:
+                available_commands = ', '.join(self.engine_commands.keys())
+                print(f"{Fore.RED}未知的引擎命令.可用命令: {available_commands}{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/engine.'):
+            engine_command = user_input[8:].strip()
+            if not self.handle_engine_command(engine_command):
+                print(f"{Fore.RED}当前引擎不支持该命令或命令执行失败{Style.RESET_ALL}")
+            return True
+
+        # /model 命令族 — OpenAI 引擎多模型在线增删切换
+        if user_input == '/model' or user_input.startswith('/model '):
+            self.handle_model_command(user_input[7:].strip())
+            return True
+
+        # /providers — opencode 式原生多 Provider 注册与状态一览
+        if user_input == '/providers' or user_input.startswith('/providers '):
+            self.handle_providers_command(user_input[11:].strip())
+            return True
+
+        # /plan 进入 PLAN 模式（只读规划 → 审批 → 执行）
+        if user_input == '/plan' or user_input.startswith('/plan '):
+            sub = user_input[6:].strip() if user_input.startswith('/plan ') else ''
+            self.handle_plan_command(sub)
+            return True
+        if user_input == '/build':
+            self.handle_build_command()
+            return True
+
+        # /resume 会话恢复（opencode 式自动持久化 + 一键恢复）
+        if user_input in ('/resume', '/sessions') or \
+           user_input.startswith('/resume ') or user_input.startswith('/sessions ') or \
+           user_input.startswith('/session '):
+            if user_input.startswith('/resume'):
+                self.handle_resume_command(user_input[7:].strip())
+            elif user_input.startswith('/sessions'):
+                self.handle_resume_command(user_input[9:].strip())
+            else:  # /session <子命令>
+                sub = user_input[8:].strip()
+                self.handle_resume_command(sub if sub != 'new' else 'new')
+            return True
+
+        # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
+        if user_input == '/manual' or user_input.startswith('/manual '):
+            args = user_input[8:].strip() if user_input.startswith('/manual ') else ''
+            if 'manual' not in self.engines:
+                print(f"{Fore.RED}manual 引擎未加载{Style.RESET_ALL}")
+            elif not args:
+                # 无参数：切换到 manual 引擎
+                self.switch_engine('manual')
+                print(f"{Fore.GREEN}已切换到 manual 引擎{Style.RESET_ALL}")
+            else:
+                # 有参数：执行 manual 引擎命令（如 status, restart）
+                result = self.engines['manual'].handle_command(args)
+                if result:
+                    print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/file.read '):
+            args = user_input[11:].strip()
+            parts = args.split(' ', 2)
+            if len(parts) < 1:
+                print(f"{Fore.RED}请提供文件名.用法: /file.read <文件名> [行数]{Style.RESET_ALL}")
+                return True
+            filename = parts[0]
+            max_lines = None
+            if len(parts) >= 2:
+                try:
+                    max_lines = int(parts[1])
+                    if max_lines <= 0:
+                        print(f"{Fore.RED}行数必须是正整数{Style.RESET_ALL}")
+                        return True
+                except ValueError:
+                    print(f"{Fore.RED}行数必须是正整数{Style.RESET_ALL}")
+                    return True
+            result = self._read_file_direct(filename, max_lines)
+            print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/chat '):
+            chat_command = user_input[6:].strip()
+            if chat_command.startswith('save '):
+                name = chat_command[5:].strip()
+                if name:
+                    self.save_chat_history(name)
+                else:
+                    print(f"{Fore.RED}请提供聊天记录名称.用法: /chat save <名称>{Style.RESET_ALL}")
+                return True
+            elif chat_command == 'list':
+                self.list_chat_history()
+                return True
+            elif chat_command.startswith('open '):
+                name = chat_command[5:].strip()
+                if name:
+                    self.load_chat_history(name)
+                else:
+                    print(f"{Fore.RED}请提供聊天记录名称.用法: /chat open <名称>{Style.RESET_ALL}")
+                return True
+            else:
+                print(f"{Fore.RED}未知的聊天命令.可用命令: save, list, open{Style.RESET_ALL}")
+                return True
+
+        if user_input.startswith('/plugin'):
+            plugin_args = user_input[7:].strip()
+            result = self.handle_plugin_command(plugin_args)
+            if result:
+                print(result)
+            return True
+
+        if user_input.startswith('/protect'):
+            parts = user_input.split()
+            if len(parts) > 1 and parts[1] == 'test':
+                # 重新测试所有保护
+                from .process_protection import enable_process_protection
+                results = enable_process_protection()
+                print(f"\n{Fore.CYAN}  进程保护测试结果:{Style.RESET_ALL}")
+                for key, val in results.items():
+                    icon = '' if val else ''
+                    print(f"    {icon} {key}: {val}")
+            else:
+                status = get_protection_status()
+                print(f"\n{Fore.CYAN}  进程保护状态:{Style.RESET_ALL}")
+                print(f"    平台: {status.get('platform', '未知')}")
+                icon = '' if status.get('is_protected') else ''
+                print(f"    {icon} 保护已启用: {status.get('is_protected', False)}")
+                icon = '' if status.get('single_instance_held') else ''
+                print(f"    {icon} 单实例锁: {status.get('single_instance_held', False)}")
+                icon = '' if status.get('watchdog_running') else ''
+                print(f"    {icon} 看门狗: {status.get('watchdog_running', False)}")
+                print(f"      关闭钩子: {status.get('shutdown_hooks_count', 0)} 个")
+            return True
+
+        if user_input.startswith('/remote'):
+            remote_command = user_input[7:].strip()
+            self._handle_remote_command(remote_command)
+            return True
+
+        if user_input == '/about':
+            self._read_about_file()
+            return True
+
+        if user_input == '/tui':
+            print(f"{Fore.CYAN}正在切换到 TUI 模式...{Style.RESET_ALL}")
+            self.run_tui()
+            print(f"{Fore.CYAN}已从 TUI 模式返回 CLI 模式{Style.RESET_ALL}")
+            return True
+
+        if user_input == '/compress':
+            if hasattr(self, 'memory_manager') and self.memory_manager:
+                engine = self.current_engine
+                before = len(self.shared_conversation_history)
+                self.shared_conversation_history = self.memory_manager.compress_context(
+                    self.shared_conversation_history, engine=engine)
+                self._set_shared_conversation_history()
+                print(f"{Fore.CYAN}已手动压缩上下文: {before} → {len(self.shared_conversation_history)} 条{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}记忆系统未加载，无法压缩{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/memory mode '):
+            mode = user_input[len('/memory mode '):].strip().lower()
+            if mode in ('companion', 'work'):
+                try:
+                    set_system_config('memory_mode', mode)
+                except Exception:
+                    pass
+                print(f"{Fore.GREEN}记忆模式已设为: {mode}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}用法: /memory mode <companion|work>{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/safe'):
+            parts = user_input.split()
+            safety = get_safety()
+            if len(parts) > 1:
+                mode_arg = parts[1].lower()
+                if mode_arg in ('off', 'unrestricted', '无限制'):
+                    safety.set_mode(MODE_UNRESTRICTED)
+                elif mode_arg in ('on', 'normal', '普通'):
+                    safety.set_mode(MODE_NORMAL)
+                elif mode_arg in ('manual', '人工', 'all'):
+                    safety.set_mode(MODE_MANUAL)
+                else:
+                    print(f"{Fore.RED}用法: /safe [off|on|manual]{Style.RESET_ALL}")
+                    return True
+            else:
+                # 无参数：循环切换
+                safety.cycle_mode()
+            mode_name = safety.get_mode_name()
+            icons = {"无限制": "", "普通": "", "人工确认": ""}
+            icon = icons.get(mode_name, "")
+            print(f"{icon} 安全模式: {mode_name}")
+            return True
+
+        if user_input.startswith('/diff'):
+            parts = user_input.split()
+            if self._get_code_editor_plugin() is None:
+                print(f"{Fore.YELLOW}code_editor 插件未加载，无法设置 diff 模式{Style.RESET_ALL}")
+                return True
+            if len(parts) > 1:
+                arg = parts[1].lower()
+                if arg in ('popup', '弹窗', '1'):
+                    self._set_diff_popup_mode(True)
+                elif arg in ('inline', '内联', '主终端', '2'):
+                    self._set_diff_popup_mode(False)
+                else:
+                    print(f"{Fore.RED}用法: /diff [popup|inline]{Style.RESET_ALL}")
+            else:
+                cur = bool(get_system_config('diff_popup_mode', False))
+                self._set_diff_popup_mode(not cur)
+            return True
+
+        if user_input.startswith('/fc'):
+            from .fc_tools import get_fc_cache, reset_fc_cache
+            parts = user_input.split()
+            if len(parts) > 1 and parts[1].lower() in ('reset', 'clear', '清除'):
+                n = reset_fc_cache()
+                print(f"{Fore.GREEN}已清除 {n} 条 FC 探测记录，下次请求会重新试探{Style.RESET_ALL}")
+            else:
+                cache = get_fc_cache()
+                if not cache:
+                    print(f"{Fore.GREEN}FC 探测缓存为空：所有模型都按支持 function calling 处理{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.CYAN}已探测到不支持 function calling 的模型:{Style.RESET_ALL}")
+                    for key, ok in cache.items():
+                        if ok is False:
+                            print(f"  {Fore.YELLOW}✗{Style.RESET_ALL} {key}")
+                    print(f"{Fore.WHITE}这些请求会自动跳过 tools 字段；/fc reset 可清除重测{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/notify'):
+            parts = user_input.split()
+            nm = get_notification_manager()
+            if len(parts) > 1:
+                arg = parts[1].lower()
+                if arg in ('on', '开启', '启用'):
+                    nm.set_enabled(True)
+                    print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
+                elif arg in ('off', '关闭', '禁用'):
+                    nm.set_enabled(False)
+                    print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.RED}用法: /notify [on|off]{Style.RESET_ALL}")
+            else:
+                # 无参数：切换状态
+                nm.set_enabled(not nm.enabled)
+                if nm.enabled:
+                    print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
+            return True
+
+        if user_input.startswith('/'):
+            command_parts = user_input[1:].split(' ', 1)
+            command = command_parts[0]
+            args = command_parts[1] if len(command_parts) > 1 else ""
+            if command in self.liugin_commands:
+                try:
+                    result = self.liugin_commands[command](args)
+                    if result:
+                        result = self._limit_output_lines(result, max_lines=5)
+                        print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.RED}插件命令执行失败: {e}{Style.RESET_ALL}")
+                return True
+
+        if user_input.startswith('/thinking '):
+            thinking_input = user_input[10:].strip()
+            processed_response = self.process_thinking_response(thinking_input)
+            processed_response = self._process_code_blocks(processed_response)
+            user_id_display = f"[用户ID: {self.user_id}]"
+            response_lines = processed_response.split('\n')
+            for i, line in enumerate(response_lines):
+                if i == 0:
+                    line = " " + line
+                if i == len(response_lines) - 1:
+                    print(f"{line} {user_id_display}")
+                else:
+                    print(f"{line}")
+            return True
+
+        return False
+
     def _run_cli_loop(self):
         """运行 CLI 主循环"""
         while True:
@@ -1315,307 +1560,8 @@ multi 操作支持一次修改多处：
                     print(f"{Fore.GREEN}再见!{Style.RESET_ALL}")
                     break
 
-                # @agent 委派（opencode 式 Agents 体系化）
-                if user_input.startswith('@'):
-                    self.handle_agent_command(user_input[1:].strip())
-                    continue
-
-                if user_input == '/help':
-                    self.show_help()
-                    continue
-
-                if user_input.startswith('/help '):
-                    liugin_name = user_input[6:].strip()
-                    self.show_liugin_help(liugin_name)
-                    continue
-
-                if user_input.startswith('/engine '):
-                    engine_command = user_input[8:].strip()
-                    parts = engine_command.split(' ', 1)
-                    cmd = parts[0]
-                    args = parts[1] if len(parts) > 1 else ''
-                    if cmd in self.engine_commands:
-                        self.engine_commands[cmd](args)
-                    else:
-                        available_commands = ', '.join(self.engine_commands.keys())
-                        print(f"{Fore.RED}未知的引擎命令.可用命令: {available_commands}{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/engine.'):
-                    engine_command = user_input[8:].strip()
-                    if not self.handle_engine_command(engine_command):
-                        print(f"{Fore.RED}当前引擎不支持该命令或命令执行失败{Style.RESET_ALL}")
-                    continue
-
-                # /model 命令族 — OpenAI 引擎多模型在线增删切换
-                if user_input == '/model' or user_input.startswith('/model '):
-                    self.handle_model_command(user_input[7:].strip())
-                    continue
-
-                # /providers — opencode 式原生多 Provider 注册与状态一览
-                if user_input == '/providers' or user_input.startswith('/providers '):
-                    self.handle_providers_command(user_input[11:].strip())
-                    continue
-
-                # /plan 进入 PLAN 模式（只读规划 → 审批 → 执行）
-                if user_input == '/plan' or user_input.startswith('/plan '):
-                    sub = user_input[6:].strip() if user_input.startswith('/plan ') else ''
-                    self.handle_plan_command(sub)
-                    continue
-                if user_input == '/build':
-                    self.handle_build_command()
-                    continue
-
-                # /resume 会话恢复（opencode 式自动持久化 + 一键恢复）
-                if user_input in ('/resume', '/sessions') or \
-                   user_input.startswith('/resume ') or user_input.startswith('/sessions ') or \
-                   user_input.startswith('/session '):
-                    if user_input.startswith('/resume'):
-                        self.handle_resume_command(user_input[7:].strip())
-                    elif user_input.startswith('/sessions'):
-                        self.handle_resume_command(user_input[9:].strip())
-                    else:  # /session <子命令>
-                        sub = user_input[8:].strip()
-                        self.handle_resume_command(sub if sub != 'new' else 'new')
-                    continue
-
-                # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
-                if user_input == '/manual' or user_input.startswith('/manual '):
-                    args = user_input[8:].strip() if user_input.startswith('/manual ') else ''
-                    if 'manual' not in self.engines:
-                        print(f"{Fore.RED}manual 引擎未加载{Style.RESET_ALL}")
-                    elif not args:
-                        # 无参数：切换到 manual 引擎
-                        self.switch_engine('manual')
-                        print(f"{Fore.GREEN}已切换到 manual 引擎{Style.RESET_ALL}")
-                    else:
-                        # 有参数：执行 manual 引擎命令（如 status, restart）
-                        result = self.engines['manual'].handle_command(args)
-                        if result:
-                            print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/file.read '):
-                    args = user_input[11:].strip()
-                    parts = args.split(' ', 2)
-                    if len(parts) < 1:
-                        print(f"{Fore.RED}请提供文件名.用法: /file.read <文件名> [行数]{Style.RESET_ALL}")
-                        continue
-                    filename = parts[0]
-                    max_lines = None
-                    if len(parts) >= 2:
-                        try:
-                            max_lines = int(parts[1])
-                            if max_lines <= 0:
-                                print(f"{Fore.RED}行数必须是正整数{Style.RESET_ALL}")
-                                continue
-                        except ValueError:
-                            print(f"{Fore.RED}行数必须是正整数{Style.RESET_ALL}")
-                            continue
-                    result = self._read_file_direct(filename, max_lines)
-                    print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/chat '):
-                    chat_command = user_input[6:].strip()
-                    if chat_command.startswith('save '):
-                        name = chat_command[5:].strip()
-                        if name:
-                            self.save_chat_history(name)
-                        else:
-                            print(f"{Fore.RED}请提供聊天记录名称.用法: /chat save <名称>{Style.RESET_ALL}")
-                        continue
-                    elif chat_command == 'list':
-                        self.list_chat_history()
-                        continue
-                    elif chat_command.startswith('open '):
-                        name = chat_command[5:].strip()
-                        if name:
-                            self.load_chat_history(name)
-                        else:
-                            print(f"{Fore.RED}请提供聊天记录名称.用法: /chat open <名称>{Style.RESET_ALL}")
-                        continue
-                    else:
-                        print(f"{Fore.RED}未知的聊天命令.可用命令: save, list, open{Style.RESET_ALL}")
-                        continue
-
-                if user_input.startswith('/plugin'):
-                    plugin_args = user_input[7:].strip()
-                    result = self.handle_plugin_command(plugin_args)
-                    if result:
-                        print(result)
-                    continue
-
-                if user_input.startswith('/protect'):
-                    parts = user_input.split()
-                    if len(parts) > 1 and parts[1] == 'test':
-                        # 重新测试所有保护
-                        from .process_protection import enable_process_protection
-                        results = enable_process_protection()
-                        print(f"\n{Fore.CYAN}  进程保护测试结果:{Style.RESET_ALL}")
-                        for key, val in results.items():
-                            icon = '' if val else ''
-                            print(f"    {icon} {key}: {val}")
-                    else:
-                        status = get_protection_status()
-                        print(f"\n{Fore.CYAN}  进程保护状态:{Style.RESET_ALL}")
-                        print(f"    平台: {status.get('platform', '未知')}")
-                        icon = '' if status.get('is_protected') else ''
-                        print(f"    {icon} 保护已启用: {status.get('is_protected', False)}")
-                        icon = '' if status.get('single_instance_held') else ''
-                        print(f"    {icon} 单实例锁: {status.get('single_instance_held', False)}")
-                        icon = '' if status.get('watchdog_running') else ''
-                        print(f"    {icon} 看门狗: {status.get('watchdog_running', False)}")
-                        print(f"      关闭钩子: {status.get('shutdown_hooks_count', 0)} 个")
-                    continue
-
-                if user_input.startswith('/remote'):
-                    remote_command = user_input[7:].strip()
-                    self._handle_remote_command(remote_command)
-                    continue
-
-                if user_input == '/about':
-                    self._read_about_file()
-                    continue
-
-                if user_input == '/tui':
-                    print(f"{Fore.CYAN}正在切换到 TUI 模式...{Style.RESET_ALL}")
-                    self.run_tui()
-                    print(f"{Fore.CYAN}已从 TUI 模式返回 CLI 模式{Style.RESET_ALL}")
-                    continue
-
-                if user_input == '/compress':
-                    if hasattr(self, 'memory_manager') and self.memory_manager:
-                        engine = self.current_engine
-                        before = len(self.shared_conversation_history)
-                        self.shared_conversation_history = self.memory_manager.compress_context(
-                            self.shared_conversation_history, engine=engine)
-                        self._set_shared_conversation_history()
-                        print(f"{Fore.CYAN}已手动压缩上下文: {before} → {len(self.shared_conversation_history)} 条{Style.RESET_ALL}")
-                    else:
-                        print(f"{Fore.YELLOW}记忆系统未加载，无法压缩{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/memory mode '):
-                    mode = user_input[len('/memory mode '):].strip().lower()
-                    if mode in ('companion', 'work'):
-                        try:
-                            set_system_config('memory_mode', mode)
-                        except Exception:
-                            pass
-                        print(f"{Fore.GREEN}记忆模式已设为: {mode}{Style.RESET_ALL}")
-                    else:
-                        print(f"{Fore.RED}用法: /memory mode <companion|work>{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/safe'):
-                    parts = user_input.split()
-                    safety = get_safety()
-                    if len(parts) > 1:
-                        mode_arg = parts[1].lower()
-                        if mode_arg in ('off', 'unrestricted', '无限制'):
-                            safety.set_mode(MODE_UNRESTRICTED)
-                        elif mode_arg in ('on', 'normal', '普通'):
-                            safety.set_mode(MODE_NORMAL)
-                        elif mode_arg in ('manual', '人工', 'all'):
-                            safety.set_mode(MODE_MANUAL)
-                        else:
-                            print(f"{Fore.RED}用法: /safe [off|on|manual]{Style.RESET_ALL}")
-                            continue
-                    else:
-                        # 无参数：循环切换
-                        safety.cycle_mode()
-                    mode_name = safety.get_mode_name()
-                    icons = {"无限制": "", "普通": "", "人工确认": ""}
-                    icon = icons.get(mode_name, "")
-                    print(f"{icon} 安全模式: {mode_name}")
-                    continue
-
-                if user_input.startswith('/diff'):
-                    parts = user_input.split()
-                    if self._get_code_editor_plugin() is None:
-                        print(f"{Fore.YELLOW}code_editor 插件未加载，无法设置 diff 模式{Style.RESET_ALL}")
-                        continue
-                    if len(parts) > 1:
-                        arg = parts[1].lower()
-                        if arg in ('popup', '弹窗', '1'):
-                            self._set_diff_popup_mode(True)
-                        elif arg in ('inline', '内联', '主终端', '2'):
-                            self._set_diff_popup_mode(False)
-                        else:
-                            print(f"{Fore.RED}用法: /diff [popup|inline]{Style.RESET_ALL}")
-                    else:
-                        cur = bool(get_system_config('diff_popup_mode', False))
-                        self._set_diff_popup_mode(not cur)
-                    continue
-
-                if user_input.startswith('/fc'):
-                    from .fc_tools import get_fc_cache, reset_fc_cache
-                    parts = user_input.split()
-                    if len(parts) > 1 and parts[1].lower() in ('reset', 'clear', '清除'):
-                        n = reset_fc_cache()
-                        print(f"{Fore.GREEN}已清除 {n} 条 FC 探测记录，下次请求会重新试探{Style.RESET_ALL}")
-                    else:
-                        cache = get_fc_cache()
-                        if not cache:
-                            print(f"{Fore.GREEN}FC 探测缓存为空：所有模型都按支持 function calling 处理{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.CYAN}已探测到不支持 function calling 的模型:{Style.RESET_ALL}")
-                            for key, ok in cache.items():
-                                if ok is False:
-                                    print(f"  {Fore.YELLOW}✗{Style.RESET_ALL} {key}")
-                            print(f"{Fore.WHITE}这些请求会自动跳过 tools 字段；/fc reset 可清除重测{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/notify'):
-                    parts = user_input.split()
-                    nm = get_notification_manager()
-                    if len(parts) > 1:
-                        arg = parts[1].lower()
-                        if arg in ('on', '开启', '启用'):
-                            nm.set_enabled(True)
-                            print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
-                        elif arg in ('off', '关闭', '禁用'):
-                            nm.set_enabled(False)
-                            print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.RED}用法: /notify [on|off]{Style.RESET_ALL}")
-                    else:
-                        # 无参数：切换状态
-                        nm.set_enabled(not nm.enabled)
-                        if nm.enabled:
-                            print(f"{Fore.GREEN}🔔 系统通知已开启{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.YELLOW}🔕 系统通知已关闭{Style.RESET_ALL}")
-                    continue
-
-                if user_input.startswith('/'):
-                    command_parts = user_input[1:].split(' ', 1)
-                    command = command_parts[0]
-                    args = command_parts[1] if len(command_parts) > 1 else ""
-                    if command in self.liugin_commands:
-                        try:
-                            result = self.liugin_commands[command](args)
-                            if result:
-                                result = self._limit_output_lines(result, max_lines=5)
-                                print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
-                        except Exception as e:
-                            print(f"{Fore.RED}插件命令执行失败: {e}{Style.RESET_ALL}")
-                        continue
-
-                if user_input.startswith('/thinking '):
-                    thinking_input = user_input[10:].strip()
-                    processed_response = self.process_thinking_response(thinking_input)
-                    processed_response = self._process_code_blocks(processed_response)
-                    user_id_display = f"[用户ID: {self.user_id}]"
-                    response_lines = processed_response.split('\n')
-                    for i, line in enumerate(response_lines):
-                        if i == 0:
-                            line = " " + line
-                        if i == len(response_lines) - 1:
-                            print(f"{line} {user_id_display}")
-                        else:
-                            print(f"{line}")
+                # 内置命令分发（/help /engine /model /providers /plan /resume …）
+                if self._handle_cli_command(user_input):
                     continue
 
                 if '@' in user_input:
