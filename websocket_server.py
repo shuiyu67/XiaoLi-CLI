@@ -45,6 +45,64 @@ except ImportError:
     WEBSOCKET_AVAILABLE = False
 
 
+def _parse_tool_arguments(args):
+    """arguments 可能是 JSON 字符串，需要解析"""
+    if isinstance(args, str) and args.startswith('{'):
+        try:
+            args = json.loads(args)
+        except Exception:
+            pass
+    return args
+
+
+def _make_tool_call(name, args):
+    args = _parse_tool_arguments(args)
+    return {
+        'tool': name,
+        'args': args if isinstance(args, str) else '',
+        'arguments': args if isinstance(args, dict) else None
+    }
+
+
+def extract_tool_calls(json_data):
+    """从多种 JSON 格式（小狸/MCP/Plugin/OpenAI/Anthropic）提取工具调用列表。
+
+    返回 list[dict] 或 None（无工具调用）。行为与历史内联实现逐行等价。
+    """
+    tool_calls = None
+    if isinstance(json_data, dict):
+        # 小狸自有格式
+        if json_data.get('action') == 'use_tool':
+            tool_calls = [json_data]
+        elif 'tool' in json_data and 'args' in json_data:
+            tool_calls = [json_data]
+        # OpenAI function_call 格式
+        elif 'function_call' in json_data:
+            fc = json_data['function_call']
+            if isinstance(fc, dict):
+                tool_calls = [_make_tool_call(fc.get('name', ''), fc.get('arguments', ''))]
+        # MCP/Anthropic 格式
+        elif 'name' in json_data and 'arguments' in json_data:
+            tool_calls = [_make_tool_call(json_data.get('name', ''), json_data.get('arguments', ''))]
+        # OpenAI tool_calls 格式
+        elif json_data.get('type') == 'function' and 'function' in json_data:
+            func = json_data['function']
+            tool_calls = [_make_tool_call(func.get('name', ''), func.get('arguments', ''))]
+    elif isinstance(json_data, list):
+        tool_calls = []
+        for item in json_data:
+            if isinstance(item, dict):
+                if item.get('action') == 'use_tool':
+                    tool_calls.append(item)
+                elif 'tool' in item and 'args' in item:
+                    tool_calls.append(item)
+                elif 'name' in item and 'arguments' in item:
+                    tool_calls.append(_make_tool_call(item.get('name', ''), item.get('arguments', '')))
+        if not tool_calls:
+            tool_calls = None
+    return tool_calls
+
+
 def get_file_category(filename: str) -> str:
     """根据文件扩展名获取分类"""
     ext = filename.lower().split('.')[-1] if '.' in filename else ''
@@ -498,83 +556,7 @@ class LocalServer:
                 print(f"[Clawli] 解析结果: text={text_content[:50] if text_content else 'None'}..., json={json_data}")
                 
                 if json_data:
-                    tool_calls = None
-                    
-                    # 支持多种JSON格式（MCP/Plugin/OpenAI/Anthropic）
-                    if isinstance(json_data, dict):
-                        # 小狸自有格式
-                        if json_data.get('action') == 'use_tool':
-                            tool_calls = [json_data]
-                        elif 'tool' in json_data and 'args' in json_data:
-                            tool_calls = [json_data]
-                        # OpenAI function_call 格式
-                        elif 'function_call' in json_data:
-                            fc = json_data['function_call']
-                            if isinstance(fc, dict):
-                                args = fc.get('arguments', '')
-                                # arguments 可能是 JSON 字符串，需要解析
-                                if isinstance(args, str) and args.startswith('{'):
-                                    try:
-                                        args = json.loads(args)
-                                    except Exception:
-                                        pass
-                                tool_calls = [{
-                                    'tool': fc.get('name', ''),
-                                    'args': args if isinstance(args, str) else '',
-                                    'arguments': args if isinstance(args, dict) else None
-                                }]
-                        # MCP/Anthropic 格式
-                        elif 'name' in json_data and 'arguments' in json_data:
-                            args = json_data.get('arguments', '')
-                            # arguments 可能是 JSON 字符串，需要解析
-                            if isinstance(args, str) and args.startswith('{'):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                            tool_calls = [{
-                                'tool': json_data.get('name', ''),
-                                'args': args if isinstance(args, str) else '',
-                                'arguments': args if isinstance(args, dict) else None
-                            }]
-                        # OpenAI tool_calls 格式
-                        elif json_data.get('type') == 'function' and 'function' in json_data:
-                            func = json_data['function']
-                            args = func.get('arguments', '')
-                            # arguments 可能是 JSON 字符串，需要解析
-                            if isinstance(args, str) and args.startswith('{'):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                            tool_calls = [{
-                                'tool': func.get('name', ''),
-                                'args': args if isinstance(args, str) else '',
-                                'arguments': args if isinstance(args, dict) else None
-                            }]
-                    elif isinstance(json_data, list):
-                        tool_calls = []
-                        for item in json_data:
-                            if isinstance(item, dict):
-                                if item.get('action') == 'use_tool':
-                                    tool_calls.append(item)
-                                elif 'tool' in item and 'args' in item:
-                                    tool_calls.append(item)
-                                elif 'name' in item and 'arguments' in item:
-                                    args = item.get('arguments', '')
-                                    # arguments 可能是 JSON 字符串，需要解析
-                                    if isinstance(args, str) and args.startswith('{'):
-                                        try:
-                                            args = json.loads(args)
-                                        except Exception:
-                                            pass
-                                    tool_calls.append({
-                                        'tool': item.get('name', ''),
-                                        'args': args if isinstance(args, str) else '',
-                                        'arguments': args if isinstance(args, dict) else None
-                                    })
-                        if not tool_calls:
-                            tool_calls = None
+                    tool_calls = extract_tool_calls(json_data)
                     
                     if tool_calls:
                         print(f"[Clawli] 检测到工具调用: {tool_calls}")
@@ -878,83 +860,7 @@ class ProxyClient:
                 print(f"[Clawli] 解析结果: text={text_content[:50] if text_content else 'None'}..., json={json_data}")
                 
                 if json_data:
-                    tool_calls = None
-                    
-                    # 支持多种JSON格式（MCP/Plugin/OpenAI/Anthropic）
-                    if isinstance(json_data, dict):
-                        # 小狸自有格式
-                        if json_data.get('action') == 'use_tool':
-                            tool_calls = [json_data]
-                        elif 'tool' in json_data and 'args' in json_data:
-                            tool_calls = [json_data]
-                        # OpenAI function_call 格式
-                        elif 'function_call' in json_data:
-                            fc = json_data['function_call']
-                            if isinstance(fc, dict):
-                                args = fc.get('arguments', '')
-                                # arguments 可能是 JSON 字符串，需要解析
-                                if isinstance(args, str) and args.startswith('{'):
-                                    try:
-                                        args = json.loads(args)
-                                    except Exception:
-                                        pass
-                                tool_calls = [{
-                                    'tool': fc.get('name', ''),
-                                    'args': args if isinstance(args, str) else '',
-                                    'arguments': args if isinstance(args, dict) else None
-                                }]
-                        # MCP/Anthropic 格式
-                        elif 'name' in json_data and 'arguments' in json_data:
-                            args = json_data.get('arguments', '')
-                            # arguments 可能是 JSON 字符串，需要解析
-                            if isinstance(args, str) and args.startswith('{'):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                            tool_calls = [{
-                                'tool': json_data.get('name', ''),
-                                'args': args if isinstance(args, str) else '',
-                                'arguments': args if isinstance(args, dict) else None
-                            }]
-                        # OpenAI tool_calls 格式
-                        elif json_data.get('type') == 'function' and 'function' in json_data:
-                            func = json_data['function']
-                            args = func.get('arguments', '')
-                            # arguments 可能是 JSON 字符串，需要解析
-                            if isinstance(args, str) and args.startswith('{'):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                            tool_calls = [{
-                                'tool': func.get('name', ''),
-                                'args': args if isinstance(args, str) else '',
-                                'arguments': args if isinstance(args, dict) else None
-                            }]
-                    elif isinstance(json_data, list):
-                        tool_calls = []
-                        for item in json_data:
-                            if isinstance(item, dict):
-                                if item.get('action') == 'use_tool':
-                                    tool_calls.append(item)
-                                elif 'tool' in item and 'args' in item:
-                                    tool_calls.append(item)
-                                elif 'name' in item and 'arguments' in item:
-                                    args = item.get('arguments', '')
-                                    # arguments 可能是 JSON 字符串，需要解析
-                                    if isinstance(args, str) and args.startswith('{'):
-                                        try:
-                                            args = json.loads(args)
-                                        except Exception:
-                                            pass
-                                    tool_calls.append({
-                                        'tool': item.get('name', ''),
-                                        'args': args if isinstance(args, str) else '',
-                                        'arguments': args if isinstance(args, dict) else None
-                                    })
-                        if not tool_calls:
-                            tool_calls = None
+                    tool_calls = extract_tool_calls(json_data)
                     
                     if tool_calls:
                         print(f"[Clawli] 检测到工具调用: {tool_calls}")
