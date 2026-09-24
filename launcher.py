@@ -870,6 +870,11 @@ def run_wizard_app(launcher):
                 return
             # done → 启动主程序
             self.exit()
+            try:
+                from xcli_core.notify_sound import play
+                play("special")   # 向导完成彩蛋音
+            except Exception:
+                pass
             self.launcher.enabled_plugins = self.launcher.discover_plugins()
             self.launcher.launch()
 

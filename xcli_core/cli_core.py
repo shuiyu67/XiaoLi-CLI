@@ -1067,6 +1067,11 @@ multi 操作支持一次修改多处：
             return
 
         self.plan_mode = True
+        try:
+            from .notify_sound import play
+            play("notify")   # 待你确认/批准 → 气泡音
+        except Exception:
+            pass
         if args:
             emit(self, f"{Fore.CYAN}已进入 PLAN 模式，正在只读调研并生成实施计划...{Style.RESET_ALL}")
             self.process_conversation(args)
@@ -1129,6 +1134,11 @@ multi 操作支持一次修改多处：
             return
 
         emit(self, f"{Fore.GREEN}已批准计划，开始执行...{Style.RESET_ALL}")
+        try:
+            from .notify_sound import play
+            play("special")   # 特殊节点：开工
+        except Exception:
+            pass
         instruction = ("【已批准的实施计划，请现在严格按照以下步骤执行，利用可用工具完成每一步；"
                        "遇到与计划不符的情况先说明再继续】\n\n" + plan)
         self.process_conversation(instruction)

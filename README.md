@@ -358,3 +358,15 @@ class Plugin:
 - 插件仓库: https://gitee.com/shuiyu1123/xiaoli-cli-plugins
 - [更新日志](CHANGELOG.md)
 - [使用指南](HELP.md)
+
+## 任务提示音
+
+任务完成 / 待确认 / 特殊节点 三种事件三种音色（`assets/sounds/`）：
+
+| 事件 | 音色文件 | 来源 |
+|---|---|---|
+| 任务/AI 回复完成 | `done.mp3`（Steam 成就音） | 爱给网 aigei.com |
+| 待确认（PLAN 等） | `notify.mp3`（微信气泡音） | 爱给网 aigei.com |
+| 特殊节点（PLAN 批准开工/向导完成） | `special.mp3`（隐藏要素发现音） | 爱给网 aigei.com |
+
+TUI 里 `/sound` 开关；`config.json` 的 `sound` 段可调音量（`volume` 0~1）。pygame 缺失时自动静默。

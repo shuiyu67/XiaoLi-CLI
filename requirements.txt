@@ -1,11 +1,17 @@
-# 小狸 Pro-CLI 依赖
-# 生成于 2026-09-24 19:53
+# 小狸 Pro-CLI 依赖（人工维护清单；launcher 只读不覆写）
+# 包名 = pip 安装名（import 名不同的已在括号标注）
 
-PIL
 colorama
-cv2
-jedi
-numpy
-ollama
 requests
-tkinter
+openai
+ollama
+jedi                 # py_detect L2 语义验证后端 / 自研本地 LSP
+Pillow               # import PIL
+opencv-python        # import cv2（仅视频播放功能）
+numpy
+ascii-magic          # import ascii_magic（可选，图像转字符画）
+pygame               # 任务提示音（xcli_core/notify_sound）
+textual              # TUI（不可用时自动回退 rich 面板）
+rich
+
+# 标准库（无需安装，列此备查）：tkinter / ctypes / msvcrt / winsound / readline

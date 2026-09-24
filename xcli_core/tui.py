@@ -1596,7 +1596,7 @@ if TEXTUAL_AVAILABLE:
             'tui': '已在 TUI', 'manual': 'manual 引擎', 'plan': 'PLAN 规划模式',
             'build': '批准 PLAN 执行', 'sessions': '历史会话', 'session': '会话操作',
             'resume': '恢复会话', 'snapshot': '导出截图', 'screenshot': '导出截图',
-            'vim': 'Vim 键位开关', 'palette': '打开命令面板',
+            'vim': 'Vim 键位开关', 'sound': '提示音开关', 'palette': '打开命令面板',
         }
 
         def _palette_items(self):
@@ -1705,6 +1705,7 @@ if TEXTUAL_AVAILABLE:
                 'snapshot': lambda a="": self._save_screenshot(),
                 'screenshot': lambda a="": self._save_screenshot(),
                 'vim': lambda a="": self._toggle_vim(),
+                'sound': lambda a="": self._toggle_sound(),
                 'palette': lambda a="": self.action_command_palette(),
             }
 
@@ -1828,6 +1829,11 @@ if TEXTUAL_AVAILABLE:
                 self._system("已退出 PLAN 模式（计划未执行）")
                 return
             self._set_plan_mode(True)
+            try:
+                from .notify_sound import play
+                play("notify")   # 待你确认/批准 → 气泡音
+            except Exception:
+                pass
             if args:
                 self._system(f"📋 已进入 PLAN 模式，正在只读调研: {args}")
                 self._user_msg(f"/plan {args}")
@@ -1843,6 +1849,11 @@ if TEXTUAL_AVAILABLE:
                 self._system("当前不在 PLAN 模式，且无已生成的计划")
                 return
             self._system("✅ 已批准 PLAN，开始执行…")
+            try:
+                from .notify_sound import play
+                play("special")   # 特殊节点：开工
+            except Exception:
+                pass
             self.is_generating = True
             self._show_thinking()
             self._update_status("执行 PLAN…")
@@ -1960,6 +1971,13 @@ if TEXTUAL_AVAILABLE:
                     # PLAN 模式下把最后一条 assistant 回复同步为当前计划（否则 /build 无计划可执行）
                     try:
                         self.cli._sync_current_plan()
+                    except Exception:
+                        pass
+                    # 任务完成提示音（取消则不响）
+                    try:
+                        if not ev.is_set():
+                            from .notify_sound import play
+                            play("done")
                     except Exception:
                         pass
                     self.cli._tui_cancel = None
@@ -2177,6 +2195,18 @@ if TEXTUAL_AVAILABLE:
             else:
                 self._system("Vim 键位: 关 (普通输入)")
             self._update_vim_mode_display()
+
+        def _toggle_sound(self):
+            """ /sound：提示音开关（持久化） """
+            try:
+                from .notify_sound import is_enabled, set_enabled, play
+                new = not is_enabled()
+                set_enabled(new)
+                self._system(f"提示音: {'开' if new else '关'}（完成=成就音/待确认=气泡音/开工=发现音）")
+                if new:
+                    play("done")
+            except Exception as e:
+                self._error(f"提示音设置失败: {e}")
 
         def _save_screenshot(self):
             """导出当前 TUI 屏幕截图（SVG）——AI 可据此自验实时渲染（/snapshot）"""
