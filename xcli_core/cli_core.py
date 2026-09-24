@@ -451,7 +451,7 @@ multi 操作支持一次修改多处：
             parsed = self._loads_json(fixed_response)
             if isinstance(parsed, (list, dict)):
                 return "", parsed
-        except:
+        except Exception:
             pass
 
         # 方法3: 查找代码块中的JSON

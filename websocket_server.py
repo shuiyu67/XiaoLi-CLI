@@ -429,7 +429,7 @@ class LocalServer:
                 try:
                     from image_engine import get_image_engine
                     image_engine = get_image_engine()
-                except:
+                except Exception:
                     return f"@{file_path}"  # 没有图像引擎，直接返回路径
             
             if websocket:
@@ -522,7 +522,7 @@ class LocalServer:
                                 if isinstance(args, str) and args.startswith('{'):
                                     try:
                                         args = json.loads(args)
-                                    except:
+                                    except Exception:
                                         pass
                                 tool_calls = [{
                                     'tool': fc.get('name', ''),
@@ -536,7 +536,7 @@ class LocalServer:
                             if isinstance(args, str) and args.startswith('{'):
                                 try:
                                     args = json.loads(args)
-                                except:
+                                except Exception:
                                     pass
                             tool_calls = [{
                                 'tool': json_data.get('name', ''),
@@ -551,7 +551,7 @@ class LocalServer:
                             if isinstance(args, str) and args.startswith('{'):
                                 try:
                                     args = json.loads(args)
-                                except:
+                                except Exception:
                                     pass
                             tool_calls = [{
                                 'tool': func.get('name', ''),
@@ -572,7 +572,7 @@ class LocalServer:
                                     if isinstance(args, str) and args.startswith('{'):
                                         try:
                                             args = json.loads(args)
-                                        except:
+                                        except Exception:
                                             pass
                                     tool_calls.append({
                                         'tool': item.get('name', ''),
@@ -651,7 +651,7 @@ class LocalServer:
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
-        except:
+        except Exception:
             local_ip = "未知"
         
         print(f"\n{Fore.CYAN}{'='*50}{Style.RESET_ALL}")
@@ -670,7 +670,7 @@ class LocalServer:
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
-        except:
+        except Exception:
             local_ip = "未知"
         return {
             "running": self.running,
@@ -829,7 +829,7 @@ class ProxyClient:
                 try:
                     from image_engine import get_image_engine
                     image_engine = get_image_engine()
-                except:
+                except Exception:
                     return f"@{file_path}"
             
             with open(file_path, 'rb') as f:
@@ -902,7 +902,7 @@ class ProxyClient:
                                 if isinstance(args, str) and args.startswith('{'):
                                     try:
                                         args = json.loads(args)
-                                    except:
+                                    except Exception:
                                         pass
                                 tool_calls = [{
                                     'tool': fc.get('name', ''),
@@ -916,7 +916,7 @@ class ProxyClient:
                             if isinstance(args, str) and args.startswith('{'):
                                 try:
                                     args = json.loads(args)
-                                except:
+                                except Exception:
                                     pass
                             tool_calls = [{
                                 'tool': json_data.get('name', ''),
@@ -931,7 +931,7 @@ class ProxyClient:
                             if isinstance(args, str) and args.startswith('{'):
                                 try:
                                     args = json.loads(args)
-                                except:
+                                except Exception:
                                     pass
                             tool_calls = [{
                                 'tool': func.get('name', ''),
@@ -952,7 +952,7 @@ class ProxyClient:
                                     if isinstance(args, str) and args.startswith('{'):
                                         try:
                                             args = json.loads(args)
-                                        except:
+                                        except Exception:
                                             pass
                                     tool_calls.append({
                                         'tool': item.get('name', ''),

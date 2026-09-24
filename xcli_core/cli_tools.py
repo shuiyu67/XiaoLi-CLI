@@ -32,7 +32,7 @@ class ToolMixin:
                     if isinstance(args, str) and args.startswith('{'):
                         try:
                             args = json.loads(args)
-                        except:
+                        except Exception:
                             pass
                     tool_calls.append({
                         'tool': fc.get('name', ''),
@@ -45,7 +45,7 @@ class ToolMixin:
                 if isinstance(args, str) and args.startswith('{'):
                     try:
                         args = json.loads(args)
-                    except:
+                    except Exception:
                         pass
                 tool_calls.append({
                     'tool': json_data.get('name', ''),
@@ -59,7 +59,7 @@ class ToolMixin:
                 if isinstance(args, str) and args.startswith('{'):
                     try:
                         args = json.loads(args)
-                    except:
+                    except Exception:
                         pass
                 tool_calls.append({
                     'tool': func.get('name', ''),
@@ -78,7 +78,7 @@ class ToolMixin:
                         if isinstance(args, str) and args.startswith('{'):
                             try:
                                 args = json.loads(args)
-                            except:
+                            except Exception:
                                 pass
                         tool_calls.append({
                             'tool': item.get('name', ''),
@@ -160,14 +160,14 @@ class ToolMixin:
             try:
                 import msvcrt
                 return msvcrt.kbhit()
-            except:
+            except Exception:
                 return False
 
         def get_key():
             try:
                 import msvcrt
                 return msvcrt.getch()
-            except:
+            except Exception:
                 return None
 
         def detect_esc_key():

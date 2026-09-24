@@ -134,7 +134,7 @@ class ClawliWebSocketServer:
                 try:
                     msg = self.output_queue.get(timeout=0.01)
                     messages.append(msg)
-                except:
+                except Exception:
                     break
         return messages
     
@@ -192,7 +192,7 @@ def _ws_server_main(host: str, port: int, password: str,
                         )
                         await websocket.send(json.dumps(msg, ensure_ascii=False))
                         print(f"[Clawli WS] 发送: {msg.get('type', 'unknown')}")
-                    except:
+                    except Exception:
                         pass  # 超时，继续循环
             
             # 并行运行两个任务

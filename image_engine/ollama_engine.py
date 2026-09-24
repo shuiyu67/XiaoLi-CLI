@@ -70,7 +70,7 @@ class OllamaImageEngine(BaseImageEngine):
         try:
             result = ollama.list()
             self.installed_models = [m['model'] for m in result.get('models', [])]
-        except:
+        except Exception:
             self.installed_models = []
     
     def is_available(self):
@@ -80,7 +80,7 @@ class OllamaImageEngine(BaseImageEngine):
         try:
             ollama.list()
             return True
-        except:
+        except Exception:
             return False
     
     def _find_model(self, model_name):

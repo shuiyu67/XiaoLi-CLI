@@ -281,7 +281,7 @@ while True:
                         # 清理回复文件
                         os.remove(from_human)
                         return response
-                except:
+                except Exception:
                     pass
             time.sleep(0.5)
             waited += 0.5

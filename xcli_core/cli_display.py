@@ -641,14 +641,14 @@ class DisplayMixin:
                     cap.release()
                     try:
                         root.destroy()
-                    except:
+                    except Exception:
                         pass
                 except Exception as e:
                     print(f"更新视频帧时出错: {e}")
                     cap.release()
                     try:
                         root.destroy()
-                    except:
+                    except Exception:
                         pass
 
             update_frame()
@@ -658,25 +658,25 @@ class DisplayMixin:
             try:
                 if 'cap' in locals() and cap.isOpened():
                     cap.release()
-            except:
+            except Exception:
                 pass
             try:
                 if 'root' in locals():
                     root.after(100, root.destroy)
-            except:
+            except Exception:
                 pass
 
     def _fade_out(self, root, duration=1000):
         """实现窗口渐隐效果"""
         try:
             alpha = float(root.wm_attributes("-alpha"))
-        except:
+        except Exception:
             alpha = 1.0
         alpha -= 0.1
         if alpha <= 0:
             try:
                 root.destroy()
-            except:
+            except Exception:
                 pass
         else:
             root.wm_attributes("-alpha", alpha)

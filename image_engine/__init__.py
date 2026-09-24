@@ -77,7 +77,7 @@ class ImageEngineManager:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {"image": {"engines": {}, "default_engine": "ollama"}}
     
     def _save_config(self):
@@ -86,7 +86,7 @@ class ImageEngineManager:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 full_config = json.load(f)
-        except:
+        except Exception:
             full_config = {"api": {"engines": {}}, "system": {}, "image": {}}
         
         # 确保image配置存在

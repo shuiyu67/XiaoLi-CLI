@@ -140,7 +140,7 @@ class ClawliMixin:
                 try:
                     from image_engine import get_image_engine
                     image_engine = get_image_engine()
-                except:
+                except Exception:
                     image_engine = None
 
             if image_engine:
