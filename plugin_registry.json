@@ -10,9 +10,20 @@
       "file": "dglab_ws.py",
       "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/dglab_ws.py",
       "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/dglab_ws/README.md",
-      "deps": ["websocket-client"],
-      "optional_deps": ["qrcode"],
-      "keywords": ["dg-lab", "dglab", "郊狼", "coyote", "websocket", "脉冲"]
+      "deps": [
+        "websocket-client"
+      ],
+      "optional_deps": [
+        "qrcode"
+      ],
+      "keywords": [
+        "dg-lab",
+        "dglab",
+        "郊狼",
+        "coyote",
+        "websocket",
+        "脉冲"
+      ]
     },
     "onebot": {
       "name": "OneBot v11 QQ 机器人",
@@ -22,9 +33,179 @@
       "file": "onebot.py",
       "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/onebot.py",
       "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/onebot/README.md",
-      "deps": ["websocket-client"],
+      "deps": [
+        "websocket-client"
+      ],
       "optional_deps": [],
-      "keywords": ["onebot", "qq", "机器人", "bot", "go-cqhttp", "lagrange", "群聊", "私聊"]
+      "keywords": [
+        "onebot",
+        "qq",
+        "机器人",
+        "bot",
+        "go-cqhttp",
+        "lagrange",
+        "群聊",
+        "私聊"
+      ]
+    },
+    "operit_loader": {
+      "name": "Operit 脚本转译层",
+      "description": "Operit Android API 兼容层，运行 Operit 市场插件脚本（附 operit_scripts 实用脚本集）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "operit_loader.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/operit_loader/operit_loader.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/operit_loader/operit_loader.py",
+      "deps": [
+        "requests"
+      ],
+      "optional_deps": [
+        "httpx",
+        "pyautogui",
+        "android_pyapi"
+      ],
+      "keywords": [
+        "operit",
+        "android",
+        "转译",
+        "脚本",
+        "兼容层"
+      ]
+    },
+    "operit_translate": {
+      "name": "Operit TS→PY 转换器",
+      "description": "把 Operit 市场 .ts 插件翻译成 xiaoli-cli 可用的 .py 插件",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "operit_translate.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/operit_translate/operit_translate.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/operit_translate/operit_translate.py",
+      "deps": [],
+      "optional_deps": [],
+      "keywords": [
+        "operit",
+        "translate",
+        "typescript",
+        "转换"
+      ]
+    },
+    "gui_auto": {
+      "name": "Windows GUI 自动化",
+      "description": "Windows 桌面 GUI 自动化（点击/输入/窗口操作，ctypes 实现）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "gui_auto.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/gui_auto/gui_auto.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/gui_auto/gui_auto.py",
+      "deps": [],
+      "optional_deps": [],
+      "keywords": [
+        "gui",
+        "windows",
+        "自动化",
+        "点击",
+        "窗口"
+      ]
+    },
+    "browser_auto": {
+      "name": "浏览器自动化",
+      "description": "浏览器操控（导航/取页面内容/元素操作）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "browser_auto.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/browser_auto/browser_auto.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/browser_auto/browser_auto.py",
+      "deps": [],
+      "optional_deps": [],
+      "keywords": [
+        "browser",
+        "浏览器",
+        "自动化",
+        "网页"
+      ]
+    },
+    "speech_recognition": {
+      "name": "语音识别",
+      "description": "语音转文字（SpeechRecognition/pyaudio 可选引擎，自动降级）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "speech_recognition.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/speech_recognition/speech_recognition.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/speech_recognition/speech_recognition.py",
+      "deps": [],
+      "optional_deps": [
+        "SpeechRecognition",
+        "pyaudio"
+      ],
+      "keywords": [
+        "语音",
+        "speech",
+        "识别",
+        "asr",
+        "听写"
+      ]
+    },
+    "ai_image": {
+      "name": "AI 图像（ComfyUI）",
+      "description": "ComfyUI 工作流生图（自然语言/Tag 双模式）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "ai_image.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/ai_image/ai_image.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/ai_image/ai_image.py",
+      "deps": [
+        "requests",
+        "websocket-client"
+      ],
+      "optional_deps": [],
+      "keywords": [
+        "ai",
+        "image",
+        "comfyui",
+        "生图",
+        "绘图"
+      ]
+    },
+    "image_generator": {
+      "name": "图像生成器",
+      "description": "图像生成（websockets 通道）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "image_generator.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/image_generator/image_generator.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/image_generator/image_generator.py",
+      "deps": [
+        "websockets"
+      ],
+      "optional_deps": [],
+      "keywords": [
+        "image",
+        "生成",
+        "绘图",
+        "图片"
+      ]
+    },
+    "audio_player": {
+      "name": "音频播放器",
+      "description": "音频文件播放（含彩蛋音频）",
+      "author": "xiaoli-cli-plugins",
+      "version": "1.0.0",
+      "file": "audio_player.py",
+      "url": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/audio_player/audio_player.py",
+      "docs": "https://gitee.com/shuiyu1123/xiaoli-cli-plugins/raw/master/audio_player/audio_player.py",
+      "deps": [
+        "colorama"
+      ],
+      "optional_deps": [
+        "pygame"
+      ],
+      "keywords": [
+        "audio",
+        "音频",
+        "播放",
+        "音乐",
+        "mp3"
+      ]
     }
   }
 }

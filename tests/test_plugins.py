@@ -349,6 +349,10 @@ class TestTaskManager:
 #  引擎加载测试
 # ══════════════════════════════════════
 
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(PLUGINS_DIR, "browser_auto.py")),
+    reason="browser_auto 已剥离到 xiaoli-cli-plugins 仓库（插件缺失自动跳过）",
+)
 class TestBrowserAuto:
     """browser_auto 功能测试"""
 
@@ -380,6 +384,10 @@ class TestBrowserAuto:
 #  引擎加载测试
 # ══════════════════════════════════════
 
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(PLUGINS_DIR, "gui_auto.py")),
+    reason="gui_auto 已剥离到 xiaoli-cli-plugins 仓库（插件缺失自动跳过）",
+)
 class TestGuiAuto:
     """gui_auto 功能测试"""
 
