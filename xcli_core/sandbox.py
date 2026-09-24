@@ -140,6 +140,15 @@ for m in WHITELIST:
     try: safe_modules[m] = __import__(m)
     except ImportError: pass
 
+# 受限 __import__：只放行白名单根模块（import 语句内建走这里），
+# 否则锁 __builtins__ 后合法 import 也会失效。
+_real_import = __import__
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split('.')[0]
+    if root not in WHITELIST:
+        raise ImportError('module ' + root + ' blocked by sandbox whitelist')
+    return _real_import(name, globals, locals, fromlist, level)
+
 safe_builtins = {{
     'print': print, 'len': len, 'str': str, 'int': int,
     'float': float, 'list': list, 'dict': dict, 'tuple': tuple,
@@ -153,12 +162,16 @@ safe_builtins = {{
     'bool': bool, 'bytes': bytes, 'bytearray': bytearray,
     'map': map, 'filter': filter, 'any': any, 'all': all,
     'True': True, 'False': False, 'None': None,
+    '__import__': _safe_import,
 }}
 user_vars = json.loads({variables_json!r})
 exec_vars = {{}}
 exec_vars.update(safe_builtins)
 exec_vars.update(safe_modules)
 exec_vars.update(user_vars)
+# 锁定 __builtins__：不显式设置时 Python 会自动注入真实 builtins，
+# 白名单外的内建（input/id/…）会静默可达；锁上后用户代码只见 safe_builtins。
+exec_vars['__builtins__'] = safe_builtins
 
 stdout_buf = io.StringIO()
 stderr_buf = io.StringIO()

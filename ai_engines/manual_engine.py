@@ -94,22 +94,24 @@ class ManualAI:
         try:
             if system == "Windows":
                 self._subprocess = subprocess.Popen(
-                    ["cmd", "/c", "start", "cmd", "/k", f"python \"{script_path}\""],
+                    ["cmd", "/c", "start", "cmd", "/k",
+                     f"\"{sys.executable}\" \"{script_path}\""],
                     shell=True
                 )
             elif system == "Darwin":  # macOS
                 self._subprocess = subprocess.Popen([
                     "osascript", "-e",
-                    f'tell app "Terminal" to do script "python3 \\"{script_path}\\""'
+                    f'tell app "Terminal" to do script "{sys.executable} \\"{script_path}\\""'
                 ])
             else:  # Linux
-                # 尝试常见的终端模拟器
+                # 尝试常见的终端模拟器（路径统一加引号，防路径含空格断裂）
+                _py = f'"{sys.executable}" "{script_path}"'
                 terminals = [
-                    ["x-terminal-emulator", "-e", f"python3 {script_path}"],
-                    ["gnome-terminal", "--", "python3", script_path],
-                    ["konsole", "-e", f"python3 {script_path}"],
-                    ["xfce4-terminal", "-e", f"python3 {script_path}"],
-                    ["xterm", "-e", f"python3 {script_path}"],
+                    ["x-terminal-emulator", "-e", _py],
+                    ["gnome-terminal", "--", sys.executable, script_path],
+                    ["konsole", "-e", _py],
+                    ["xfce4-terminal", "-e", _py],
+                    ["xterm", "-e", _py],
                 ]
                 launched = False
                 for cmd in terminals:
