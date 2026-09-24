@@ -564,6 +564,7 @@ if TEXTUAL_AVAILABLE:
             self._items = items
             self._filtered = list(items)
             self._cursor = 0
+            self._closed = False   # 防 enter 双触发（Input.Submitted + binding）导致双重 dismiss
 
         def compose(self) -> ComposeResult:
             with Container(id="pal-box"):
@@ -615,6 +616,9 @@ if TEXTUAL_AVAILABLE:
                 self._render_list()
 
         def action_select(self):
+            if self._closed:
+                return
+            self._closed = True
             if not self._filtered:
                 self.dismiss(None)
                 return
@@ -622,6 +626,9 @@ if TEXTUAL_AVAILABLE:
             self.dismiss(pick)
 
         def action_dismiss(self):
+            if self._closed:
+                return
+            self._closed = True
             self.dismiss(None)
 
     # ═══════════════════════════════════════════════════
@@ -747,6 +754,17 @@ if TEXTUAL_AVAILABLE:
                         self.app.action_send_message()
                     except Exception:
                         pass
+                return
+
+            # shift+enter：INSERT/非 vim 只插一个换行（吞掉 App 级 newline 绑定防双换行）；
+            # vim NORMAL 模式继续往下当 'o'（下方换行开新行）
+            if event.key == "shift+enter" and not (self.vim_enabled and self.vim.mode == "NORMAL"):
+                event.prevent_default()
+                event.stop()
+                try:
+                    self.insert("\n")
+                except Exception:
+                    pass
                 return
 
             if not self.vim_enabled:
@@ -1100,15 +1118,23 @@ if TEXTUAL_AVAILABLE:
             self._update_sidebar()
 
         def action_tab_engine(self):
+            if self._guard_chat():
+                return
             self._switch_sidebar_tab("engine")
 
         def action_tab_files(self):
+            if self._guard_chat():
+                return
             self._switch_sidebar_tab("files")
 
         def action_tab_sessions(self):
+            if self._guard_chat():
+                return
             self._switch_sidebar_tab("sessions")
 
         def action_tab_status(self):
+            if self._guard_chat():
+                return
             self._switch_sidebar_tab("status")
 
         def _update_header(self):
@@ -1257,7 +1283,7 @@ if TEXTUAL_AVAILABLE:
             """Shift+Enter 在输入框插入换行"""
             text_area = self.query_one("#user-input")
             if text_area.has_focus:
-                text_area.action_edit_insert_newline()
+                text_area.insert("\n")
 
         def action_send_message(self):
             """回车发送消息"""
@@ -1869,7 +1895,7 @@ if TEXTUAL_AVAILABLE:
             except Exception:
                 return
             if not getattr(ta, "vim_enabled", False):
-                hint.update("  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P PLAN")
+                hint.update("  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P 面板 | Ctrl+O PLAN")
                 return
             mode = getattr(getattr(ta, "vim", None), "mode", "INSERT")
             tag = "-- INSERT --" if mode == "INSERT" else "-- NORMAL --"
