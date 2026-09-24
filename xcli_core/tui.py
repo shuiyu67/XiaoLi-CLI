@@ -1,4 +1,24 @@
-"""TUI 界面模块 - Textual TUI 实现 (动画增强版 + 多行输入)"""
+"""TUI 界面模块 - Textual TUI 实现（opencode 高仿版）
+
+布局对齐 opencode：
+  ┌──────────────────────────────────────────────────────┐
+  │ ◆ 小狸 Pro-CLI   <workspace>          <model> [PLAN] │ 顶栏
+  ├────────────┬─────────────────────────────────────────┤
+  │ SESSIONS   │  ❯ user                                 │
+  │  ▸ s1      │    问题…                                 │
+  │    s2      │  ● 小狸                                  │
+  │ FILES      │    回答…                                 │
+  │  📂 src    │  ⚙ code_editor edit foo.py          ✓  │
+  │            ├─────────────────────────────────────────┤
+  │            │ ┃ 输入消息…                    NORMAL   │ composer
+  │            │   -- INSERT -- │ Esc 切模式 │ …          │ 模式提示
+  ├────────────┴─────────────────────────────────────────┤
+  │ 就绪 │ openai │ 12条对话 │ ▓▓▓░░ 1.2k/8k             │ 状态栏
+  └──────────────────────────────────────────────────────┘
+
+消息流用 role 标记（❯/●/⚙）而非气泡框，代码块保留 Syntax 高亮；
+Vim 模态编辑逻辑全部在 vim_keys.py（纯函数可单测），本文件只做按键映射。
+"""
 
 from .constants import TEXTUAL_AVAILABLE, VERSION
 
@@ -17,7 +37,7 @@ if TEXTUAL_AVAILABLE:
     from rich.panel import Panel
     from rich.box import ROUNDED
 
-    # ── TUI 主题色 ──
+    # ── TUI 主题色（opencode 调性：极简暗色 + 低饱和点缀）──
     class _Theme:
         BG = "#0d1117"
         BG_LIGHT = "#161b22"
@@ -36,7 +56,6 @@ if TEXTUAL_AVAILABLE:
         TOOL = "#56d364"
         TOOL_ERR = "#f85149"
         CODE_BG = "#161b22"
-        # 动画额外色
         GLOW = "#1f6feb"
         THINKING = "#8b949e"
         WELCOME_ACCENT = "#58a6ff"
@@ -44,7 +63,6 @@ if TEXTUAL_AVAILABLE:
     _TUI_CSS = f"""
     Screen {{
         background: {_Theme.BG};
-        /* 全局过渡 */
         transition: background 300ms in_out_cubic;
     }}
 
@@ -53,93 +71,14 @@ if TEXTUAL_AVAILABLE:
         width: 100%;
     }}
 
-    #main {{
-        width: 1fr;
-        height: 1fr;
-    }}
-
-    #chat-scroll {{
-        height: 1fr;
-        background: {_Theme.BG};
-        scrollbar-color: {_Theme.BORDER};
-        scrollbar-color-hover: {_Theme.TEXT_MUTED};
-        padding: 0 1;
-
-    }}
-
-    /* ── 输入区域 ── */
-    #input-area {{
-        height: auto;
-        min-height: 5;
-        max-height: 14;
-        padding: 0 1 1 1;
-    }}
-
-    #input-wrapper {{
-        height: auto;
-        min-height: 4;
-        max-height: 12;
-        background: {_Theme.BG_INPUT};
-        border: tall {_Theme.BORDER};
-        padding: 0;
-        /* 聚焦时边框颜色过渡 */
-        transition: border-color 300ms in_out_cubic;
-    }}
-
-    #input-wrapper:focus-within {{
-        border: tall {_Theme.BORDER_FOCUS};
-        background: {_Theme.BG};
-    }}
-
-    #user-input {{
-        height: auto;
-        min-height: 3;
-        max-height: 10;
-        background: transparent;
-        color: {_Theme.TEXT};
-        padding: 0 1;
-        border: none;
-    }}
-
-    #user-input:focus {{
-        background: transparent;
-    }}
-
-    /* TextArea 内部样式覆盖 */
-    #user-input .text-area--cursor {{
-        color: {_Theme.ACCENT};
-    }}
-
-    #user-input .text-area--cursor-line {{
-        background: {_Theme.BG_LIGHT} 50%;
-    }}
-
-    #user-input .text-area--selection {{
-        background: {_Theme.GLOW} 40%;
-    }}
-
-    #input-hint {{
-        height: 1;
-        color: {_Theme.TEXT_DIM};
-        padding: 0 1;
-        /* 渐入效果 */
-        opacity: 0;
-        transition: opacity 500ms in_out_cubic;
-    }}
-
-    #input-hint.visible {{
-        opacity: 1;
-    }}
-
-    /* ── 侧栏 ── */
+    /* ── 左侧栏（opencode 式）── */
     #sidebar {{
-        width: 32;
-        min-width: 32;
+        width: 30;
+        min-width: 30;
         height: 1fr;
         background: {_Theme.BG_LIGHT};
-        border-left: wide {_Theme.BORDER};
+        border-right: wide {_Theme.BORDER};
         display: block;
-        /* 侧栏滑入/滑出动画 */
         transition: width 300ms in_out_cubic, opacity 300ms in_out_cubic;
         overflow: hidden;
     }}
@@ -152,54 +91,57 @@ if TEXTUAL_AVAILABLE:
         overflow: hidden;
     }}
 
-    .sidebar-header {{
+    #sidebar-tabs {{
+        height: 1;
         width: 100%;
-        text-align: center;
-        color: {_Theme.ACCENT};
+        dock: top;
+        background: {_Theme.BG};
+        padding: 0;
+    }}
+    .sidebar-tab {{
+        display: block;
+        height: 1;
+        padding: 0 1;
+        color: {_Theme.TEXT_DIM};
         text-style: bold;
-        padding: 1 0 0 0;
+    }}
+    .sidebar-tab:hover {{
+        color: {_Theme.TEXT_MUTED};
+    }}
+    .sidebar-tab-active {{
+        color: {_Theme.ACCENT};
+        border-bottom: solid {_Theme.ACCENT};
     }}
 
-    .sidebar-section {{
-        height: auto;
+    #sidebar-content {{
+        height: 1fr;
         padding: 0 1;
-        margin: 0 0 1 0;
+    }}
+    .panel-section {{
+        padding: 1 0 0 0;
+        border-bottom: solid {_Theme.BORDER};
+    }}
+    .panel-section.hidden {{
+        display: none;
+    }}
+    .panel-title {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 0 1 0;
     }}
 
     .engine-item {{
         padding: 0 1;
         color: {_Theme.TEXT_MUTED};
     }}
-
     .engine-item-active {{
         padding: 0 1;
         color: {_Theme.SUCCESS};
         text-style: bold;
     }}
-
     .tool-item {{
         padding: 0 0 0 1;
         color: {_Theme.TEXT_MUTED};
     }}
-
-    .tool-item-name {{
-        color: {_Theme.TEXT};
-        text-style: bold;
-    }}
-
-    /* ── 状态栏 ── */
-    #status-bar {{
-        height: 1;
-        width: 100%;
-        dock: bottom;
-        background: {_Theme.BG_LIGHT};
-        color: {_Theme.TEXT_MUTED};
-        padding: 0 1;
-        /* 状态变化过渡 */
-        transition: color 300ms in_out_cubic;
-    }}
-
-    /* ── 文件树 / 会话列表 ── */
     .file-tree-item {{
         padding: 0 0 0 1;
         color: {_Theme.TEXT_MUTED};
@@ -221,7 +163,21 @@ if TEXTUAL_AVAILABLE:
         text-style: bold;
     }}
 
-    /* ── 消息样式 ── */
+    /* ── 中间消息流 ── */
+    #main {{
+        width: 1fr;
+        height: 1fr;
+    }}
+
+    #chat-scroll {{
+        height: 1fr;
+        background: {_Theme.BG};
+        scrollbar-color: {_Theme.BORDER};
+        scrollbar-color-hover: {_Theme.TEXT_MUTED};
+        padding: 0 1;
+    }}
+
+    /* opencode 式 role 标记消息行 */
     .msg-user {{
         color: {_Theme.USER};
         padding: 1 0 0 1;
@@ -274,7 +230,6 @@ if TEXTUAL_AVAILABLE:
         color: {_Theme.WELCOME_ACCENT};
         padding: 0 1;
         text-style: bold;
-        /* 每行依次淡入 */
         opacity: 0;
         transition: opacity 400ms in_out_cubic;
     }}
@@ -294,7 +249,6 @@ if TEXTUAL_AVAILABLE:
         opacity: 1;
     }}
 
-    /* 动画思考指示器 */
     .thinking-indicator {{
         color: {_Theme.THINKING};
         text-style: italic;
@@ -308,20 +262,79 @@ if TEXTUAL_AVAILABLE:
         margin: 0 2 0 2;
     }}
 
-    /* ── Tab 样式 ── */
-    Tab {{
+    /* ── 底部 composer（opencode 式输入）── */
+    #input-area {{
+        height: auto;
+        min-height: 5;
+        max-height: 14;
+        padding: 0 1 1 1;
+    }}
+
+    #input-wrapper {{
+        height: auto;
+        min-height: 4;
+        max-height: 12;
+        background: {_Theme.BG_INPUT};
+        border: tall {_Theme.BORDER};
+        padding: 0;
+        transition: border-color 300ms in_out_cubic;
+    }}
+
+    #input-wrapper:focus-within {{
+        border: tall {_Theme.BORDER_FOCUS};
         background: {_Theme.BG};
     }}
 
-    Tab.-active {{
+    #user-input {{
+        height: auto;
+        min-height: 3;
+        max-height: 10;
+        background: transparent;
+        color: {_Theme.TEXT};
+        padding: 0 1;
+        border: none;
+    }}
+
+    #user-input:focus {{
+        background: transparent;
+    }}
+
+    #user-input .text-area--cursor {{
+        color: {_Theme.ACCENT};
+    }}
+
+    #user-input .text-area--cursor-line {{
+        background: {_Theme.BG_LIGHT} 50%;
+    }}
+
+    #user-input .text-area--selection {{
+        background: {_Theme.GLOW} 40%;
+    }}
+
+    #input-hint {{
+        height: 1;
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1;
+        opacity: 0;
+        transition: opacity 500ms in_out_cubic;
+    }}
+
+    #input-hint.visible {{
+        opacity: 1;
+    }}
+
+    /* ── 状态栏（opencode 式：左状态右模型）── */
+    #status-bar {{
+        height: 1;
+        width: 100%;
+        dock: bottom;
         background: {_Theme.BG_LIGHT};
+        color: {_Theme.TEXT_MUTED};
+        padding: 0 1;
+        transition: color 300ms in_out_cubic;
     }}
 
-    TabbedContent > Tabs {{
-        background: {_Theme.BG};
-    }}
-
-    /* ── 自定义顶栏 (opencode 风格) ── */
+    /* ── 顶栏 ── */
     #tui-header {{
         height: 1;
         width: 100%;
@@ -331,101 +344,33 @@ if TEXTUAL_AVAILABLE:
         padding: 0 1;
         border-bottom: solid {_Theme.BORDER};
     }}
-    #tui-header .hdr-left {{ color: {_Theme.ACCENT}; text-style: bold; }}
-    #tui-header .hdr-mid {{ color: {_Theme.TEXT_MUTED}; }}
-    #tui-header .hdr-right {{ color: {_Theme.SUCCESS}; }}
 
-    /* ── 侧栏标签页 ── */
-    #sidebar-tabs {{
-        height: 1;
-        width: 100%;
-        dock: top;
-        background: {_Theme.BG};
-        padding: 0;
-    }}
-    .sidebar-tab {{
-        display: block;
-        height: 1;
-        padding: 0 1;
-        color: {_Theme.TEXT_DIM};
-        text-style: bold;
-    }}
-    .sidebar-tab:hover {{
-        color: {_Theme.TEXT_MUTED};
-    }}
-    .sidebar-tab-active {{
-        color: {_Theme.ACCENT};
-        border-bottom: solid {_Theme.ACCENT};
-    }}
-
-    /* ── 侧栏内容面板 ── */
-    #sidebar-content {{
-        height: 1fr;
-        padding: 0 1;
-    }}
-    .panel-section {{
-        padding: 1 0 0 0;
-        border-bottom: solid {_Theme.BORDER};
-    }}
-    .panel-title {{
-        color: {_Theme.TEXT_DIM};
-        padding: 0 0 1 0;
-    }}
-
-    /* ── 消息角色色条 (opencode 风格) ── */
-    .msg-user {{
-        color: {_Theme.USER};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.USER};
-    }}
-    .msg-ai {{
-        color: {_Theme.AI};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.GLOW};
-    }}
-    .msg-tool-ok {{
-        color: {_Theme.TOOL};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.TOOL};
-    }}
-    .msg-tool-err {{
-        color: {_Theme.TOOL_ERR};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.TOOL_ERR};
-    }}
-    .msg-system {{
-        color: {_Theme.ACCENT};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.ACCENT};
-    }}
-    .msg-error {{
-        color: {_Theme.ERROR};
-        padding: 0 0 0 2;
-        border-left: solid {_Theme.ERROR};
-    }}
-
-    /* ── 精简欢迎框 ── */
+    /* ── 精简欢迎 ── */
     .welcome-compact {{
         color: {_Theme.WELCOME_ACCENT};
         padding: 1 2;
         border-bottom: solid {_Theme.BORDER};
         text-style: bold;
     }}
-
     """
 
     class _TUIBridge:
         """桥接 TUI ↔ AICLI"""
         def __init__(self, cli):
             self.cli = cli
+
         def engines(self) -> list:
             return list(self.cli.engines.keys())
+
         def current_engine(self) -> str:
             return self.cli.get_current_engine_name()
+
         def tools(self) -> list:
             return self.cli.liugin_manager.tools
+
         def history(self) -> list:
             return self.cli.shared_conversation_history
+
         def switch_engine(self, name: str) -> bool:
             if name in self.cli.engines:
                 self.cli.switch_engine(name)
@@ -506,7 +451,7 @@ if TEXTUAL_AVAILABLE:
 
 
     class MessageBubble(Static):
-        """带入场动画的消息气泡"""
+        """带入场动画的消息行"""
         def __init__(self, text, **kwargs):
             super().__init__(text, **kwargs)
             self.styles.opacity = 0
@@ -685,7 +630,7 @@ if TEXTUAL_AVAILABLE:
     # ═══════════════════════════════════════════════════
 
     class XiaoliTUI(App):
-        """小狸 TUI v3 - 动画增强版 + 多行输入"""
+        """小狸 TUI（opencode 高仿版）：左 session 侧栏 + role 标记消息流 + 底部 composer"""
         CSS = _TUI_CSS
         TITLE = " 小狸 Pro-CLI"
         SUB_TITLE = "智能编程助手"
@@ -717,7 +662,7 @@ if TEXTUAL_AVAILABLE:
         sidebar_visible = var(True)
         is_generating = var(False)
         plan_mode = var(False)
-        _sidebar_tab: str = "engine"  # 当前侧栏标签: engine/files/sessions/status
+        _sidebar_tab: str = "sessions"  # opencode 默认显示会话列表
 
         def __init__(self, cli):
             super().__init__()
@@ -727,9 +672,22 @@ if TEXTUAL_AVAILABLE:
             self._typing_widget = None
 
         def compose(self) -> ComposeResult:
-            # ── 自定义顶栏 (opencode 风格: 左项目名 | 中模型 | 右状态) ──
+            # ── 顶栏 (opencode: 左品牌 | 中工作区 | 右模型/状态) ──
             yield Static("", id="tui-header")
             with Horizontal(id="app-container"):
+                # ── 左侧栏：会话/文件/引擎/状态 ──
+                with Vertical(id="sidebar"):
+                    with Horizontal(id="sidebar-tabs"):
+                        yield Static(" 会话 ", classes="sidebar-tab sidebar-tab-active", id="tab-sessions")
+                        yield Static(" 文件 ", classes="sidebar-tab", id="tab-files")
+                        yield Static(" 引擎 ", classes="sidebar-tab", id="tab-engine")
+                        yield Static(" 状态 ", classes="sidebar-tab", id="tab-status")
+                    with VerticalScroll(id="sidebar-content"):
+                        yield Vertical(id="panel-sessions", classes="panel-section")
+                        yield Vertical(id="panel-files", classes="panel-section")
+                        yield Vertical(id="panel-engine", classes="panel-section")
+                        yield Vertical(id="panel-status", classes="panel-section")
+                # ── 中间：消息流 + composer ──
                 with Vertical(id="main"):
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
@@ -744,32 +702,15 @@ if TEXTUAL_AVAILABLE:
                             "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P PLAN",
                             id="input-hint"
                         )
-                # ── 侧栏：标签页 + 内容区 ──
-                with Vertical(id="sidebar"):
-                    # 标签行
-                    with Horizontal(id="sidebar-tabs"):
-                        yield Static(" 引擎 ", classes="sidebar-tab sidebar-tab-active", id="tab-engine")
-                        yield Static(" 文件 ", classes="sidebar-tab", id="tab-files")
-                        yield Static(" 会话 ", classes="sidebar-tab", id="tab-sessions")
-                        yield Static(" 状态 ", classes="sidebar-tab", id="tab-status")
-                    # 内容区（根据当前标签切换显示）
-                    with VerticalScroll(id="sidebar-content"):
-                        yield Vertical(id="panel-engine", classes="panel-section")
-                        yield Vertical(id="panel-files", classes="panel-section")
-                        yield Vertical(id="panel-sessions", classes="panel-section")
-                        yield Vertical(id="panel-status", classes="panel-section")
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
         def on_mount(self):
-            # 初始化顶栏
             self._update_header()
-            # 初始化侧栏: 默认显示引擎面板,隐藏其余
-            self._switch_sidebar_tab("engine")
-            # 精简欢迎(一行)
+            self._switch_sidebar_tab("sessions")
             self._render_welcome_compact()
-            # 初始化 Vim 键位开关（默认开，可被 config.vim_mode 关闭）
             self._init_vim_mode()
             self.query_one("#user-input").focus()
+
             def _show_hint():
                 try:
                     self.query_one("#input-hint").add_class("visible")
@@ -796,7 +737,7 @@ if TEXTUAL_AVAILABLE:
             scroll = self.query_one("#chat-scroll")
             engine = self.bridge.current_engine()
             welcome = Static(
-                f"  ▸ 小狸 Pro-CLI v8.0  │  {engine}  │  "
+                f"  ◆ 小狸 Pro-CLI v8.0  │  {engine}  │  "
                 f"{len(self.bridge.tools())} 工具  │  /help 查看命令",
                 classes="welcome-compact"
             )
@@ -811,7 +752,7 @@ if TEXTUAL_AVAILABLE:
                 "  ╔══════════════════════════════════════════════╗",
                 "  ║                                              ║",
                 "  ║    小狸 Pro-CLI v8.0.4                        ║",
-                "  ║    智能编程助手 · 动画增强版                  ║",
+                "  ║    智能编程助手 · opencode 风格               ║",
                 "  ║                                              ║",
                 "  ╚══════════════════════════════════════════════╝",
                 "",
@@ -822,7 +763,6 @@ if TEXTUAL_AVAILABLE:
                 "",
             ]
 
-            # 逐行渲染，带延迟
             for i, line in enumerate(welcome_lines):
                 if "╔" in line or "║" in line or "╚" in line:
                     cls = "msg-welcome-line"
@@ -839,11 +779,9 @@ if TEXTUAL_AVAILABLE:
 
                 widget = Static(line, classes=cls)
                 scroll.mount(widget)
-                # 延迟显示每一行（避免 delay=0 导致 Textual 除零错误）
                 delay = max(0.01, i * 0.1)
                 self.set_timer(delay, lambda w=widget: w.add_class("visible"))
 
-            # 最后滚动到底部
             self.set_timer(max(0.01, len(welcome_lines) * 0.1 + 0.1),
                           lambda: scroll.scroll_end(animate=True, duration=0.3))
 
@@ -852,12 +790,7 @@ if TEXTUAL_AVAILABLE:
             scroll = self.query_one("#chat-scroll")
             lines = [
                 ("", "msg-dim"),
-                ("  ╔══════════════════════════════════════════════╗", "msg-welcome"),
-                ("  ║                                              ║", "msg-welcome"),
-                ("  ║    小狸 Pro-CLI v8.0.4                        ║", "msg-welcome"),
-                ("  ║    智能编程助手 · 动画增强版                  ║", "msg-welcome"),
-                ("  ║                                              ║", "msg-welcome"),
-                ("  ╚══════════════════════════════════════════════╝", "msg-welcome"),
+                ("  ◆ 小狸 Pro-CLI v8.0.4", "msg-welcome"),
                 ("", "msg-dim"),
                 ("   代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
                 ("   输入 /help 查看命令 | /model 切换引擎", "msg-system"),
@@ -872,7 +805,8 @@ if TEXTUAL_AVAILABLE:
 
         def _update_sidebar(self):
             """按当前标签页更新侧栏内容"""
-            tab = self._sidebar_tab
+            self._update_file_tree()
+            self._update_session_list()
 
             # ── 引擎面板 ──
             engine_panel = self.query_one("#panel-engine")
@@ -883,17 +817,10 @@ if TEXTUAL_AVAILABLE:
                     engine_panel.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
                 else:
                     engine_panel.mount(Static(f"    {name}", classes="engine-item"))
-            # 工具列表也放引擎面板下方
             engine_panel.mount(Static("  工具", classes="panel-title"))
             for tool in self.bridge.tools()[:12]:
                 name = tool.get('name', '?')
                 engine_panel.mount(Static(f"  • {name}", classes="tool-item"))
-
-            # ── 文件树面板 ──
-            self._update_file_tree()
-
-            # ── 会话面板 ──
-            self._update_session_list()
 
             # ── 状态面板 ──
             status_panel = self.query_one("#panel-status")
@@ -906,7 +833,6 @@ if TEXTUAL_AVAILABLE:
             else:
                 status_panel.mount(Static("  模式: 普通", classes="tool-item"))
 
-            # 更新标签高亮
             self._sync_tab_highlight()
 
         # ── 文件树 ──
@@ -981,8 +907,8 @@ if TEXTUAL_AVAILABLE:
 
         def _sync_tab_highlight(self):
             """同步标签高亮状态"""
-            tab_map = {"engine": "tab-engine", "files": "tab-files",
-                       "sessions": "tab-sessions", "status": "tab-status"}
+            tab_map = {"sessions": "tab-sessions", "files": "tab-files",
+                       "engine": "tab-engine", "status": "tab-status"}
             for tid in tab_map.values():
                 try:
                     w = self.query_one(f"#{tid}")
@@ -996,10 +922,9 @@ if TEXTUAL_AVAILABLE:
         def _switch_sidebar_tab(self, tab: str):
             """切换侧栏标签页"""
             self._sidebar_tab = tab
-            # 显示/隐藏面板
             panel_map = {
-                "engine": "panel-engine", "files": "panel-files",
-                "sessions": "panel-sessions", "status": "panel-status",
+                "sessions": "panel-sessions", "files": "panel-files",
+                "engine": "panel-engine", "status": "panel-status",
             }
             for pt, pid in panel_map.items():
                 try:
@@ -1026,14 +951,13 @@ if TEXTUAL_AVAILABLE:
             self._switch_sidebar_tab("status")
 
         def _update_header(self):
-            """更新自定义顶栏内容"""
+            """更新顶栏：品牌 | 工作区 | 模型 [PLAN]"""
             hdr = self.query_one("#tui-header", expect_type=Static)
             engine = self.bridge.current_engine()
             plan_tag = " [PLAN]" if self.bridge.plan_mode() else ""
-            hist_len = len(self.bridge.history())
-            tok = self._token_str().strip()
+            workspace = os.path.basename(self.bridge.cwd())
             hdr.update(
-                f" 小狸 v8.0{plan_tag} │ {engine} │ {hist_len}条对话{tok}"
+                f" ◆ 小狸 v8.0 │ {workspace} │ {engine}{plan_tag}"
             )
 
         def _update_status(self, text: str):
@@ -1043,7 +967,7 @@ if TEXTUAL_AVAILABLE:
             bar.update(f" {prefix}{text} | {engine} | {len(self.bridge.history())} 条对话{self._token_str()}")
 
         def _token_str(self):
-            """token 用量进度（v8.0 token 感知压缩联动，引擎支持时显示）"""
+            """token 用量进度（token 感知压缩联动，引擎支持时显示）"""
             e = getattr(self.cli, 'current_engine', None)
             if not e:
                 return ""
@@ -1063,7 +987,7 @@ if TEXTUAL_AVAILABLE:
                 return f" | {used} tok"
             return ""
 
-        # ── 消息追加 ──
+        # ── 消息追加（opencode 式 role 标记：❯ 用户 / ● 小狸 / ⚙ 工具）──
 
         def _append(self, widget):
             scroll = self.query_one("#chat-scroll")
@@ -1075,13 +999,13 @@ if TEXTUAL_AVAILABLE:
             self._append(widget)
 
         def _user_msg(self, text):
-            self._add(f"   {text}", "msg-user")
+            self._add(f"  ❯ {text}", "msg-user")
 
         def _ai_msg(self, text):
             if "```" in text:
                 self._render_with_code(text)
             else:
-                self._add(f"   {text}", "msg-ai")
+                self._add(f"  ● {text}", "msg-ai")
 
         def _render_with_code(self, text):
             parts = re.split(r'```(\w*)\n(.*?)```', text, flags=re.DOTALL)
@@ -1090,7 +1014,7 @@ if TEXTUAL_AVAILABLE:
                 if i % 3 == 0:
                     if parts[i].strip():
                         for line in parts[i].strip().split('\n'):
-                            self._add(f"   {line}", "msg-ai")
+                            self._add(f"  ● {line}", "msg-ai")
                 elif i % 3 == 2:
                     code = parts[i]
                     lang = parts[i-1] if i > 1 else ""
@@ -1107,10 +1031,10 @@ if TEXTUAL_AVAILABLE:
                 i += 1
 
         def _tool_ok(self, name, args):
-            self._add(f"   {name}: {args[:60]}", "msg-tool-ok")
+            self._add(f"  ⚙ {name}: {args[:60]}  ✓", "msg-tool-ok")
 
         def _tool_err(self, name, args):
-            self._add(f"   {name}: {args[:60]}", "msg-tool-err")
+            self._add(f"  ⚙ {name}: {args[:60]}  ✗", "msg-tool-err")
 
         def _show_thinking(self):
             """显示动画思考指示器"""
@@ -1188,14 +1112,13 @@ if TEXTUAL_AVAILABLE:
             self._update_status(" 思考中...")
             self.run_worker(self._generate(text), exclusive=True)
 
-        # ── 兼容旧 Input 提交（保留以防万一） ──
+        # ── 输入框高度自适应 ──
 
         @on(TextArea.Changed, "#user-input")
         def on_textarea_changed(self, event):
             """输入框内容变化时调整高度"""
             text_area = event.text_area
             line_count = text_area.text.count('\n') + 1
-            # 动态调整输入区域高度
             wrapper = self.query_one("#input-wrapper")
             new_height = min(max(line_count + 1, 4), 12)
             wrapper.styles.height = new_height
@@ -1281,14 +1204,12 @@ if TEXTUAL_AVAILABLE:
                 self._error("manual 引擎未加载")
                 return
             if not args:
-                # 切换到 manual 引擎
                 if self.bridge.switch_engine('manual'):
                     self._system("已切换到 manual 引擎")
                     self._update_sidebar()
                 else:
                     self._error("切换失败")
             else:
-                # 执行 manual 引擎子命令
                 result = self.cli.engines['manual'].handle_command(args)
                 if result:
                     self._system(result)
@@ -1306,6 +1227,7 @@ if TEXTUAL_AVAILABLE:
             if self.bridge.switch_engine(name):
                 self._system(f"已切换到: {name}")
                 self._update_sidebar()
+                self._update_header()
             else:
                 self._error(f"未找到引擎: {name}")
 
@@ -1334,7 +1256,6 @@ if TEXTUAL_AVAILABLE:
                 f"  工具数: {len(self.bridge.tools())}",
                 f"  对话数: {len(self.bridge.history())}",
             ]
-
             self._system('\n'.join(status_lines))
 
         # ── Plan 模式 / 会话 委派 ──
@@ -1406,6 +1327,7 @@ if TEXTUAL_AVAILABLE:
             except Exception:
                 pass
             self._update_sidebar()
+            self._update_header()
             self._update_status("📋 PLAN" if on else "就绪")
 
         def _sync_plan(self):
@@ -1414,6 +1336,7 @@ if TEXTUAL_AVAILABLE:
             if remote != self.plan_mode:
                 self.plan_mode = remote
                 self._update_sidebar()
+                self._update_header()
 
         # ── AI 生成 ──
 
@@ -1455,7 +1378,7 @@ if TEXTUAL_AVAILABLE:
             elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
                 self._add(f"  {msg}", "msg-tool-err")
             elif '🤖' in msg:
-                self._add(f"  {msg}", "msg-ai")
+                self._add(f"  ● {msg.replace('🤖', '', 1).strip()}", "msg-ai")
             elif '工具' in msg and ('调用' in msg or '执行' in msg):
                 self._add(f"  {msg}", "msg-tool-ok")
             else:
@@ -1475,7 +1398,6 @@ if TEXTUAL_AVAILABLE:
 
         def action_toggle_sidebar(self):
             sidebar = self.query_one("#sidebar")
-            # 通过 CSS 类控制侧栏显隐
             if sidebar.has_class("hidden"):
                 sidebar.remove_class("hidden")
                 self.sidebar_visible = True
@@ -1557,7 +1479,7 @@ if TEXTUAL_AVAILABLE:
             self._chat_scroll().scroll_relative(y=-20)
 
         def _update_vim_mode_display(self):
-            """在输入框下方提示栏显示当前 Vim 模式。"""
+            """在输入框下方提示栏显示当前 Vim 模式（opencode 式 -- INSERT -- 标签）。"""
             try:
                 hint = self.query_one("#input-hint")
                 ta = self._user_input()
