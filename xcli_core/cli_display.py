@@ -69,15 +69,10 @@ class DisplayMixin:
         content = self._truncate_for_display(content)
         response_lines = content.split('\n')
         if self.tui_output_callback:
-            for i, line in enumerate(response_lines):
-                if i == 0:
-                    prefix = "[yellow]>[/] " if is_continue else "[cyan]>[/] "
-                    line = prefix + line
-                if i == len(response_lines) - 1:
-                    self._output(f"{line} {user_id_display}")
-                else:
-                    self._output(line)
-            self._output("")
+            # TUI 模式：整条直发（🤖 前缀触发 markdown 渲染），不再逐行 + markup 前缀
+            tag = "🤖 (续) " if is_continue else "🤖 "
+            self._output(f"{tag}{content}")
+            self._output(f"   {user_id_display}")
         else:
             for i, line in enumerate(response_lines):
                 if i == 0:

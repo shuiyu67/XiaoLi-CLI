@@ -38,28 +38,32 @@ if TEXTUAL_AVAILABLE:
     from rich.panel import Panel
     from rich.box import ROUNDED
 
-    # ── TUI 主题色（opencode 调性：极简暗色 + 低饱和点缀）──
+    # ── TUI 主题色（opencode 实测色板：中性灰 #121212/#1c1c1c/#000/#272727
+    #    + 蓝 accent + 橙 Tip 双点缀，数据来自官方截图逐像素解剖）──
     class _Theme:
-        BG = "#0d1117"
-        BG_LIGHT = "#161b22"
-        BG_INPUT = "#0d1117"
-        BORDER = "#30363d"
-        BORDER_FOCUS = "#58a6ff"
-        TEXT = "#c9d1d9"
-        TEXT_DIM = "#484f58"
-        TEXT_MUTED = "#8b949e"
-        ACCENT = "#58a6ff"
-        SUCCESS = "#3fb950"
-        WARNING = "#d29922"
-        ERROR = "#f85149"
-        USER = "#79c0ff"
-        AI = "#c9d1d9"
-        TOOL = "#56d364"
-        TOOL_ERR = "#f85149"
-        CODE_BG = "#161b22"
-        GLOW = "#1f6feb"
-        THINKING = "#8b949e"
-        WELCOME_ACCENT = "#58a6ff"
+        BG = "#121212"          # 主背景（截图 38.9%）
+        BG_LIGHT = "#1c1c1c"    # 面板/侧栏（截图 20.6%）
+        BG_INPUT = "#1a1a1a"    # composer 盒
+        BG_SUNK = "#191919"     # 次级面（代码块底）
+        BORDER = "#272727"      # 边框
+        BORDER_FOCUS = "#5b8def"
+        TEXT = "#d4d4d4"
+        TEXT_DIM = "#6b6b6b"
+        TEXT_MUTED = "#8a8a8a"
+        ACCENT = "#5b8def"      # 蓝：agent/构建态/竖条
+        ORANGE = "#d98d5f"      # 橙：Tip/提示点缀
+        SUCCESS = "#6cbf6c"
+        WARNING = "#d9a75f"
+        ERROR = "#d9665f"
+        USER = "#5b8def"
+        AI = "#d4d4d4"
+        TOOL = "#8a8a8a"
+        TOOL_ERR = "#d9665f"
+        CODE_BG = "#191919"
+        GLOW = "#5b8def"
+        THINKING = "#6b6b6b"
+        WELCOME_ACCENT = "#d4d4d4"
+        BLACK = "#000000"       # 纯黑 footer/缝隙（截图 7.9%）
 
     _TUI_CSS = f"""
     Screen {{
@@ -361,26 +365,138 @@ if TEXTUAL_AVAILABLE:
         opacity: 1;
     }}
 
-    /* ── 状态栏（opencode 式：左状态右模型）── */
+    /* ── 状态栏（opencode 式纯黑 footer：左模型右键位）── */
     #status-bar {{
         height: 1;
         width: 100%;
         dock: bottom;
-        background: {_Theme.BG_LIGHT};
-        color: {_Theme.TEXT_MUTED};
+        background: {_Theme.BLACK};
+        color: {_Theme.TEXT_DIM};
         padding: 0 1;
-        transition: color 300ms in_out_cubic;
+    }}
+    .footer-key {{
+        color: {_Theme.TEXT};
+        text-style: bold;
+    }}
+    .footer-label {{
+        color: {_Theme.TEXT_DIM};
     }}
 
-    /* ── 顶栏 ── */
+    /* ── 顶栏：session 顶细线（弱化）── */
     #tui-header {{
         height: 1;
         width: 100%;
         dock: top;
-        background: {_Theme.BG_LIGHT};
-        color: {_Theme.TEXT_MUTED};
+        background: {_Theme.BG};
+        color: {_Theme.TEXT_DIM};
         padding: 0 1;
         border-bottom: solid {_Theme.BORDER};
+    }}
+
+    /* ── composer 盒（opencode：左蓝竖条 + 盒内状态行）── */
+    #input-wrapper {{
+        border-left: thick {_Theme.ACCENT};
+    }}
+
+    #composer-status {{
+        height: 1;
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1;
+    }}
+    .cs-agent {{
+        color: {_Theme.ACCENT};
+        text-style: bold;
+    }}
+    .cs-model {{
+        color: {_Theme.TEXT};
+        text-style: bold;
+    }}
+    .cs-provider {{
+        color: {_Theme.TEXT_DIM};
+    }}
+
+    /* ── Home 屏（像素 logo + 键帽提示 + 橙 Tip）── */
+    #home-scroll {{
+        height: 1fr;
+        background: {_Theme.BLACK};
+        padding: 2 4;
+        align: center middle;
+    }}
+    .logo-line {{
+        color: #6e6e6e;
+        text-style: bold;
+        text-align: center;
+        padding: 0;
+    }}
+    .logo-line-b {{
+        color: #f0f0f0;
+        text-style: bold;
+        text-align: center;
+        padding: 0;
+    }}
+    .home-tag {{
+        color: {_Theme.TEXT_DIM};
+        text-align: center;
+        padding: 1 0 2 0;
+    }}
+    .hint-line {{
+        color: {_Theme.TEXT_DIM};
+        text-align: right;
+        padding: 1 2 0 0;
+    }}
+    .hint-key {{
+        color: {_Theme.TEXT};
+        text-style: bold;
+    }}
+    .tip-line {{
+        color: {_Theme.TEXT_DIM};
+        text-align: center;
+        padding: 2 0 0 0;
+    }}
+    .tip-dot {{
+        color: {_Theme.ORANGE};
+        text-style: bold;
+    }}
+
+    /* ── 消息盒（opencode：用户=左竖条盒）── */
+    .msg-user-box {{
+        color: {_Theme.TEXT};
+        border-left: thick {_Theme.USER};
+        background: {_Theme.BG_LIGHT};
+        padding: 0 1;
+        margin: 1 1 0 1;
+    }}
+    .msg-user-meta {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1 1 3;
+    }}
+    .md-body {{
+        padding: 0 1;
+        margin: 0 1;
+    }}
+    .tool-row {{
+        color: {_Theme.TOOL};
+        padding: 0 1 0 3;
+    }}
+    .tool-detail {{
+        color: {_Theme.TEXT_DIM};
+        padding: 0 1 0 5;
+    }}
+
+    /* ── 侧栏分节盒（┏━┫ 标题盒）── */
+    .panel-section {{
+        border: tall {_Theme.BORDER};
+        margin: 0 0 1 0;
+        padding: 0 0 0 0;
+        height: auto;
+        max-height: 14;
+        overflow: hidden;
+    }}
+    .panel-title {{
+        color: {_Theme.TEXT_MUTED};
+        text-style: bold;
+        padding: 0 1;
+        background: {_Theme.BG_LIGHT};
     }}
 
     /* ── 精简欢迎 ── */
@@ -742,6 +858,24 @@ if TEXTUAL_AVAILABLE:
                 pass
 
         async def _on_key(self, event):
+            # ctrl+x chord 等待态：下一键直接执行 chord（输入框聚焦路径）
+            if getattr(self.app, "_leader_pending", False):
+                event.prevent_default()
+                event.stop()
+                try:
+                    self.app._leader_execute(event.key)
+                except Exception:
+                    pass
+                return
+            # ctrl+x = leader 前缀（必须截获：TextArea 默认把 ctrl+x 当剪切吞掉）
+            if event.key == "ctrl+x":
+                event.prevent_default()
+                event.stop()
+                try:
+                    self.app.action_leader()
+                except Exception:
+                    pass
+                return
             # 回车：INSERT（或 vim 关闭）发送；NORMAL 下移一行
             if event.key in ("enter", "\r", "\n"):
                 if self.vim_enabled and self.vim.mode == "NORMAL":
@@ -830,6 +964,7 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+d", "chat_half_down", "半页↓", show=True),
             Binding("ctrl+u", "chat_half_up", "半页↑", show=True),
             Binding("ctrl+space", "toggle_focus", "聚焦切换", show=True),
+            Binding("ctrl+x", "leader", "前缀", show=True),
         ]
 
         sidebar_visible = var(True)
@@ -847,25 +982,24 @@ if TEXTUAL_AVAILABLE:
             self._hist_idx = None
             self._tool_folded = True   # 工具调用折叠开关（f4）
             self._cancel_event = None  # Esc 取消事件（轮间生效）
+            self._leader_pending = False   # ctrl+x 前缀 chord 等待态
+            self._footer_left = "就绪"
+            self._home_active = True
 
         def compose(self) -> ComposeResult:
-            # ── 顶栏 (opencode: 左品牌 | 中工作区 | 右模型/状态) ──
+            # ── 顶细线（session 态元信息）──
             yield Static("", id="tui-header")
             with Horizontal(id="app-container"):
-                # ── 左侧栏：会话/文件/引擎/状态 ──
+                # ── 左侧栏：分节盒（opencode ┏━┫ 标题盒，无 tab）──
                 with Vertical(id="sidebar"):
-                    with Horizontal(id="sidebar-tabs"):
-                        yield Static(" 会话 ", classes="sidebar-tab sidebar-tab-active", id="tab-sessions")
-                        yield Static(" 文件 ", classes="sidebar-tab", id="tab-files")
-                        yield Static(" 引擎 ", classes="sidebar-tab", id="tab-engine")
-                        yield Static(" 状态 ", classes="sidebar-tab", id="tab-status")
                     with VerticalScroll(id="sidebar-content"):
                         yield Vertical(id="panel-sessions", classes="panel-section")
                         yield Vertical(id="panel-files", classes="panel-section")
                         yield Vertical(id="panel-engine", classes="panel-section")
                         yield Vertical(id="panel-status", classes="panel-section")
-                # ── 中间：消息流 + composer ──
+                # ── 中间：Home 屏 / 消息流 + composer 盒 ──
                 with Vertical(id="main"):
+                    yield VerticalScroll(id="home-scroll")
                     yield VerticalScroll(id="chat-scroll")
                     with Vertical(id="input-area"):
                         with Container(id="input-wrapper"):
@@ -875,19 +1009,17 @@ if TEXTUAL_AVAILABLE:
                                 soft_wrap=True,
                                 tab_behavior="indent",
                             )
-                        yield Static(
-                            "  回车发送 | Shift+回车换行 | Ctrl+L 清屏 | F1 侧栏 | Ctrl+P 面板",
-                            id="input-hint"
-                        )
-            yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
+                            yield Static("", id="composer-status")
+                        yield Static("", id="input-hint")
+            yield Static("", id="status-bar")
 
         def on_mount(self):
             # 持久输出桥：cli 任意线程的输出统一进 TUI（替代 stdout，防花屏）
             self.cli.tui_output_callback = self._tui_push
-            self._update_header()
-            self._switch_sidebar_tab("sessions")
-            self._render_welcome_compact()
             self._init_vim_mode()
+            self._enter_home()
+            self._update_header()
+            self._update_footer()
             self.query_one("#user-input").focus()
 
             def _show_hint():
@@ -911,16 +1043,77 @@ if TEXTUAL_AVAILABLE:
 
         # ── 欢迎界面 ──
 
-        def _render_welcome_compact(self):
-            """opencode 风格: 精简一行欢迎"""
-            scroll = self.query_one("#chat-scroll")
+        # ── Home 屏（opencode 式：黑底像素 logo + 键帽提示 + 橙 Tip）──
+
+        # 5×7 像素字模（xiaoli 小写，x 高字母占 r2-r6，l/i 占 r0-r6）
+        _LOGO_FONT = {
+            'x': [".....", ".....", "X...X", ".X.X.", "..X..", ".X.X.", "X...X"],
+            'i': [".X...", ".....", ".X...", ".X...", ".X...", ".X...", ".X..."],
+            'a': [".....", ".....", ".XXX.", "....X", ".XXXX", "X...X", ".XXXX"],
+            'o': [".....", ".....", ".XXX.", "X...X", "X...X", "X...X", ".XXX."],
+            'l': ["..X..", "..X..", "..X..", "..X..", "..X..", "..X..", ".XXX."],
+        }
+
+        @classmethod
+        def _logo_rows(cls):
+            """像素 logo 行：(文本, class)——上段灰(#6e6e6e)下段白(#f0f0f0)双色调"""
+            word = "xiaoli"
+            rows = []
+            for r in range(7):
+                line = ""
+                for j, ch in enumerate(word):
+                    if j:
+                        line += " "
+                    line += "".join("█" if c == "X" else " " for c in cls._LOGO_FONT[ch][r])
+                rows.append((line, "logo-line" if r < 4 else "logo-line-b"))
+            return rows
+
+        def _enter_home(self):
+            """Home 屏：logo + 标语 + 键帽提示 + Tip 行（opencode 启动屏）"""
+            self._home_active = True
+            home = self.query_one("#home-scroll")
+            chat = self.query_one("#chat-scroll")
+            sidebar = self.query_one("#sidebar")
+            chat.display = False
+            sidebar.display = False
+            home.display = True
+            home.remove_children()
+            for text, cls in self._logo_rows():
+                home.mount(Static(text, classes=cls, markup=False))
+            home.mount(Static("小狸 Pro-CLI v8.0.4 · AI 智能编程助手", classes="home-tag", markup=False))
+            home.mount(Static(
+                "  [bold]ctrl+t[/] 模型变体   [bold]tab[/] agents   [bold]ctrl+p[/] 命令面板",
+                classes="hint-line"))
+            home.mount(Static(
+                "[bold]● Tip[/]  用 [@文件路径] 引用文件给 AI · !命令 直接跑 shell · /help 看全部命令",
+                classes="tip-line"))
+            self._update_composer_status()
+
+        def _exit_home(self):
+            """首条消息后切入会话屏"""
+            if not getattr(self, "_home_active", False):
+                return
+            self._home_active = False
+            self.query_one("#home-scroll").display = False
+            self.query_one("#chat-scroll").display = True
+            self.query_one("#sidebar").display = True
+            self._update_sidebar()
+
+        def _update_composer_status(self):
+            """composer 盒内状态行：agent(蓝) 模型(亮) 来源(暗)——opencode 同款"""
+            try:
+                st = self.query_one("#composer-status")
+            except Exception:
+                return
             engine = self.bridge.current_engine()
-            welcome = Static(
-                f"  ◆ 小狸 Pro-CLI v8.0  │  {engine}  │  "
-                f"{len(self.bridge.tools())} 工具  │  /help 查看命令",
-                classes="welcome-compact"
+            eobj = getattr(self.cli, 'current_engine', None)
+            model = getattr(eobj, 'model', '') if eobj else ''
+            provider = "本地" if engine in ("ollama", "manual") else "云端"
+            st.update(
+                f"  [{_Theme.ACCENT} bold]Build[/{_Theme.ACCENT} bold]  "
+                f"[{_Theme.TEXT} bold]{model or engine}[/{_Theme.TEXT} bold]  "
+                f"[{_Theme.TEXT_DIM}]{provider}[/{_Theme.TEXT_DIM}]"
             )
-            scroll.mount(welcome)
 
         def _render_welcome_animated(self):
             """逐行动画显示欢迎界面"""
@@ -990,6 +1183,7 @@ if TEXTUAL_AVAILABLE:
             # ── 引擎面板 ──
             engine_panel = self.query_one("#panel-engine")
             engine_panel.remove_children()
+            engine_panel.mount(Static("  引擎 ", classes="panel-title"))
             current = self.bridge.current_engine()
             for name in self.bridge.engines():
                 if name == current:
@@ -1004,6 +1198,7 @@ if TEXTUAL_AVAILABLE:
             # ── 状态面板 ──
             status_panel = self.query_one("#panel-status")
             status_panel.remove_children()
+            status_panel.mount(Static("  状态 ", classes="panel-title"))
             status_panel.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
             status_panel.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
             status_panel.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
@@ -1044,6 +1239,7 @@ if TEXTUAL_AVAILABLE:
         def _update_file_tree(self):
             container = self.query_one("#panel-files")
             container.remove_children()
+            container.mount(Static("  文件 ", classes="panel-title"))
             root = self.bridge.cwd()
             container.mount(Static(f"  📂 {os.path.basename(root)}", classes="file-tree-dir"))
             for name, is_dir in self._build_file_tree(root):
@@ -1073,6 +1269,7 @@ if TEXTUAL_AVAILABLE:
         def _update_session_list(self):
             container = self.query_one("#panel-sessions")
             container.remove_children()
+            container.mount(Static("  会话 ", classes="panel-title"))
             sessions = self.bridge.sessions()[:8]
             if not sessions:
                 container.mount(Static("  (无历史会话)", classes="session-item"))
@@ -1099,22 +1296,8 @@ if TEXTUAL_AVAILABLE:
                     pass
 
         def _switch_sidebar_tab(self, tab: str):
-            """切换侧栏标签页"""
+            """侧栏为分节盒常显（opencode 式），tab 记忆仅用于快捷键高亮"""
             self._sidebar_tab = tab
-            panel_map = {
-                "sessions": "panel-sessions", "files": "panel-files",
-                "engine": "panel-engine", "status": "panel-status",
-            }
-            for pt, pid in panel_map.items():
-                try:
-                    p = self.query_one(f"#{pid}")
-                    if pt == tab:
-                        p.remove_class("hidden")
-                    else:
-                        p.add_class("hidden")
-                except Exception:
-                    pass
-            self._sync_tab_highlight()
             self._update_sidebar()
 
         def action_tab_engine(self):
@@ -1148,10 +1331,28 @@ if TEXTUAL_AVAILABLE:
             )
 
         def _update_status(self, text: str):
-            bar = self.query_one("#status-bar")
+            self._footer_left = text
+            self._update_footer()
+
+        def _update_footer(self):
+            """opencode 式纯黑 footer：左=状态+模型，右=键位提示（键帽亮/标签暗）"""
+            try:
+                bar = self.query_one("#status-bar")
+            except Exception:
+                return
             engine = self.bridge.current_engine()
-            prefix = "📋 PLAN | " if self.plan_mode else ""
-            bar.update(f" {prefix}{text} | {engine} | {len(self.bridge.history())} 条对话{self._token_str()}")
+            eobj = getattr(self.cli, 'current_engine', None)
+            model = (getattr(eobj, 'model', '') if eobj else '') or engine
+            left = getattr(self, "_footer_left", "就绪") or "就绪"
+            plan_tag = f"[{_Theme.WARNING}]PLAN[/{_Theme.WARNING}] │ " if self.plan_mode else ""
+            bar.update(
+                f" {left} │ {plan_tag}[bold]{model}[/bold] [dim]{engine}[/dim]"
+                f"{' ' * 3}[bold]ctrl+x[/bold][dim]前缀[/dim]   "
+                f"[bold]ctrl+p[/bold][dim]命令[/dim]   "
+                f"[bold]ctrl+o[/bold][dim]PLAN[/dim]   "
+                f"[dim]Ctrl+C 退出[/dim]"
+            )
+            self._update_composer_status()
 
         def _token_str(self):
             """token 用量进度（token 感知压缩联动，引擎支持时显示）"""
@@ -1186,13 +1387,25 @@ if TEXTUAL_AVAILABLE:
             self._append(widget)
 
         def _user_msg(self, text):
-            self._add(f"  ❯ {text}", "msg-user")
+            """opencode 式用户消息：左蓝竖条盒 + 下缀 You·时间"""
+            self._exit_home()
+            self._append(Static(str(text), classes="msg-user-box", markup=False))
+            try:
+                from datetime import datetime
+                stamp = f"You · {datetime.now():%H:%M}"
+            except Exception:
+                stamp = "You"
+            self._append(Static(stamp, classes="msg-user-meta", markup=False))
 
         def _ai_msg(self, text):
-            if "```" in text:
-                self._render_with_code(text)
-            else:
-                self._add(f"  ● {text}", "msg-ai")
+            """opencode 式 AI 回复：markdown 渲染（标题/列表/代码块高亮）"""
+            try:
+                from rich.markdown import Markdown
+                from rich.text import Text
+                md = Markdown(str(text), code_theme="monokai", hyperlinks=False)
+                self._append(MessageBubble(md, classes="md-body"))
+            except Exception:
+                self._add(f"● {str(text)}", "msg-ai")
 
         def _render_with_code(self, text):
             parts = re.split(r'```(\w*)\n(.*?)```', text, flags=re.DOTALL)
@@ -1218,16 +1431,22 @@ if TEXTUAL_AVAILABLE:
                 i += 1
 
         def _tool_ok(self, name, args):
-            if self._tool_folded:
-                self._add(f"  ⚙ {name}  ✓", "msg-tool-ok")
-            else:
-                self._add(f"  ⚙ {name}: {args[:60]}  ✓", "msg-tool-ok")
+            self._tool_row(name, args, ok=True)
 
         def _tool_err(self, name, args):
+            self._tool_row(name, args, ok=False)
+
+        def _tool_row(self, name, args, ok):
+            """opencode InlineToolRow 式：折叠单行摘要，展开附参数细节"""
+            mark = "✓" if ok else "✗"
+            cls = "tool-row" if ok else "msg-tool-err"
             if self._tool_folded:
-                self._add(f"  ⚙ {name}  ✗", "msg-tool-err")
-            else:
-                self._add(f"  ⚙ {name}: {args[:60]}  ✗", "msg-tool-err")
+                self._add(f"  ⚙ {name}  {mark}", cls)
+                return
+            summary = str(args or "").strip().replace("\n", " ")[:50]
+            self._add(f"  ⚙ {name}  {summary}  {mark}", cls)
+            for ln in str(args or "").split('\n')[:6]:
+                self._add(f"    {ln}", "tool-detail")
 
         def _show_thinking(self):
             """显示动画思考指示器"""
@@ -1522,6 +1741,7 @@ if TEXTUAL_AVAILABLE:
   /plan /build   PLAN 规划/批准
 
   ⌨  快捷键 (opencode 对标):
+  Ctrl+X 前缀: n 新会话  c 压缩  x 导出  q 退出  m 模型  l 会话  ? 帮助
   Ctrl+P     命令面板(模糊搜)  F2       循环换模型
   F3/↑↓     历史输入翻找      F4       工具调用折叠
   Ctrl+O     PLAN 开关         Ctrl+N   新对话
@@ -1783,7 +2003,7 @@ if TEXTUAL_AVAILABLE:
             elif '❌' in msg or 'X 工具' in msg or '错误' in msg:
                 self._add(f"  {msg}" if not self._tool_folded else f"  ⚙ ✗", "msg-tool-err")
             elif '🤖' in msg:
-                self._add(f"  ● {msg.replace('🤖', '', 1).strip()}", "msg-ai")
+                self._ai_msg(msg.replace('🤖', '', 1).replace('(续)', '', 1).strip())
             elif '工具' in msg and ('调用' in msg or '执行' in msg):
                 if self._tool_folded:
                     return  # 折叠模式下吞掉工具流水行，只留结果标记
@@ -1796,7 +2016,7 @@ if TEXTUAL_AVAILABLE:
         def action_clear(self):
             scroll = self.query_one("#chat-scroll")
             scroll.remove_children()
-            self._render_welcome()
+            self._enter_home()
 
         def action_new_chat(self):
             self.cli.shared_conversation_history.clear()
@@ -1824,6 +2044,54 @@ if TEXTUAL_AVAILABLE:
                 self._remove_typing_indicator()
                 self._system("已取消（当前轮结束后停止，输出不入流）")
                 self.is_generating = False
+
+        # ── leader chord（opencode ctrl+x 前缀体系）──
+
+        def action_leader(self):
+            self._leader_pending = True
+            self._update_status("ctrl+x: n新会话 c压缩 x导出 q退出 m模型 l会话 ?帮助 esc取消")
+
+        def on_key(self, event):
+            """chat 区聚焦时的 chord 键处理（输入框聚焦路径在 VimSendTextArea._on_key）"""
+            if self._leader_pending:
+                event.prevent_default()
+                event.stop()
+                self._leader_execute(event.key)
+
+        def _leader_execute(self, key):
+            self._leader_pending = False
+            table = {
+                'n': self.action_new_chat,
+                'c': lambda: self._forward_to_cli('/compress'),
+                'x': self._export_chat,
+                'q': self.exit,
+                'm': self.action_command_palette,
+                'l': self._tui_sessions,
+                '?': self._show_help,
+            }
+            fn = table.get(key)
+            if fn is not None:
+                fn()
+            else:
+                self._system(f"ctrl+x {key}: 未知 chord（n/c/x/q/m/l/?）")
+            self._footer_left = "就绪"
+            self._update_footer()
+
+        def _export_chat(self):
+            """ctrl+x x：导出当前对话为 Markdown"""
+            try:
+                os.makedirs("chat_history", exist_ok=True)
+                from datetime import datetime
+                path = os.path.join("chat_history", f"export_{datetime.now():%Y%m%d_%H%M%S}.md")
+                lines = []
+                for m in self.bridge.history():
+                    if isinstance(m, dict):
+                        lines.append(f"## {m.get('role', '?')}\n\n{m.get('content', '')}\n")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines))
+                self._system(f"对话已导出: {os.path.abspath(path)}")
+            except Exception as e:
+                self._error(f"导出失败: {e}")
 
         # ── Vim 风格：聊天区滚动 / 聚焦切换 ──
         def _user_input(self):
