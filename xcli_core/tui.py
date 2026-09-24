@@ -168,7 +168,14 @@ if TEXTUAL_AVAILABLE:
         text-style: bold;
     }}
 
-    /* ── 命令面板 ── */
+    /* ── 命令面板（同屏覆盖层）── */
+    #pal-overlay {{
+        display: none;
+        width: 100%;
+        height: 100%;
+        align: center middle;
+        background: #000000;
+    }}
     #pal-box {{
         width: 76;
         height: auto;
@@ -197,7 +204,7 @@ if TEXTUAL_AVAILABLE:
         color: {_Theme.TEXT};
     }}
     .pal-sel {{
-        background: {_Theme.GLOW} 45%;
+        background: #26456b;
         color: {_Theme.TEXT};
         text-style: bold;
     }}
@@ -611,12 +618,9 @@ if TEXTUAL_AVAILABLE:
             self.styles.opacity = 0
 
         def on_mount(self):
-            # textual >= 8: Widget.opacity 是只读属性，直接 animate 会抛
-            # "property 'opacity' has no setter"。改为在 styles 上动画，失败则直接到位。
-            try:
-                self.styles.animate("opacity", value=1.0, duration=0.3, easing="out_cubic")
-            except Exception:
-                self.styles.opacity = 1.0
+            # textual >= 8: Widget.opacity 是只读属性，直接 animate 会抛。
+            # 动画也不用（在途动画会让 _wait_for_screen 判定泵未就绪）——直接到位。
+            self.styles.opacity = 1.0
 
 
     class TypingIndicator(Static):
@@ -665,47 +669,148 @@ if TEXTUAL_AVAILABLE:
             ti += 1
         return 100 - len(t) // 10
 
-    class CommandPalette(ModalScreen):
-        """全功能模糊命令面板（opencode ctrl+p）。
-        items: [(label, desc, kind, payload)]，回车执行，Esc 关闭。"""
-        BINDINGS = [
-            Binding("escape", "dismiss", "关闭", show=False),
-            Binding("up", "cursor_up", "↑", show=False),
-            Binding("down", "cursor_down", "↓", show=False),
-            Binding("enter", "select", "执行", show=False),
-        ]
+    class CommandPalette(Vertical):
+        """全功能模糊命令面板（opencode ctrl+p）——同屏覆盖层实现。
 
-        def __init__(self, items, **kwargs):
+        不用 ModalScreen：screen dismiss 的 AwaitRemove 剪枝在本机会把消息泵永久堵死
+        （实测 push→dismiss 后全 UI 假死）。改为常驻覆盖层 show/hide，零剪枝零竞态。
+        行渲染用固定控件池 + update()。"""
+        POOL_SIZE = 20
+
+        def __init__(self, **kwargs):
             super().__init__(**kwargs)
-            self._items = items
-            self._filtered = list(items)
+            self._items = []
+            self._filtered = []
             self._cursor = 0
-            self._closed = False   # 防 enter 双触发（Input.Submitted + binding）导致双重 dismiss
+            self._offset = 0          # 可视窗口起点（>20 条时跟随光标）
+            self._open = False
+            self._on_pick = None
+            self._pool = []
 
         def compose(self) -> ComposeResult:
             with Container(id="pal-box"):
                 yield Static("  命令面板  │  输入模糊搜索  │  ↑↓ 选择  回车执行  Esc 关闭", id="pal-title")
                 yield Input(placeholder="搜索命令 / 工具 / 引擎 / 会话…", id="pal-input")
-                yield VerticalScroll(id="pal-list")
+                with VerticalScroll(id="pal-list"):
+                    for i in range(self.POOL_SIZE):
+                        yield Static("", classes="pal-item", markup=False, id=f"pal-row-{i}")
 
         def on_mount(self):
+            self._pool = [self.query_one(f"#pal-row-{i}") for i in range(self.POOL_SIZE)]
             self._render_list()
-            self.query_one("#pal-input").focus()
+
+        # ── 开关 ──
+
+        def open(self, items, on_pick):
+            self._items = items
+            self._filtered = list(items)
+            self._cursor = 0
+            self._offset = 0
+            self._on_pick = on_pick
+            self._open = True
+            self.display = True
+            self._render_list()
+            try:
+                inp = self.query_one("#pal-input")
+                inp.value = ""
+                inp.focus()
+            except Exception:
+                pass
+
+        def close(self, pick=None):
+            if not self._open:
+                return
+            self._open = False
+            self.display = False
+            cb = self._on_pick
+            self._on_pick = None
+            try:
+                self.app.query_one("#user-input").focus()
+            except Exception:
+                pass
+            if cb is not None:
+                try:
+                    cb(pick)
+                except Exception:
+                    pass
+
+        def is_open(self):
+            return self._open
+
+        # ── 按键（同屏层自己接：↑↓ 选择 / 回车执行 / Esc 关闭）──
+
+        def on_key(self, event):
+            if not self._open:
+                return
+            if event.key == "up":
+                event.prevent_default(); event.stop()
+                self._move(-1)
+            elif event.key == "down":
+                event.prevent_default(); event.stop()
+                self._move(1)
+            elif event.key == "enter":
+                event.prevent_default(); event.stop()
+                self._select()
+            elif event.key == "escape":
+                event.prevent_default(); event.stop()
+                self.close(None)
+
+        def _move(self, delta):
+            if self._filtered:
+                self._cursor = (self._cursor + delta) % len(self._filtered)
+                self._render_list()
+
+        def _select(self):
+            if not self._filtered:
+                self.close(None)
+                return
+            self.close(self._filtered[min(self._cursor, len(self._filtered) - 1)])
 
         def _render_list(self):
-            lst = self.query_one("#pal-list")
-            lst.remove_children()
-            if not self._filtered:
-                lst.mount(Static("  (无匹配)", classes="pal-item pal-dim"))
+            """窗口化渲染：offset 跟随光标，行只 update 不重建（无挂载竞态）"""
+            items = self._filtered
+            if not items:
+                self._pool[0].update("  (无匹配)")
+                self._pool[0].add_class("pal-dim")
+                self._pool[0].remove_class("pal-sel")
+                self._pool[0].display = True
+                for w in self._pool[1:]:
+                    w.display = False
                 return
-            for i, (label, desc, kind, _) in enumerate(self._filtered[:20]):
-                cls = "pal-item pal-sel" if i == self._cursor else "pal-item"
-                mark = {"cmd": "›", "tool": "⚙", "engine": "◈", "session": "≡"}.get(kind, "·")
-                lst.mount(Static(f"  {mark} {label:<18} {desc[:42]}", classes=cls))
-            lst.scroll_home(animate=False)
+
+            # 窗口跟随光标
+            if self._cursor < self._offset:
+                self._offset = self._cursor
+            if self._cursor >= self._offset + self.POOL_SIZE:
+                self._offset = self._cursor - self.POOL_SIZE + 1
+            self._offset = max(0, min(self._offset, max(0, len(items) - self.POOL_SIZE)))
+
+            window = items[self._offset:self._offset + self.POOL_SIZE]
+            for i, w in enumerate(self._pool):
+                if i < len(window):
+                    label, desc, kind, _ = window[i]
+                    mark = {"cmd": "›", "tool": "⚙", "engine": "◈", "session": "≡"}.get(kind, "·")
+                    w.update(f"  {mark} {label:<18} {desc[:42]}")
+                    w.display = True
+                    if self._offset + i == self._cursor:
+                        w.add_class("pal-sel")
+                        w.remove_class("pal-dim")
+                    else:
+                        w.remove_class("pal-sel")
+                else:
+                    w.display = False
+
+            # 视图跟随光标滚动
+            try:
+                if 0 <= self._cursor - self._offset < len(self._pool):
+                    self._pool[self._cursor - self._offset].scroll_visible(animate=False)
+            except Exception:
+                pass
 
         @on(Input.Changed, "#pal-input")
         def _on_filter(self, event):
+            if not self._open:
+                return
             q = event.value.strip()
             scored = []
             for item in self._items:
@@ -715,37 +820,13 @@ if TEXTUAL_AVAILABLE:
             scored.sort(key=lambda x: -x[0])
             self._filtered = [it for _, it in scored]
             self._cursor = 0
+            self._offset = 0
             self._render_list()
 
         @on(Input.Submitted, "#pal-input")
         def _on_submit(self, event):
-            self.action_select()
-
-        def action_cursor_up(self):
-            if self._filtered:
-                self._cursor = (self._cursor - 1) % min(20, len(self._filtered))
-                self._render_list()
-
-        def action_cursor_down(self):
-            if self._filtered:
-                self._cursor = (self._cursor + 1) % min(20, len(self._filtered))
-                self._render_list()
-
-        def action_select(self):
-            if self._closed:
-                return
-            self._closed = True
-            if not self._filtered:
-                self.dismiss(None)
-                return
-            pick = self._filtered[min(self._cursor, len(self._filtered) - 1)]
-            self.dismiss(pick)
-
-        def action_dismiss(self):
-            if self._closed:
-                return
-            self._closed = True
-            self.dismiss(None)
+            if self._open:
+                self._select()
 
     # ═══════════════════════════════════════════════════
     #  自定义 TextArea：回车发送，Shift+回车换行
@@ -873,6 +954,18 @@ if TEXTUAL_AVAILABLE:
                 event.stop()
                 try:
                     self.app.action_leader()
+                except Exception:
+                    pass
+                return
+            # ctrl+d/u = 半页滚动（TextArea 同样会吞，强制截获；所有模式生效）
+            if event.key in ("ctrl+d", "ctrl+u"):
+                event.prevent_default()
+                event.stop()
+                try:
+                    if event.key == "ctrl+d":
+                        self.app.action_chat_half_down()
+                    else:
+                        self.app.action_chat_half_up()
                 except Exception:
                     pass
                 return
@@ -1012,11 +1105,23 @@ if TEXTUAL_AVAILABLE:
                             yield Static("", id="composer-status")
                         yield Static("", id="input-hint")
             yield Static("", id="status-bar")
+            # 命令面板：同屏覆盖层（display=False 常驻，零剪枝开关）
+            yield CommandPalette(id="pal-overlay")
 
         def on_mount(self):
             # 持久输出桥：cli 任意线程的输出统一进 TUI（替代 stdout，防花屏）
             self.cli.tui_output_callback = self._tui_push
             self._init_vim_mode()
+            # 面板/Home 固定单件（此后只 update() 刷新，杜绝 remove_children/mount 竞态堵泵）
+            for pid in ("panel-sessions", "panel-files", "panel-engine", "panel-status"):
+                try:
+                    self.query_one(f"#{pid}").mount(Static("", markup=False))
+                except Exception:
+                    pass
+            try:
+                self.query_one("#home-scroll").mount(Static("", id="home-content", markup=False))
+            except Exception:
+                pass
             self._enter_home()
             self._update_header()
             self._update_footer()
@@ -1056,7 +1161,7 @@ if TEXTUAL_AVAILABLE:
 
         @classmethod
         def _logo_rows(cls):
-            """像素 logo 行：(文本, class)——上段灰(#6e6e6e)下段白(#f0f0f0)双色调"""
+            """像素 logo 行：(文本, 颜色)——上段灰(#6e6e6e)下段白(#f0f0f0)双色调"""
             word = "xiaoli"
             rows = []
             for r in range(7):
@@ -1065,11 +1170,32 @@ if TEXTUAL_AVAILABLE:
                     if j:
                         line += " "
                     line += "".join("█" if c == "X" else " " for c in cls._LOGO_FONT[ch][r])
-                rows.append((line, "logo-line" if r < 4 else "logo-line-b"))
+                rows.append((line, "#6e6e6e" if r < 4 else "#f0f0f0"))
             return rows
 
+        @staticmethod
+        def _fill(container, renderable):
+            """把内容塞进容器的唯一定件：有则 update，无则 mount。
+            永不 remove_children —— 未等待的移除会把消息泵堵死（按钮按一次就废的根因）。"""
+            try:
+                kids = list(container.children)
+            except Exception:
+                kids = []
+            if kids:
+                try:
+                    kids[0].update(renderable)
+                    return
+                except Exception:
+                    pass
+            try:
+                w = Static(renderable if not isinstance(renderable, str) else renderable,
+                           markup=False)
+                container.mount(w)
+            except Exception:
+                pass
+
         def _enter_home(self):
-            """Home 屏：logo + 标语 + 键帽提示 + Tip 行（opencode 启动屏）"""
+            """Home 屏：logo + 标语 + 键帽提示 + Tip 行（opencode 启动屏；单件 update 防竞态）"""
             self._home_active = True
             home = self.query_one("#home-scroll")
             chat = self.query_one("#chat-scroll")
@@ -1077,16 +1203,22 @@ if TEXTUAL_AVAILABLE:
             chat.display = False
             sidebar.display = False
             home.display = True
-            home.remove_children()
-            for text, cls in self._logo_rows():
-                home.mount(Static(text, classes=cls, markup=False))
-            home.mount(Static("小狸 Pro-CLI v8.0.4 · AI 智能编程助手", classes="home-tag", markup=False))
-            home.mount(Static(
-                "  [bold]ctrl+t[/] 模型变体   [bold]tab[/] agents   [bold]ctrl+p[/] 命令面板",
-                classes="hint-line"))
-            home.mount(Static(
-                "[bold]● Tip[/]  用 [@文件路径] 引用文件给 AI · !命令 直接跑 shell · /help 看全部命令",
-                classes="tip-line"))
+            from rich.text import Text
+            t = Text()
+            for line, color in self._logo_rows():
+                t.append(line + "\n", style=color)
+            t.append("小狸 Pro-CLI v8.0.4 · AI 智能编程助手\n", style=_Theme.TEXT_DIM)
+            t.append("  ")
+            t.append("ctrl+t", style=f"bold {_Theme.TEXT}")
+            t.append(" 模型变体   ")
+            t.append("tab", style=f"bold {_Theme.TEXT}")
+            t.append(" agents   ")
+            t.append("ctrl+p", style=f"bold {_Theme.TEXT}")
+            t.append(" 命令面板\n")
+            t.append("● Tip", style=f"bold {_Theme.ORANGE}")
+            t.append("  用 [@文件路径] 引用文件给 AI · !命令 直接跑 shell · /help 看全部命令",
+                     style=_Theme.TEXT_DIM)
+            self._fill(home, t)
             self._update_composer_status()
 
         def _exit_home(self):
@@ -1179,33 +1311,33 @@ if TEXTUAL_AVAILABLE:
             """按当前标签页更新侧栏内容"""
             self._update_file_tree()
             self._update_session_list()
+            from rich.text import Text
 
             # ── 引擎面板 ──
-            engine_panel = self.query_one("#panel-engine")
-            engine_panel.remove_children()
-            engine_panel.mount(Static("  引擎 ", classes="panel-title"))
+            t = Text()
+            t.append("  引擎 \n", style=f"bold {_Theme.TEXT_MUTED}")
             current = self.bridge.current_engine()
             for name in self.bridge.engines():
                 if name == current:
-                    engine_panel.mount(Static(f"  ▸ {name}", classes="engine-item-active"))
+                    t.append(f"  ▸ {name}\n", style=f"bold {_Theme.SUCCESS}")
                 else:
-                    engine_panel.mount(Static(f"    {name}", classes="engine-item"))
-            engine_panel.mount(Static("  工具", classes="panel-title"))
+                    t.append(f"    {name}\n", style=_Theme.TEXT_MUTED)
+            t.append("  工具\n", style=f"bold {_Theme.TEXT_MUTED}")
             for tool in self.bridge.tools()[:12]:
-                name = tool.get('name', '?')
-                engine_panel.mount(Static(f"  • {name}", classes="tool-item"))
+                t.append(f"  • {tool.get('name', '?')}\n", style=_Theme.TEXT_MUTED)
+            self._fill(self.query_one("#panel-engine"), t)
 
             # ── 状态面板 ──
-            status_panel = self.query_one("#panel-status")
-            status_panel.remove_children()
-            status_panel.mount(Static("  状态 ", classes="panel-title"))
-            status_panel.mount(Static(f"  对话: {len(self.bridge.history())} 条", classes="tool-item"))
-            status_panel.mount(Static(f"  工具: {len(self.bridge.tools())} 个", classes="tool-item"))
-            status_panel.mount(Static(f"  引擎: {len(self.bridge.engines())} 个", classes="tool-item"))
+            s = Text()
+            s.append("  状态 \n", style=f"bold {_Theme.TEXT_MUTED}")
+            s.append(f"  对话: {len(self.bridge.history())} 条\n", style=_Theme.TEXT_MUTED)
+            s.append(f"  工具: {len(self.bridge.tools())} 个\n", style=_Theme.TEXT_MUTED)
+            s.append(f"  引擎: {len(self.bridge.engines())} 个\n", style=_Theme.TEXT_MUTED)
             if self.bridge.plan_mode():
-                status_panel.mount(Static("  模式: 📋 PLAN", classes="plan-badge"))
+                s.append("  模式: 📋 PLAN\n", style=f"bold {_Theme.WARNING}")
             else:
-                status_panel.mount(Static("  模式: 普通", classes="tool-item"))
+                s.append("  模式: 普通\n", style=_Theme.TEXT_MUTED)
+            self._fill(self.query_one("#panel-status"), s)
 
             self._sync_tab_highlight()
 
@@ -1237,14 +1369,15 @@ if TEXTUAL_AVAILABLE:
             return items
 
         def _update_file_tree(self):
-            container = self.query_one("#panel-files")
-            container.remove_children()
-            container.mount(Static("  文件 ", classes="panel-title"))
+            from rich.text import Text
+            t = Text()
+            t.append("  文件 \n", style=f"bold {_Theme.TEXT_MUTED}")
             root = self.bridge.cwd()
-            container.mount(Static(f"  📂 {os.path.basename(root)}", classes="file-tree-dir"))
+            t.append(f"  📂 {os.path.basename(root)}\n", style=f"bold {_Theme.ACCENT}")
             for name, is_dir in self._build_file_tree(root):
                 icon = "📁" if is_dir else "📄"
-                container.mount(Static(f"  {icon} {name}", classes="file-tree-item"))
+                t.append(f"  {icon} {name}\n", style=_Theme.TEXT_MUTED)
+            self._fill(self.query_one("#panel-files"), t)
 
         # ── 会话列表 ──
 
@@ -1267,17 +1400,19 @@ if TEXTUAL_AVAILABLE:
                 return ""
 
         def _update_session_list(self):
-            container = self.query_one("#panel-sessions")
-            container.remove_children()
-            container.mount(Static("  会话 ", classes="panel-title"))
+            from rich.text import Text
+            t = Text()
+            t.append("  会话 \n", style=f"bold {_Theme.TEXT_MUTED}")
             sessions = self.bridge.sessions()[:8]
             if not sessions:
-                container.mount(Static("  (无历史会话)", classes="session-item"))
+                t.append("  (无历史会话)", style=_Theme.TEXT_DIM)
+                self._fill(self.query_one("#panel-sessions"), t)
                 return
             for i, s in enumerate(sessions, 1):
                 title = (s.title or s.id)[:22]
-                t = self._format_rel_time(s.updated_at)
-                container.mount(Static(f"  {i}. {title}  {t}", classes="session-item"))
+                rel = self._format_rel_time(s.updated_at)
+                t.append(f"  {i}. {title}  {rel}\n", style=_Theme.TEXT_MUTED)
+            self._fill(self.query_one("#panel-sessions"), t)
 
         # ── 标签页切换 ──
 
@@ -1380,7 +1515,10 @@ if TEXTUAL_AVAILABLE:
         def _append(self, widget):
             scroll = self.query_one("#chat-scroll")
             scroll.mount(widget)
-            scroll.scroll_end(animate=True, duration=0.2)
+            try:
+                scroll.scroll_end(animate=False)
+            except Exception:
+                pass
 
         def _add(self, text, cls="msg-dim"):
             widget = MessageBubble(text, classes=cls)
@@ -1454,18 +1592,18 @@ if TEXTUAL_AVAILABLE:
             spinner = ThinkingSpinner(classes="thinking-indicator")
             scroll = self.query_one("#chat-scroll")
             scroll.mount(spinner)
-            scroll.scroll_end(animate=True, duration=0.2)
+            try:
+                scroll.scroll_end(animate=False)
+            except Exception:
+                pass
             self._thinking_widget = spinner
 
         def _remove_thinking(self):
-            """移除思考指示器"""
-            if self._thinking_widget:
-                try:
-                    self._thinking_widget.stop()
-                    self._thinking_widget.remove()
-                except Exception:
-                    pass
-                self._thinking_widget = None
+            """移除思考指示器（等待式卸载，防 AwaitRemove 悬挂堵泵）"""
+            w = self._thinking_widget
+            self._thinking_widget = None
+            if w is not None:
+                self._safe_unmount(w, "rm-thinking")
 
         def _show_typing_indicator(self):
             """显示打字指示器"""
@@ -1473,18 +1611,36 @@ if TEXTUAL_AVAILABLE:
             indicator = TypingIndicator(classes="thinking-indicator")
             scroll = self.query_one("#chat-scroll")
             scroll.mount(indicator)
-            scroll.scroll_end(animate=True, duration=0.2)
+            try:
+                scroll.scroll_end(animate=False)
+            except Exception:
+                pass
             self._typing_widget = indicator
 
         def _remove_typing_indicator(self):
-            """移除打字指示器"""
-            if self._typing_widget:
+            """移除打字指示器（等待式卸载）"""
+            w = self._typing_widget
+            self._typing_widget = None
+            if w is not None:
+                self._safe_unmount(w, "rm-typing")
+
+        def _safe_unmount(self, w, group):
+            """等待式卸载：裸 remove() 返回未等待的 AwaitRemove 会堵死消息泵"""
+            try:
+                w.stop()
+            except Exception:
+                pass
+
+            async def _job():
                 try:
-                    self._typing_widget.stop()
-                    self._typing_widget.remove()
+                    await w.remove()
                 except Exception:
                     pass
-                self._typing_widget = None
+
+            try:
+                self.run_worker(_job(), group=group, exclusive=False)
+            except Exception:
+                pass
 
         def _thinking(self):
             """兼容旧接口"""
@@ -1617,20 +1773,33 @@ if TEXTUAL_AVAILABLE:
             return items
 
         def action_command_palette(self):
-            """ctrl+p：模糊命令面板（命令/工具/引擎/会话）"""
+            """ctrl+p：模糊命令面板（命令/工具/引擎/会话）——同屏覆盖层"""
+            pal = self.query_one(CommandPalette)
+            if pal.is_open():
+                pal.close(None)
+                return
+
             def _on_pick(pick):
                 if not pick:
                     return
                 label, desc, kind, payload = pick
-                if kind == "cmd":
-                    self._handle_command(f"/{payload}")
-                elif kind == "engine":
-                    self._switch_model(payload)
-                elif kind == "session":
-                    self._tui_resume(str(payload))
-                elif kind == "tool":
-                    self._system(f"  工具 {payload}: 在对话中直接说出需求，AI 会自动调用")
-            self.push_screen(CommandPalette(self._palette_items()), _on_pick)
+                try:
+                    if kind == "cmd":
+                        self._handle_command(f"/{payload}")
+                    elif kind == "engine":
+                        self._switch_model(payload)
+                    elif kind == "session":
+                        self._tui_resume(str(payload))
+                    elif kind == "tool":
+                        self._system(f"  工具 {payload}: 在对话中直接说出需求，AI 会自动调用")
+                except Exception as e:
+                    # 面板回调绝不让异常破坏界面（否则整个 UI 卡死）
+                    try:
+                        self._error(f"执行失败: {e}")
+                    except Exception:
+                        pass
+
+            pal.open(self._palette_items(), _on_pick)
 
         def action_cycle_model(self):
             """f2：循环切换引擎（opencode model_cycle_recent）"""
@@ -2032,8 +2201,14 @@ if TEXTUAL_AVAILABLE:
         # ── 动作 ──
 
         def action_clear(self):
-            scroll = self.query_one("#chat-scroll")
-            scroll.remove_children()
+            self.run_worker(self._clear_chat_area(), exclusive=True, group="clear-chat")
+
+        async def _clear_chat_area(self):
+            """安全清空消息区（await remove_children；未等待的移除会堵死消息泵）"""
+            try:
+                await self.query_one("#chat-scroll").remove_children()
+            except Exception:
+                pass
             self._enter_home()
 
         def action_new_chat(self):
@@ -2146,12 +2321,12 @@ if TEXTUAL_AVAILABLE:
         def action_chat_down(self):
             if self._guard_chat():
                 return
-            self._chat_scroll().scroll_down(3)
+            self._chat_scroll().scroll_relative(y=3)
 
         def action_chat_up(self):
             if self._guard_chat():
                 return
-            self._chat_scroll().scroll_up(3)
+            self._chat_scroll().scroll_relative(y=-3)
 
         def action_chat_page_down(self):
             if self._guard_chat():
