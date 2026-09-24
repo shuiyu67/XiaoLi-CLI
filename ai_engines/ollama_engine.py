@@ -595,3 +595,84 @@ Ollama AI引擎插件帮助信息
         else:
             print(f"{Fore.RED}未知的Ollama命令.可用命令: models, remote-models, search, set, pull{Style.RESET_ALL}")
             return False
+
+# ══════════════════════════════════════════════════════════════════
+#  新式协议适配契约（模型配置系统 / OpenAI 兼容代理使用）
+# ══════════════════════════════════════════════════════════════════
+
+ENGINE_LABEL = "本地 Ollama（localhost:11434）"
+
+MODEL_FIELDS = [
+    {"key": "base_url", "label": "Ollama 地址", "default": "http://localhost:11434",
+     "hint": "本地 Ollama 服务地址，一般不用改"},
+    {"key": "model", "label": "模型名", "required": True,
+     "hint": "ollama list 里显示的名字，如 gemma4:31b"},
+    {"key": "max_token_k", "label": "上下文(K)", "default": "32",
+     "hint": "上下文窗口大小（K token），不知道就用默认 32"},
+]
+
+
+def chat_completions(fields, messages, tools=None, stream=False):
+    """Ollama /api/chat ↔ OpenAI chat.completions 双向翻译。"""
+    import json
+    import requests
+    base = (fields.get("base_url") or "http://localhost:11434").rstrip("/")
+    sys_parts = [m.get("content") or "" for m in messages if m.get("role") == "system"]
+    conv = [{"role": m.get("role", "user"), "content": m.get("content") or ""}
+            for m in messages if m.get("role") != "system"]
+    msgs = ([{"role": "system", "content": "\n".join(sys_parts)}] if sys_parts else []) + conv
+    try:
+        num_ctx = int(float(fields.get("max_token_k", 32)) * 1024)
+    except (TypeError, ValueError):
+        num_ctx = 32768
+    body = {"model": fields.get("model", ""), "messages": msgs,
+            "stream": bool(stream), "options": {"num_ctx": num_ctx}}
+    if tools:
+        body["tools"] = tools
+    r = requests.post(base + "/api/chat", json=body, stream=bool(stream), timeout=None)
+    if r.status_code != 200:
+        return {"error": f"HTTP {r.status_code}: {r.text[:200]}"}
+
+    if stream:
+        def events():
+            for line in r.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                msg = d.get("message", {})
+                delta = {}
+                if msg.get("content"):
+                    delta["content"] = msg["content"]
+                chunk = {"id": "chatcmpl-xiaoli", "object": "chat.completion.chunk",
+                         "model": fields.get("model", ""),
+                         "choices": [{"index": 0, "delta": delta,
+                                      "finish_reason": "stop" if d.get("done") else None}]}
+                yield "data: " + json.dumps(chunk, ensure_ascii=False)
+                if d.get("done"):
+                    break
+            yield "data: [DONE]"
+        return events()
+
+    data = r.json()
+    msg = data.get("message", {})
+    message = {"role": "assistant", "content": msg.get("content", "")}
+    finish = "stop"
+    if msg.get("tool_calls"):
+        message["tool_calls"] = [
+            {"id": f"call_{i}", "type": "function",
+             "function": {"name": tc.get("function", {}).get("name", ""),
+                          "arguments": json.dumps(tc.get("function", {}).get("arguments", {}))}}
+            for i, tc in enumerate(msg["tool_calls"])]
+        message["content"] = None
+        finish = "tool_calls"
+    return {
+        "id": "chatcmpl-xiaoli", "object": "chat.completion",
+        "model": fields.get("model", ""),
+        "choices": [{"index": 0, "message": message, "finish_reason": finish}],
+        "usage": {"prompt_tokens": data.get("prompt_eval_count", 0),
+                  "completion_tokens": data.get("eval_count", 0),
+                  "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0)},
+    }

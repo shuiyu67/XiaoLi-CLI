@@ -638,3 +638,46 @@ OpenAI 兼容格式引擎帮助信息
         else:
             print(f"{Fore.RED}未知命令. 可用命令: models, set, info{Style.RESET_ALL}")
             return False
+
+
+# ══════════════════════════════════════════════════════════════════
+#  新式协议适配契约（模型配置系统 / OpenAI 兼容代理使用）
+#  自研调用格式照此实现：MODEL_FIELDS + chat_completions 即被系统识别
+# ══════════════════════════════════════════════════════════════════
+
+ENGINE_LABEL = "OpenAI 兼容（DeepSeek / Kimi / GPT / SiliconFlow / vLLM 等）"
+
+MODEL_FIELDS = [
+    {"key": "api_key", "label": "API 密钥", "secret": True, "required": True,
+     "hint": "DeepSeek / Kimi / OpenAI 等服务发的密钥（形如 sk-...）"},
+    {"key": "base_url", "label": "Base URL", "default": "https://api.deepseek.com/v1",
+     "hint": "API 地址，不带 /chat/completions"},
+    {"key": "model", "label": "模型名", "required": True,
+     "hint": "服务上的模型标识，如 deepseek-chat / kimi-k2 / gpt-4o"},
+]
+
+
+def chat_completions(fields, messages, tools=None, stream=False):
+    """OpenAI 兼容格式直通：messages 原样转发，流式原样透传 SSE 事件。"""
+    import requests
+    base = (fields.get("base_url") or "").rstrip("/")
+    if not base:
+        return {"error": "base_url 未配置"}
+    body = {"model": fields.get("model", ""), "messages": messages, "stream": bool(stream)}
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    headers = {"Content-Type": "application/json"}
+    if fields.get("api_key"):
+        headers["Authorization"] = f"Bearer {fields['api_key']}"
+    r = requests.post(base + "/chat/completions", json=body, headers=headers,
+                      stream=bool(stream), timeout=None)
+    if r.status_code != 200:
+        return {"error": f"HTTP {r.status_code}: {r.text[:200]}"}
+    if stream:
+        def events():
+            for line in r.iter_lines(decode_unicode=True):
+                if line and line.startswith("data:"):
+                    yield line
+        return events()
+    return r.json()

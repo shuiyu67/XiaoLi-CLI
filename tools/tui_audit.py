@@ -4,10 +4,11 @@
 （is_generating 卡 True / leader_pending 卡 True / screen_stack 不回落）。
 """
 import asyncio
+import os
 import sys
 import traceback
 
-sys.path.insert(0, "xiaoli-cli")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class FakeCli:
