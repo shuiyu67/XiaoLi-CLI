@@ -5,7 +5,7 @@
 主入口文件 - 从 xcli_core 包加载核心逻辑
 """
 
-from xcli_core import AICLI, main
+from xcli_core import main
 
 if __name__ == "__main__":
     main()

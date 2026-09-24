@@ -13,7 +13,7 @@ import sys
 import tempfile
 import platform
 import threading
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 
 class Liugin:

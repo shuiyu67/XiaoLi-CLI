@@ -9,7 +9,6 @@ import tempfile
 import pytest
 
 from xcli_core import model_registry as mr
-import xcli_core.config as cfgmod
 import ai_engines.openai_engine as oe_mod
 
 
@@ -141,7 +140,6 @@ def _make_fake_cli(eng):
 
 
 def test_cli_model_list_and_switch(tmp_config, monkeypatch):
-    from xcli_core import cli_base
     eng = oe_mod.OpenaiAI()
     eng.add_model({"name": "gpt4o", "base_url": "u", "api_key": "k", "model": "gpt-4o"})
 

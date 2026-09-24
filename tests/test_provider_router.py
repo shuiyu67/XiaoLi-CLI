@@ -1,9 +1,7 @@
 """Provider 抽象层测试：预设、resolve、消息/工具转换、汇总。不触网、不读真实 config。"""
 import os
 import sys
-import types
 
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

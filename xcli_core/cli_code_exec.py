@@ -5,7 +5,6 @@ import json
 import subprocess
 import traceback
 from datetime import datetime
-from colorama import Fore, Style
 
 from .config import logger
 from .sandbox import (

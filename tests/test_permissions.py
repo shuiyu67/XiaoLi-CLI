@@ -1,6 +1,5 @@
 """声明式权限（allow/ask/deny）回归测试。不触真实引擎/网络。"""
-import pytest
-from xcli_core.safety import SafetyLayer, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
+from xcli_core.safety import SafetyLayer, MODE_UNRESTRICTED, MODE_NORMAL
 
 
 def _new_safety(allow=None, ask=None, deny=None, mode=MODE_NORMAL):

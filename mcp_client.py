@@ -13,7 +13,6 @@
 
 import os
 import json
-import time
 import threading
 import subprocess
 import logging

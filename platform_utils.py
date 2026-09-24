@@ -74,8 +74,6 @@ def get_key():
     else:
         # Linux/Mac 的实现
         import select
-        import tty
-        import termios
         
         if select.select([sys.stdin], [], [], 0)[0]:
             return sys.stdin.read(1)

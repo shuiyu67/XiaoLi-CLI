@@ -1,7 +1,6 @@
 """
 工具搜索助手 - 支持按需发现工具
 """
-import json
 
 
 class Liugin:

@@ -4,7 +4,6 @@
 """
 
 import os
-import subprocess
 from colorama import Fore, Style
 
 

@@ -11,7 +11,6 @@
 避免重复计数。
 """
 import os
-import re
 import time
 import json
 import uuid

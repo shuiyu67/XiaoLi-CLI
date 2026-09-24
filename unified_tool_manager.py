@@ -7,7 +7,7 @@ import os
 import json
 import logging
 import threading
-from typing import Dict, List, Any, Optional, Union, Callable
+from typing import Dict, List, Any, Optional
 from colorama import Fore, Style
 from xcli_core.tool_result import ToolResult, ErrorCode
 from xcli_core.verbose import vprint
@@ -160,7 +160,7 @@ class UnifiedToolManager:
             return
 
         try:
-            from skills.base import SkillLoader, MarkdownSkill, Skill
+            from skills.base import SkillLoader, MarkdownSkill
 
             self._skill_loader = SkillLoader(skills_dir)
 
@@ -212,7 +212,7 @@ class UnifiedToolManager:
 
     def _create_skill_handler(self, skill) -> callable:
         """为 Skill 创建兼容 Plugin 的 handler"""
-        from skills.base import MarkdownSkill, Skill
+        from skills.base import MarkdownSkill
 
         def handler(args: str):
             """Skill handler - 返回 ToolResult"""

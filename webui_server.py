@@ -16,11 +16,7 @@ import os
 import sys
 import time
 import argparse
-import mimetypes
-from pathlib import Path
-from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
 import threading
 
 # 添加项目根目录

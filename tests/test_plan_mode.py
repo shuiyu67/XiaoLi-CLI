@@ -10,7 +10,6 @@ import pytest
 from xcli_core.safety import (
     get_safety,
     plan_is_write_operation,
-    PLAN_WRITE_RULES,
 )
 
 

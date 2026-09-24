@@ -10,25 +10,7 @@ DEFAULT_MAX_HISTORY = 999999  # 无限制对话历史
 VERSION = "8.0.4"
 VERSION_NAME = "小狸 Pro-CLI"
 
-import os
-import sys
-import importlib.util
-import json
-import re
-import shutil
-import time
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from colorama import init, Fore, Style
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-import socket
-import webbrowser
-from datetime import datetime
-import logging
-import asyncio
-from typing import Optional
-from io import StringIO
+from colorama import Fore, Style
 
 # ── 第三方依赖（全部 try/except 保护） ──
 

@@ -7,7 +7,7 @@ if TEXTUAL_AVAILABLE:
     import asyncio
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical, VerticalScroll, Container
-    from textual.widgets import Header, Static, Rule, TextArea
+    from textual.widgets import Static, TextArea
     from textual.reactive import var
     from textual.binding import Binding
     from textual import on

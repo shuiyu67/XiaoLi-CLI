@@ -1,6 +1,3 @@
-import os
-import time
-import json
 from colorama import Fore, Style
 from .session import SessionManager
 

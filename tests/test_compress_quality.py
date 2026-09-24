@@ -1,7 +1,6 @@
 """上下文压缩质量测试：覆盖保真度、可配置 keep_recent、避免二次失真。"""
 import os
 import sys
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

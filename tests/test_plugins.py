@@ -635,7 +635,7 @@ class TestCoreImports:
 
     def test_import_config(self):
         sys.path.insert(0, os.path.join(PROJECT_ROOT, "xcli_core"))
-        from config import load_config, save_config
+        from config import load_config
         assert callable(load_config)
 
     def test_import_constants(self):

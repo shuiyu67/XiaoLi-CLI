@@ -3,10 +3,8 @@ Clawli WebSocket Server - 独立进程 WebSocket 服务器
 用于 PC-手机端通信
 """
 
-import multiprocessing
 from multiprocessing import Process, Queue
 from typing import Optional, List
-import threading
 import time
 import json
 import base64

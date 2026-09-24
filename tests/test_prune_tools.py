@@ -5,7 +5,6 @@
 - mcp_to_openai_tools 按 name 去重（消除 cache + builtin 叠加重复）
 - prune_tools 分层裁剪：纯聊天极简、代码信号追加 lsp__*、外部 mcp 默认保留
 """
-import pytest
 
 from xcli_core.fc_tools import mcp_to_openai_tools, prune_tools
 

@@ -2,8 +2,6 @@ import requests
 import time
 import socket
 from urllib.parse import urlparse
-import json
-from colorama import Fore, Style
 
 
 class Liugin:

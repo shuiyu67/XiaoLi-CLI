@@ -4,7 +4,6 @@
 """
 import os
 import re
-import json
 import shutil
 import sys
 from datetime import datetime

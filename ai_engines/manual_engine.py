@@ -6,12 +6,9 @@
 
 import os
 import sys
-import json
 import time
 import subprocess
 import tempfile
-import threading
-from pathlib import Path
 
 # 添加项目根目录到sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))

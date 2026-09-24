@@ -1,13 +1,11 @@
 import os
-import sys
 import importlib.util
 import uuid
-import shutil
 from colorama import init, Fore, Style
 
 from .constants import (
-    DEFAULT_MAX_HISTORY, WEBSOCKET_AVAILABLE, CLAWLI_SERVER_AVAILABLE,
-    UNIFIED_TOOL_MANAGER_AVAILABLE, TEXTUAL_AVAILABLE,
+    DEFAULT_MAX_HISTORY, CLAWLI_SERVER_AVAILABLE,
+    UNIFIED_TOOL_MANAGER_AVAILABLE,
 )
 from .config import get_system_config, set_system_config, logger
 from .verbose import vprint

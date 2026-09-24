@@ -2,9 +2,6 @@ import os
 import re
 import sys
 import json
-import requests
-import threading
-import time
 from colorama import Fore, Style
 
 # 真正的惰性导入：只有真正用到 ollama 引擎时才 import ollama，

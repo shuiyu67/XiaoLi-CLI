@@ -18,7 +18,6 @@ import json
 import threading
 import time
 import base64
-import hashlib
 import socket
 import os
 from datetime import datetime

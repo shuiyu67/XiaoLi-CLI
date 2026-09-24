@@ -6,11 +6,10 @@ import os
 import json
 import tempfile
 import shutil
-import uuid
 
 import pytest
 
-from xcli_core.session import Session, SessionManager, _make_session_id, _title_from_messages
+from xcli_core.session import SessionManager, _make_session_id
 
 
 @pytest.fixture

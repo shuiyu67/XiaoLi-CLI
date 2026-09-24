@@ -10,15 +10,11 @@ LSP 客户端测试
 全程不触真实引擎 / 网络。
 """
 
-import os
 import sys
 import json
-import time
-import threading
 
 import pytest
 
-import lsp_client
 from lsp_client import LspClient, LspManager, path_to_uri, ext_to_language
 
 

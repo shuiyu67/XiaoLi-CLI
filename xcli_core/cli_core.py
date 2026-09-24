@@ -1,15 +1,12 @@
-import os
 import sys
 import json
 import re
 import time
-import shutil
 import threading
-import random
 from typing import Optional
 from colorama import Fore, Style
 
-from .constants import TEXTUAL_AVAILABLE, LOVE_FILE_PATH, DEFAULT_MAX_HISTORY, VERSION
+from .constants import TEXTUAL_AVAILABLE, VERSION
 from .config import get_system_config, set_system_config, logger
 from .cli_base import BaseAICLI
 from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL

@@ -5,13 +5,12 @@ Provides file system operations as JSON output
 """
 
 import os
-import sys
 import json
 import shutil
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 
 
 def json_response(success: bool, operation: str, data: Any = None, error: str = None) -> str:

@@ -7,7 +7,6 @@ import os
 import sys
 import subprocess
 import threading
-from typing import Optional
 
 
 class NotificationManager:

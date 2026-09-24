@@ -1,7 +1,6 @@
 """py_detect 本地智能检测插件测试"""
 import importlib.util
 import os
-import sys
 
 import pytest
 

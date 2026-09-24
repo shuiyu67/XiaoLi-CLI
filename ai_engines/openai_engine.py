@@ -488,7 +488,6 @@ OpenAI 兼容格式引擎帮助信息
 
     def _process_thinking_content(self, response):
         """处理思考内容，将思考部分以灰色文本显示"""
-        import re
 
         if not self.thinking_start_marker or not self.thinking_end_marker:
             return response

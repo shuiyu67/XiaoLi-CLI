@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from xcli_core.vim_keys import VimInputState, EditResult
+from xcli_core.vim_keys import VimInputState
 
 
 class FakeBuffer:
