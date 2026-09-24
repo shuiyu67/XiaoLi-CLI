@@ -13,7 +13,7 @@ from .safety import get_safety, MODE_UNRESTRICTED, MODE_NORMAL, MODE_MANUAL
 from .cli_clawli import ClawliMixin
 from .cli_tools import ToolMixin
 from .cli_code_exec import CodeExecMixin
-from .cli_display import DisplayMixin
+from .cli_display import DisplayMixin, emit
 from .cli_history import HistoryMixin
 from .plugin_market import PluginMarketMixin
 from .notification import notify_task_complete, get_notification_manager
@@ -589,7 +589,14 @@ multi 操作支持一次修改多处：
         max_loops = 20
 
         while loop_count < max_loops:
+            # TUI Esc 真取消：轮间检查取消事件（CLI 下 _tui_cancel 不存在，行为不变）
+            if getattr(self, '_tui_cancel', None) is not None and self._tui_cancel.is_set():
+                self._output("⚡ 已取消")
+                break
             response = self._generate_response_with_animation(current_input, liugin_prompts=liugin_prompts)
+            if getattr(self, '_tui_cancel', None) is not None and self._tui_cancel.is_set():
+                self._output("⚡ 已取消（本轮输出已丢弃）")
+                break
             processed_response = self.process_thinking_response(response)
             processed_response = self._process_code_blocks(processed_response)
 
@@ -1056,18 +1063,18 @@ multi 操作支持一次修改多处：
         args = (args or "").strip()
         if args in ('off', 'exit', '退出', 'cancel'):
             self.plan_mode = False
-            print(f"{Fore.YELLOW}已退出 PLAN 模式（计划未执行）{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}已退出 PLAN 模式（计划未执行）{Style.RESET_ALL}")
             return
 
         self.plan_mode = True
         if args:
-            print(f"{Fore.CYAN}已进入 PLAN 模式，正在只读调研并生成实施计划...{Style.RESET_ALL}")
+            emit(self, f"{Fore.CYAN}已进入 PLAN 模式，正在只读调研并生成实施计划...{Style.RESET_ALL}")
             self.process_conversation(args)
             self._autosave_session()
             self._sync_current_plan()
         else:
-            print(f"{Fore.CYAN}已进入 PLAN 模式。{Style.RESET_ALL}")
-            print(f"  描述你的任务，AI 将只做只读调研并给出实施计划；"
+            emit(self, f"{Fore.CYAN}已进入 PLAN 模式。{Style.RESET_ALL}")
+            emit(self, f"  描述你的任务，AI 将只做只读调研并给出实施计划；"
                   f"完成后用 {Fore.WHITE}/build{Style.RESET_ALL} 批准执行，或 "
                   f"{Fore.WHITE}/plan off{Style.RESET_ALL} 取消。{Style.RESET_ALL}")
 
@@ -1075,29 +1082,29 @@ multi 操作支持一次修改多处：
         """@<agent名> <任务> 委派给指定 agent 独立执行。"""
         mgr = getattr(self, 'agent_manager', None)
         if mgr is None:
-            print(f"{Fore.RED}Agents 管理器未初始化{Style.RESET_ALL}")
+            emit(self, f"{Fore.RED}Agents 管理器未初始化{Style.RESET_ALL}")
             return
         if not arg:
             names = mgr.names()
             if names:
-                print(f"{Fore.CYAN}可用 Agents: {', '.join(names)}{Style.RESET_ALL}")
+                emit(self, f"{Fore.CYAN}可用 Agents: {', '.join(names)}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.YELLOW}暂无 agent 定义（在 agents/ 目录放置 *.md）{Style.RESET_ALL}")
+                emit(self, f"{Fore.YELLOW}暂无 agent 定义（在 agents/ 目录放置 *.md）{Style.RESET_ALL}")
             return
         parts = arg.split(maxsplit=1)
         name = parts[0]
         task = parts[1] if len(parts) > 1 else ""
         agent = mgr.get(name)
         if not agent:
-            print(f"{Fore.RED}未找到 agent: {name}{Style.RESET_ALL}")
+            emit(self, f"{Fore.RED}未找到 agent: {name}{Style.RESET_ALL}")
             return
-        print(f"{Fore.CYAN}委派给 agent「{agent.name}」: {task}{Style.RESET_ALL}")
+        emit(self, f"{Fore.CYAN}委派给 agent「{agent.name}」: {task}{Style.RESET_ALL}")
         try:
             result = mgr.dispatch(name, task, self._agent_runner)
         except Exception as e:
-            print(f"{Fore.RED}agent 执行失败: {e}{Style.RESET_ALL}")
+            emit(self, f"{Fore.RED}agent 执行失败: {e}{Style.RESET_ALL}")
             return
-        print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+        emit(self, f"{Fore.GREEN}{result}{Style.RESET_ALL}")
 
     def _agent_runner(self, system_prompt, task, tools, model):
         """agent 执行器：用当前引擎跑一轮独立上下文（不污染主会话）。"""
@@ -1113,15 +1120,15 @@ multi 操作支持一次修改多处：
         """处理 /build 命令。从 PLAN 模式进入执行（用已批准计划驱动）。"""
         plan = getattr(self, 'current_plan', '') or ""
         if not getattr(self, 'plan_mode', False) and not plan.strip():
-            print(f"{Fore.YELLOW}当前不在 PLAN 模式，且无已生成的计划{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}当前不在 PLAN 模式，且无已生成的计划{Style.RESET_ALL}")
             return
 
         self.plan_mode = False
         if not plan.strip():
-            print(f"{Fore.YELLOW}尚未生成实施计划，先 /plan 描述任务让 AI 调研{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}尚未生成实施计划，先 /plan 描述任务让 AI 调研{Style.RESET_ALL}")
             return
 
-        print(f"{Fore.GREEN}已批准计划，开始执行...{Style.RESET_ALL}")
+        emit(self, f"{Fore.GREEN}已批准计划，开始执行...{Style.RESET_ALL}")
         instruction = ("【已批准的实施计划，请现在严格按照以下步骤执行，利用可用工具完成每一步；"
                        "遇到与计划不符的情况先说明再继续】\n\n" + plan)
         self.process_conversation(instruction)

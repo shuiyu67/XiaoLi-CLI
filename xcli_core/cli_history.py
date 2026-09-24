@@ -1,5 +1,6 @@
 from colorama import Fore, Style
 from .session import SessionManager
+from .cli_display import emit
 
 
 class HistoryMixin:
@@ -87,29 +88,29 @@ class HistoryMixin:
             self.init_session_manager()
         if args == 'new':
             self.current_session = None
-            print(f"{Fore.GREEN}已开始新会话（下一轮对话自动创建）{Style.RESET_ALL}")
+            emit(self, f"{Fore.GREEN}已开始新会话（下一轮对话自动创建）{Style.RESET_ALL}")
             return
         sessions = self.session_manager.list_sessions()
         if not sessions:
-            print(f"{Fore.YELLOW}没有可恢复的会话{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}没有可恢复的会话{Style.RESET_ALL}")
             return
         if not args:
-            print(f"{Fore.GREEN}已保存的会话 (按时间倒序):{Style.RESET_ALL}")
+            emit(self, f"{Fore.GREEN}已保存的会话 (按时间倒序):{Style.RESET_ALL}")
             for i, s in enumerate(sessions, 1):
                 line = f"{Fore.GREEN}{i}. {s.id}{Style.RESET_ALL}  {s.title}"
                 meta = f"   {s.updated_at}  {s.engine or '-'}/{s.model or '-'}  {s.msg_count} 条"
-                print(line + f"{Fore.CYAN}{meta}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}用法: /resume <序号或ID> 恢复 · /resume new 开新会话{Style.RESET_ALL}")
+                emit(self, line + f"{Fore.CYAN}{meta}{Style.RESET_ALL}")
+            emit(self, f"{Fore.CYAN}用法: /resume <序号或ID> 恢复 · /resume new 开新会话{Style.RESET_ALL}")
             return
         s = self.session_manager.load(args)
         if s is None:
-            print(f"{Fore.RED}未找到会话: {args}{Style.RESET_ALL}")
+            emit(self, f"{Fore.RED}未找到会话: {args}{Style.RESET_ALL}")
             return
         self.shared_conversation_history = list(s.messages)
         self.current_session = s
         self._set_shared_conversation_history()
-        print(f"{Fore.GREEN}已恢复会话: {s.id}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}标题: {s.title} · {s.msg_count} 条记录 · 引擎 {s.engine or '-'}/{s.model or '-'}{Style.RESET_ALL}")
+        emit(self, f"{Fore.GREEN}已恢复会话: {s.id}{Style.RESET_ALL}")
+        emit(self, f"{Fore.CYAN}标题: {s.title} · {s.msg_count} 条记录 · 引擎 {s.engine or '-'}/{s.model or '-'}{Style.RESET_ALL}")
         cur = getattr(self.current_engine, 'name', None) if self.current_engine else None
         if s.engine and cur and cur != s.engine:
-            print(f"{Fore.YELLOW}提示: 当前引擎为 {cur}，可用 /engine switch {s.engine} 切回该会话的引擎{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}提示: 当前引擎为 {cur}，可用 /engine switch {s.engine} 切回该会话的引擎{Style.RESET_ALL}")

@@ -11,6 +11,16 @@ from .constants import MAX_FILE_SIZE, VIDEO_FRAME_DELAY
 from .config import logger
 
 
+def emit(obj, message):
+    """统一输出助手：真 AICLI 走 _output（TUI 回调/CLI print 双模式）；
+    测试桩（SimpleNamespace 等无 _output）回退 print，行为等价。"""
+    fn = getattr(obj, "_output", None)
+    if callable(fn):
+        fn(message)
+    else:
+        print(message)
+
+
 class DisplayMixin:
     """显示、输出、图片、帮助相关方法"""
 

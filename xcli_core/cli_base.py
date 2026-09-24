@@ -2,6 +2,7 @@ import os
 import importlib.util
 import uuid
 from colorama import init, Fore, Style
+from .cli_display import emit
 
 from .constants import (
     DEFAULT_MAX_HISTORY, CLAWLI_SERVER_AVAILABLE,
@@ -423,26 +424,26 @@ class BaseAICLI:
             name = args.split()[0]
             preset = PROVIDER_PRESETS.get(name)
             if not preset:
-                print(f"{Fore.RED}未知 Provider: {name}（/providers 查看可用）{Style.RESET_ALL}")
+                emit(self, f"{Fore.RED}未知 Provider: {name}（/providers 查看可用）{Style.RESET_ALL}")
                 return
             r = resolve_provider(name, providers_cfg)
-            print(f"{Fore.GREEN}Provider: {preset['label']} ({name}){Style.RESET_ALL}")
-            print(f"  协议族: {r['protocol']}")
-            print(f"  base_url: {r['base_url']}")
-            print(f"  默认模型: {r['model']}")
-            print(f"  已配置 key: {'是' if r['api_key'] else '否'}")
-            print(f"{Fore.CYAN}在 config.json 的 providers.{name} 填入 {{api_key, base_url, model}} 即可启用；"
+            emit(self, f"{Fore.GREEN}Provider: {preset['label']} ({name}){Style.RESET_ALL}")
+            emit(self, f"  协议族: {r['protocol']}")
+            emit(self, f"  base_url: {r['base_url']}")
+            emit(self, f"  默认模型: {r['model']}")
+            emit(self, f"  已配置 key: {'是' if r['api_key'] else '否'}")
+            emit(self, f"{Fore.CYAN}在 config.json 的 providers.{name} 填入 {{api_key, base_url, model}} 即可启用；"
                   f"OpenAI 兼容族经现有 openai 引擎直接可用。{Style.RESET_ALL}")
             return
 
-        print(f"{Fore.GREEN}已注册 Provider（opencode 式多 Provider）:{Style.RESET_ALL}")
+        emit(self, f"{Fore.GREEN}已注册 Provider（opencode 式多 Provider）:{Style.RESET_ALL}")
         for name in list_providers():
             s = provider_summary(name, providers_cfg)
             if not s:
                 continue
             mark = f"{Fore.GREEN}✓ 已配置{Style.RESET_ALL}" if s["configured"] else f"{Fore.YELLOW}· 未配置{Style.RESET_ALL}"
-            print(f"  {s['name']:<10} {s['label']:<22} [{s['protocol']:<9}] {mark}")
-        print(f"{Fore.CYAN}/providers <名称> 查看连接参数 ｜ 在 config.json 的 providers 段填入 key 启用{Style.RESET_ALL}")
+            emit(self, f"  {s['name']:<10} {s['label']:<22} [{s['protocol']:<9}] {mark}")
+        emit(self, f"{Fore.CYAN}/providers <名称> 查看连接参数 ｜ 在 config.json 的 providers 段填入 key 启用{Style.RESET_ALL}")
 
     # ── 引擎切换 ──
 

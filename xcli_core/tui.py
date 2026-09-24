@@ -828,6 +828,7 @@ if TEXTUAL_AVAILABLE:
             self._input_history = []   # 历史输入（f3/上翻）
             self._hist_idx = None
             self._tool_folded = True   # 工具调用折叠开关（f4）
+            self._cancel_event = None  # Esc 取消事件（轮间生效）
 
         def compose(self) -> ComposeResult:
             # ── 顶栏 (opencode: 左品牌 | 中工作区 | 右模型/状态) ──
@@ -863,6 +864,8 @@ if TEXTUAL_AVAILABLE:
             yield Static(" 就绪 | Ctrl+C 退出", id="status-bar")
 
         def on_mount(self):
+            # 持久输出桥：cli 任意线程的输出统一进 TUI（替代 stdout，防花屏）
+            self.cli.tui_output_callback = self._tui_push
             self._update_header()
             self._switch_sidebar_tab("sessions")
             self._render_welcome_compact()
@@ -1258,6 +1261,9 @@ if TEXTUAL_AVAILABLE:
 
         def action_send_message(self):
             """回车发送消息"""
+            if self.is_generating:
+                self._system("生成中…（Esc 取消当前任务后再发）")
+                return
             text_area = self.query_one("#user-input")
             text = text_area.text.strip()
             if not text:
@@ -1590,8 +1596,26 @@ if TEXTUAL_AVAILABLE:
             if not self.bridge.plan_mode() and not self.bridge.current_plan().strip():
                 self._system("当前不在 PLAN 模式，且无已生成的计划")
                 return
-            self._set_plan_mode(False)
-            self._system("✅ 已批准 PLAN，开始执行。")
+            self._system("✅ 已批准 PLAN，开始执行…")
+            self.is_generating = True
+            self._show_thinking()
+            self._update_status("执行 PLAN…")
+            self.run_worker(self._run_build(), exclusive=True)
+
+        async def _run_build(self):
+            """真执行：委托 cli.handle_build_command（计划驱动 process_conversation 走工具链）"""
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.cli.handle_build_command)
+            except Exception as e:
+                self.call_after_refresh(self._error, str(e))
+            finally:
+                self.call_after_refresh(self._remove_thinking)
+                self.is_generating = False
+                self.call_after_refresh(self._sync_plan)
+                self.call_after_refresh(self._update_sidebar)
+                self.call_after_refresh(self._update_header)
+                self.call_after_refresh(lambda: self._update_status("就绪"))
 
         def _tui_sessions(self):
             sessions = self.bridge.sessions()
@@ -1619,13 +1643,34 @@ if TEXTUAL_AVAILABLE:
             self._forward_to_cli(f"/resume {args}")
 
         def _forward_to_cli(self, cmd: str):
-            """把未知/委派命令交给 cli 完整路由处理。"""
+            """把未知/委派命令交给 cli 完整路由（_handle_cli_command 真命令路由，
+            不再走 process_conversation 把命令喂给 AI）；worker 线程执行，不阻塞 UI。"""
+            self.is_generating = True
+            self._update_status(f"执行 {cmd.split()[0]} …")
+            self.run_worker(self._run_cli_command(cmd), exclusive=True)
+
+        async def _run_cli_command(self, cmd: str):
             try:
-                self.cli.process_conversation(cmd)
+                loop = asyncio.get_running_loop()
+
+                def _dispatch():
+                    fn = getattr(self.cli, '_handle_cli_command', None)
+                    if fn is not None:
+                        return bool(fn(cmd))
+                    self.cli.process_conversation(cmd)
+                    return True
+
+                handled = await loop.run_in_executor(None, _dispatch)
+                if not handled:
+                    # cli 也没认出 → 与 CLI 行为一致，当作普通对话
+                    await loop.run_in_executor(None, self.cli.process_conversation, cmd)
             except Exception as e:
-                self._error(f"命令执行失败: {e}")
-            self.call_after_refresh(self._update_sidebar)
-            self.call_after_refresh(self._sync_plan)
+                self.call_after_refresh(self._error, str(e))
+            finally:
+                self.is_generating = False
+                self.call_after_refresh(self._sync_plan)
+                self.call_after_refresh(self._update_sidebar)
+                self.call_after_refresh(lambda: self._update_status("就绪"))
 
         def _set_plan_mode(self, on: bool):
             self.plan_mode = on
@@ -1650,16 +1695,15 @@ if TEXTUAL_AVAILABLE:
         # ── AI 生成 ──
 
         async def _generate(self, user_input):
+            import threading
             try:
                 self.call_after_refresh(self._remove_thinking)
                 self.call_after_refresh(self._show_typing_indicator)
 
-                def tui_output(msg):
-                    self.call_after_refresh(self._remove_typing_indicator)
-                    self.call_after_refresh(self._write_raw, msg)
-
-                original = self.cli.tui_output_callback
-                self.cli.tui_output_callback = tui_output
+                # 输出走持久桥 _tui_push；挂取消事件供 Esc 真取消（轮间生效）
+                ev = threading.Event()
+                self._cancel_event = ev
+                self.cli._tui_cancel = ev
 
                 try:
                     loop = asyncio.get_running_loop()
@@ -1667,7 +1711,13 @@ if TEXTUAL_AVAILABLE:
                         None, self.cli.process_conversation, user_input
                     )
                 finally:
-                    self.cli.tui_output_callback = original
+                    # PLAN 模式下把最后一条 assistant 回复同步为当前计划（否则 /build 无计划可执行）
+                    try:
+                        self.cli._sync_current_plan()
+                    except Exception:
+                        pass
+                    self.cli._tui_cancel = None
+                    self._cancel_event = None
 
             except Exception as e:
                 self.call_after_refresh(self._remove_typing_indicator)
@@ -1680,6 +1730,26 @@ if TEXTUAL_AVAILABLE:
                 self.call_after_refresh(lambda: self._update_status("就绪"))
                 self.call_after_refresh(self._update_sidebar)
                 self.call_after_refresh(self._update_header)
+
+        _ansi_pat = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+
+        def _tui_push(self, msg):
+            """线程安全输出桥：cli 任意线程（含孤儿生成线程）的输出 → TUI 渲染。
+            持久挂载于 cli.tui_output_callback，任何 print/_output 都不会落到 stdout 花屏。"""
+            text = self._ansi_pat.sub('', str(msg))
+
+            def _apply():
+                self._remove_typing_indicator()
+                self._write_raw(text)
+
+            try:
+                self.call_from_thread(_apply)
+            except RuntimeError:
+                # 已在 UI 线程
+                try:
+                    self.call_after_refresh(_apply)
+                except Exception:
+                    pass
 
         def _write_raw(self, msg):
             if '✅' in msg or 'OK 工具' in msg:
@@ -1722,9 +1792,11 @@ if TEXTUAL_AVAILABLE:
 
         def action_cancel(self):
             if self.is_generating:
+                if self._cancel_event is not None:
+                    self._cancel_event.set()
                 self._remove_thinking()
                 self._remove_typing_indicator()
-                self._system("已取消")
+                self._system("已取消（当前轮结束后停止，输出不入流）")
                 self.is_generating = False
 
         # ── Vim 风格：聊天区滚动 / 聚焦切换 ──
