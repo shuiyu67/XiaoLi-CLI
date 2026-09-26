@@ -60,6 +60,13 @@ class ClawliMixin:
                 self._process_clawli_user_message(content)
 
             elif msg_type == "file":
+                # 新式：手机直传 base64 文件 → 只落盘到电脑（不喂 AI，按产品约定）
+                file_b64 = msg.get("file", "")
+                if file_b64:
+                    self._save_clawli_upload(file_b64, msg.get("filename", "file"),
+                                             msg.get("text", ""))
+                    return
+                # 旧式：path 已在 PC 磁盘上
                 file_path = msg.get("path", "")
                 text = msg.get("text", "")
                 category = msg.get("category", "file")
@@ -71,6 +78,38 @@ class ClawliMixin:
 
         except Exception as e:
             print(f"[Clawli] 处理消息错误: {e}")
+
+    def _save_clawli_upload(self, file_b64: str, filename: str, text: str = ""):
+        """手机上传的 base64 文件落盘到 clawli_files/（只存电脑，不进 AI）"""
+        import base64 as _b64
+        import os
+        import re as _re
+        import time as _time
+        try:
+            files_dir = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "clawli_files")
+            os.makedirs(files_dir, exist_ok=True)
+            # 文件名消毒：只留安全字符，防路径穿越
+            safe = _re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', os.path.basename(filename or "file"))
+            if not safe or safe.startswith('.'):
+                safe = "file_" + safe
+            stem, dot, ext = safe.rpartition('.')
+            unique = f"{stem or 'file'}_{int(_time.time()*1000) % 100000000}{dot}{ext}" if stem else \
+                     f"{safe}_{int(_time.time()*1000) % 100000000}"
+            dest = os.path.join(files_dir, unique)
+            data = _b64.b64decode(file_b64)
+            with open(dest, "wb") as f:
+                f.write(data)
+            print(f"{Fore.GREEN}[Clawli] 手机文件已保存到电脑: {dest} "
+                  f"({len(data)} 字节){Style.RESET_ALL}")
+            if CLAWLI_SERVER_AVAILABLE and clawli_server:
+                clawli_server.send_message(
+                    f"文件已保存到电脑: clawli_files/{unique}（{len(data)} 字节）",
+                    msg_type="text")
+        except Exception as e:
+            print(f"{Fore.RED}[Clawli] 文件保存失败: {e}{Style.RESET_ALL}")
+            if CLAWLI_SERVER_AVAILABLE and clawli_server:
+                clawli_server.send_message(f"文件保存失败: {e}", msg_type="text")
 
     def _process_clawli_user_message(self, content: str):
         """处理 Clawli 用户消息"""
