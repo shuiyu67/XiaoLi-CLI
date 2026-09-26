@@ -1,17 +1,21 @@
-"""
-OpenAI 兼容格式引擎
-支持所有兼容 OpenAI API 格式的服务（如 DeepSeek、Grok、硅基流动、本地 vLLM 等）
+"""OpenAI 格式模型连接器 —— 全系统唯一的模型调用路径。
+
+引擎架构已删除（openai/ollama/manual 多引擎、MODEL_FIELDS、引擎发现都没了）。
+一切模型都以 OpenAI 兼容格式配置（api_key / base_url / model + 限额 5+3），
+ollama 等本地服务走其自带的 /v1 兼容口（如 http://localhost:11434/v1）。
+
+本模块承接原 ai_engines/openai_engine.py 的全部调用逻辑（FC 探测缓存、
+思考内容解析、历史构建、友好报错），对外保持旧引擎接口
+（generate_response / current_model_name / set_registry_model ...），
+使 cli_base / cli_core / tui / websocket / webui 的既有调用面零改动。
 """
 
-import os
-import sys
 import json
+import logging
+import os
+
 import requests
 from colorama import Fore, Style
-import logging
-
-# 设置日志
-logger = logging.getLogger(__name__)
 
 try:
     from xcli_core.config import get_system_config
@@ -33,12 +37,17 @@ except Exception:
 try:
     from xcli_core.tool_result import normalize_tool_text
 except Exception:
-    from engine_fallbacks import normalize_tool_text
+    def normalize_tool_text(result, default="无结果"):
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
 
-# ── 常见模型的上下文窗口（token 数）──
-# OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
+logger = logging.getLogger(__name__)
+
+# ── 常见模型的上下文窗口（token 数）——仅当条目没填 max_input 时兜底查表 ──
 MODEL_CONTEXT_WINDOWS = {
-    # 讯飞星火（Spark，经 one-api/new-api 转发时模型名常为 spark-* / general*）
     "spark-4.0": 128000, "spark-max": 8192, "spark-pro": 8192, "spark-lite": 8192,
     "spark": 8192, "generalv3.5": 8192, "generalv3": 8192, "general": 4096,
     "gpt-4o": 128000, "gpt-4o-mini": 128000, "gpt-4": 8192, "gpt-4-turbo": 128000,
@@ -57,90 +66,48 @@ MODEL_CONTEXT_WINDOWS = {
     "baichuan": 192000, "chatglm": 32768,
 }
 
-# 添加项目根目录到sys.path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-sys.path.insert(0, project_root)
 
+class ModelConnection:
+    """一个已配置模型 = 一条 OpenAI 格式连接。"""
 
-class OpenaiAI:
-    """OpenAI 兼容格式 AI 引擎 - 支持所有兼容 OpenAI API 的服务"""
-    requires_api_key = True
-
-    def get_help_info(self):
-        """获取引擎帮助信息"""
-        help_text = """
-OpenAI 兼容格式引擎帮助信息
-============================
-
-引擎名称: openai
-描述: 通用 OpenAI API 兼容引擎，支持所有兼容 OpenAI 格式的服务
-
-支持的服务:
-  - OpenAI 官方 API
-  - DeepSeek API
-  - Grok (xAI) API
-  - 硅基流动 (SiliconFlow) API
-  - 本地 vLLM / LiteLLM / OneAPI 等转发服务
-  - 任何兼容 /chat/completions 接口的服务
-
-配置方式 (config.json):
-  {
-    "api": {
-      "engines": {
-        "openai": {
-          "api_key": "你的API密钥",
-          "base_url": "https://api.openai.com/v1",
-          "model": "gpt-4o"
-        }
-      }
-    }
-  }
-
-可用命令:
-  /engine.openai models       - 列出可用模型（需要服务端支持）
-  /engine.openai set <模型名> - 切换模型
-  /engine.openai info         - 显示当前配置信息
-
-使用说明:
-1. 在 config.json 中配置 api_key、base_url、model
-2. 使用 /engine switch openai 切换到此引擎
-3. 直接输入自然语言与 AI 对话
-
-注意:
-  - base_url 填写 API 的基础地址，无需包含 /chat/completions
-  - 例如 OpenAI 官方填 https://api.openai.com/v1
-  - 本地服务填 http://localhost:8000/v1
-"""
-        return help_text
-
-    def __init__(self):
-        self.name = "openai"
+    def __init__(self, name="default", entry=None):
+        # entry 为空时应用注册表的当前模型（启动即用，对应旧引擎"init 吃注册表"语义）
+        if entry is None and model_registry:
+            try:
+                cur = model_registry.get_model()
+                if cur:
+                    entry = cur
+                    name = name or cur.get("name")
+            except Exception:
+                pass
+        entry = entry or {}
+        self.name = name or entry.get("name", "default")
         self.cli = None
 
-        # 从 config.json 读取配置
-        config_file = os.path.join(project_root, "config.json")
-        try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                engine_config = config.get("api", {}).get("engines", {}).get("openai", {})
-                self.api_key = engine_config.get("api_key", "")
-                self.base_url = engine_config.get("base_url", "").rstrip('/')
-                self.model = engine_config.get("model", "")
-                self.max_history = config.get("system", {}).get("max_history", 10)
-        except Exception as e:
-            logger.warning(f"读取配置文件失败: {e}")
-            self.api_key = ""
-            self.base_url = ""
-            self.model = ""
-            self.max_history = 10
+        self.api_key = entry.get("api_key", "")
+        self.base_url = (entry.get("base_url") or "").rstrip("/")
+        self.model = entry.get("model", "")
 
-        # 初始化对话历史
+        # ── 5+3 必填限额/能力（用户添加模型时录入）──
+        try:
+            self.max_input = int(entry.get("max_input") or 0)
+        except (TypeError, ValueError):
+            self.max_input = 0
+        try:
+            self.max_output = int(entry.get("max_output") or 0)
+        except (TypeError, ValueError):
+            self.max_output = 0
+        self.image_input = bool(entry.get("image_input", False))
+        self.video_input = bool(entry.get("video_input", False))
+        self.audio_input = bool(entry.get("audio_input", False))
+
+        # 对话历史
         self.conversation_history = []
         self.shared_conversation_history = None
-
-        # 应用注册表中的当前模型（覆盖扁平默认配置，向后兼容）
-        self._apply_registry_model()
+        try:
+            self.max_history = get_system_config("max_history", 10) or 10
+        except Exception:
+            self.max_history = 10
 
         # 最近一次请求的 token 用量（供 token 感知压缩使用）
         self.last_prompt_tokens = None
@@ -149,37 +116,13 @@ OpenAI 兼容格式引擎帮助信息
         self.thinking_start_marker = "<think>"
         self.thinking_end_marker = "</think>"
 
-        # 检查配置
-        if not self.api_key:
-            print(f"{Fore.YELLOW}警告: openai 引擎的 API 密钥未设置{Style.RESET_ALL}")
-        if not self.base_url:
-            print(f"{Fore.YELLOW}警告: openai 引擎的 base_url 未设置{Style.RESET_ALL}")
-        else:
-            vprint(f"{Fore.GREEN}OpenAI 兼容引擎已启用 (base_url: {self.base_url}){Style.RESET_ALL}")
+        if not self.api_key and not self.base_url:
+            vprint(f"{Fore.YELLOW}模型 [{self.name}] 未配置 api_key/base_url{Style.RESET_ALL}")
 
     # ── 模型注册表（多模型在线切换）──
 
-    def _apply_registry_model(self):
-        """若注册表存在 current 模型，用它覆盖 __init__ 读到的扁平默认配置。"""
-        if not model_registry:
-            return
-        try:
-            m = model_registry.get_model()
-            if m:
-                self.api_key = m.get("api_key", self.api_key)
-                self.base_url = (m.get("base_url") or self.base_url).rstrip('/')
-                self.model = m.get("model", self.model)
-        except Exception:
-            pass
-
-    def list_registry_models(self):
-        """返回 (models, current_name)，供 CLI 列出已配置模型。"""
-        if not model_registry:
-            return [], None
-        return model_registry.list_models()
-
     def current_model_name(self):
-        """当前激活模型在注册表中的名称（兼容单槽位时返回 model 值）。"""
+        """当前激活模型在注册表中的名称"""
         if not model_registry:
             return self.model
         try:
@@ -188,48 +131,55 @@ OpenAI 兼容格式引擎帮助信息
         except Exception:
             return self.model
 
+    def list_registry_models(self):
+        if not model_registry:
+            return [], None
+        return model_registry.list_models()
+
     def set_registry_model(self, name):
-        """切换到注册表中指定模型（含 base_url/api_key/model）并持久化 current。
-        成功返回 True。"""
+        """切换到注册表中指定模型（含 base_url/api_key/model/限额）并持久化 current。"""
         if not model_registry:
             return False
         m = model_registry.get_model(name)
         if not m:
             return False
+        self.name = m.get("name", name)
         self.api_key = m.get("api_key", "")
-        self.base_url = (m.get("base_url") or "").rstrip('/')
+        self.base_url = (m.get("base_url") or "").rstrip("/")
         self.model = m.get("model", "")
+        self.max_input = int(m.get("max_input") or 0)
+        self.max_output = int(m.get("max_output") or 0)
+        self.image_input = bool(m.get("image_input", False))
+        self.video_input = bool(m.get("video_input", False))
+        self.audio_input = bool(m.get("audio_input", False))
         model_registry.set_current(name)
         return True
 
     def add_model(self, entry):
-        """新增/更新模型并持久化。entry: {name, base_url, api_key, model}。"""
+        """新增/更新模型并持久化。entry: {name, base_url, api_key, model, max_input, ...}"""
         if not model_registry:
             return None
         return model_registry.add_model(entry)
 
     def remove_model(self, name):
-        """删除模型并持久化。成功返回 True。"""
         if not model_registry:
             return False
         return model_registry.remove_model(name)
 
+    # ── 请求基础件 ──
+
     def _get_headers(self):
-        """构建请求头"""
-        headers = {
-            'Content-Type': 'application/json'
-        }
+        headers = {"Content-Type": "application/json"}
         if self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
+            headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
     def _get_api_url(self):
-        """获取完整的 API 地址"""
         url = self.base_url
         if not url:
             return ""
-        if not url.endswith('/chat/completions'):
-            url = url.rstrip('/') + '/chat/completions'
+        if not url.endswith("/chat/completions"):
+            url = url.rstrip("/") + "/chat/completions"
         return url
 
     # ── FC 能力探测缓存 ──
@@ -248,40 +198,33 @@ OpenAI 兼容格式引擎帮助信息
             from xcli_core.fc_tools import mark_fc_unsupported
             if mark_fc_unsupported(self.base_url, self.model):
                 print(f"{Fore.CYAN}已记住 {self.model} 不支持 FC，后续请求将跳过工具字段"
-                      f"（/fc reset 可清除）{Style.RESET_ALL}")
+                      f"{Style.RESET_ALL}")
         except Exception:
             pass
 
-    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
-        """
-        生成 AI 响应
+    # ── 主调用 ──
 
-        Args:
-            user_input: 用户输入
-            tool_results: 工具执行结果
-            system_prompt: 系统提示词
-            tools: OpenAI FC 工具定义列表 (可选)
-        """
+    def generate_response(self, user_input, tool_results=None, system_prompt=None, tools=None):
+        """生成 AI 响应（OpenAI chat.completions 格式，含 FC 与降级重试）"""
         try:
             if not self.base_url:
-                return "错误: openai 引擎的 base_url 未配置，请在 config.json 中设置"
+                return "错误: 模型的 base_url 未配置，请用 /model add 添加模型"
 
-            # 处理工具结果
             if tool_results:
                 tool_result_text = f"工具执行结果: {normalize_tool_text(tool_results)}"
                 messages = self._build_messages_with_history(system_prompt, tool_result_text)
             else:
                 messages = self._build_messages_with_history(system_prompt, user_input)
 
-            # 构建请求体
             body = {
                 "model": self.model,
                 "messages": messages,
-                "stream": False
+                "stream": False,
             }
+            if self.max_output:
+                body["max_tokens"] = self.max_output
 
-            # ── Function Calling: 注入工具定义（统一纯官方格式）──
-            # 已探测过不支持 FC 的模型直接跳过 tools，省掉每次白撞一次 500
+            # Function Calling：注入工具定义（已探测不支持的模型直接跳过）
             if tools and self._fc_supported():
                 pure_tools = []
                 for t in tools:
@@ -295,18 +238,16 @@ OpenAI 兼容格式引擎帮助信息
                     body["tools"] = pure_tools
                     body["tool_choice"] = "auto"
 
-            # 发送请求
             api_url = self._get_api_url()
             response = requests.post(
                 url=api_url,
                 json=body,
                 headers=self._get_headers(),
-                timeout=None
+                timeout=None,
             )
 
             if response.status_code == 200:
                 response_data = response.json()
-                # ── 记录 token 用量（供 token 感知压缩）──
                 usage = response_data.get("usage", {})
                 if isinstance(usage, dict) and usage.get("prompt_tokens"):
                     try:
@@ -316,26 +257,20 @@ OpenAI 兼容格式引擎帮助信息
                 if "choices" in response_data and len(response_data["choices"]) > 0:
                     message = response_data["choices"][0].get("message", {})
 
-                    # ── Function Calling: 检查 tool_calls ──
                     tool_calls_raw = message.get("tool_calls")
                     if tool_calls_raw:
-                        # 返回 FC 结果（由调用方处理工具执行）
                         from xcli_core.fc_tools import parse_fc_response
                         fc_calls = parse_fc_response(response_data)
                         if fc_calls:
-                            # 返回一个特殊的 JSON 字符串，标记为 FC 调用
                             return json.dumps({
                                 "_fc": True,
                                 "tool_calls": fc_calls,
-                                "raw_message": message
+                                "raw_message": message,
                             }, ensure_ascii=False)
 
-                    # 普通文本响应
                     ai_response = message.get("content", "")
                     if ai_response:
-                        # 清理无效的 UTF-8 代理字符
-                        ai_response = ai_response.encode('utf-8', 'replace').decode('utf-8')
-                        # 处理思考内容
+                        ai_response = ai_response.encode("utf-8", "replace").decode("utf-8")
                         ai_response = self._process_thinking_content(ai_response)
                     return ai_response or ""
                 else:
@@ -356,11 +291,10 @@ OpenAI 兼容格式引擎帮助信息
                         rd = retry.json()
                         if "choices" in rd and rd["choices"]:
                             ai_response = rd["choices"][0].get("message", {}).get("content", "")
-                            return ai_response.encode('utf-8', 'replace').decode('utf-8') if ai_response else ""
+                            return ai_response.encode("utf-8", "replace").decode("utf-8") if ai_response else ""
                 return self._friendly_error(response.status_code, response)
             else:
-                # 500 等错误：部分服务（如讯飞星火经 one-api 转发）不支持 FC 工具，
-                # 会直接报 500 Invalid Params —— 尝试去掉 tools 降级重试一次
+                # 500 等错误：部分服务不支持 FC 工具会直接报 Invalid Params —— 去 tools 重试一次
                 lower = str(response.text).lower()
                 if body.get("tools") and ("xunfei" in lower or "invalid params" in lower or "requestparamserror" in lower):
                     print(f"{Fore.YELLOW}该接口可能不支持 FC 工具，降级为普通模式重试...{Style.RESET_ALL}")
@@ -379,7 +313,7 @@ OpenAI 兼容格式引擎帮助信息
                         if "choices" in rd and rd["choices"]:
                             ai_response = rd["choices"][0].get("message", {}).get("content", "")
                             ai_response = self._process_thinking_content(ai_response)
-                            return ai_response.encode('utf-8', 'replace').decode('utf-8') if ai_response else ""
+                            return ai_response.encode("utf-8", "replace").decode("utf-8") if ai_response else ""
                 return self._friendly_error(response.status_code, response)
 
         except requests.exceptions.ConnectionError:
@@ -387,19 +321,37 @@ OpenAI 兼容格式引擎帮助信息
         except Exception as e:
             return f"API 调用失败: {str(e)}"
 
+    def chat_completions(self, messages, tools=None, stream=False):
+        """OpenAI 兼容代理用的直通口：messages 原样转发，流式原样透传 SSE 事件。"""
+        base = self.base_url
+        if not base:
+            return {"error": "base_url 未配置"}
+        body = {"model": self.model, "messages": messages, "stream": bool(stream)}
+        if self.max_output:
+            body["max_tokens"] = self.max_output
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+        r = requests.post(base + "/chat/completions", json=body, headers=self._get_headers(),
+                          stream=bool(stream), timeout=None)
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code}: {r.text[:200]}"}
+        if stream:
+            def events():
+                for line in r.iter_lines(decode_unicode=True):
+                    if line and line.startswith("data:"):
+                        yield line
+            return events()
+        return r.json()
+
     def _build_messages_with_history(self, system_prompt, user_input):
         """构建包含历史记录的消息列表（支持 FC tool 消息）"""
         messages = []
 
-        # 添加系统提示词
         if system_prompt:
-            clean_prompt = system_prompt.encode('utf-8', 'replace').decode('utf-8')
-            messages.append({
-                "role": "system",
-                "content": clean_prompt
-            })
+            clean_prompt = system_prompt.encode("utf-8", "replace").decode("utf-8")
+            messages.append({"role": "system", "content": clean_prompt})
 
-        # 添加历史对话记录（使用共享历史）
         if self.shared_conversation_history is not None:
             for msg in self.shared_conversation_history[-self.max_history:]:
                 if not isinstance(msg, dict) or "role" not in msg:
@@ -407,7 +359,6 @@ OpenAI 兼容格式引擎帮助信息
 
                 role = msg["role"]
 
-                # tool 角色消息（FC 工具结果）—— 官方 OpenAI 格式不含 name 字段
                 if role == "tool":
                     tool_msg = {"role": "tool", "content": msg.get("content", "")}
                     if "tool_call_id" in msg:
@@ -415,74 +366,28 @@ OpenAI 兼容格式引擎帮助信息
                     messages.append(tool_msg)
                     continue
 
-                # assistant 消息可能包含 tool_calls —— 重建成纯官方结构
                 if role == "assistant" and "tool_calls" in msg:
-                    assistant_msg = {
+                    messages.append({
                         "role": "assistant",
                         "content": msg.get("content") or "",
-                        "tool_calls": self._pure_tool_calls(msg["tool_calls"])
-                    }
-                    messages.append(assistant_msg)
+                        "tool_calls": self._pure_tool_calls(msg["tool_calls"]),
+                    })
                     continue
 
-                # 普通 user/assistant 消息
                 if "content" in msg:
                     clean_content = msg["content"]
                     if isinstance(clean_content, str):
-                        clean_content = clean_content.encode('utf-8', 'replace').decode('utf-8')
+                        clean_content = clean_content.encode("utf-8", "replace").decode("utf-8")
                     messages.append({"role": role, "content": clean_content})
 
-        # 添加当前用户输入
         if user_input:
-            clean_input = user_input.encode('utf-8', 'replace').decode('utf-8')
-            messages.append({
-                "role": "user",
-                "content": clean_input
-            })
+            clean_input = user_input.encode("utf-8", "replace").decode("utf-8")
+            messages.append({"role": "user", "content": clean_input})
 
         return messages
 
-    def _call_api_with_history(self, content, system_prompt=None):
-        """使用对话历史调用 API"""
-        if not self.base_url:
-            return "错误: openai 引擎的 base_url 未配置"
-
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        if self.shared_conversation_history is not None:
-            for msg in self.shared_conversation_history[-self.max_history:]:
-                if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    messages.append(msg)
-        messages.append({"role": "user", "content": content})
-
-        body = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
-
-        try:
-            response = requests.post(
-                url=self._get_api_url(),
-                json=body,
-                headers=self._get_headers(),
-                timeout=None
-            )
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if "choices" in response_data and len(response_data["choices"]) > 0:
-                    ai_response = response_data["choices"][0]["message"]["content"]
-                    ai_response = ai_response.encode('utf-8', 'replace').decode('utf-8')
-                    return self._process_thinking_content(ai_response)
-            return f"API 调用失败: {response.status_code} - {response.text}"
-        except Exception as e:
-            return f"API 调用失败: {str(e)}"
-
     def _process_thinking_content(self, response):
         """处理思考内容，将思考部分以灰色文本显示"""
-
         if not self.thinking_start_marker or not self.thinking_end_marker:
             return response
 
@@ -516,17 +421,14 @@ OpenAI 兼容格式引擎帮助信息
         low = str(msg).lower()
         if "invalid params" in low or "requestparamserror" in low or "xunfei" in low:
             hint = ("\n提示: 讯飞星火接口报'参数错误'，常见原因:"
-                    "\n  1) model 名与 one-api/new-api 渠道里的模型映射不一致（如 spark-4.0-ultra / spark-max / generalv3.5）"
-                    "\n  2) 该模型/渠道不支持 function calling（引擎已尝试去掉 tools 重试）"
+                    "\n  1) model 名与 one-api/new-api 渠道里的模型映射不一致"
+                    "\n  2) 该模型/渠道不支持 function calling（已尝试去掉 tools 重试）"
                     "\n  3) base_url 需为 OpenAI 兼容转发地址（如 one-api 的 https://域名/v1）")
         return f"API 调用失败: {status_code} - {msg}{hint}"
 
     @staticmethod
     def _pure_tool_calls(tool_calls):
-        """把历史里的 tool_calls 重建成官方 OpenAI 格式:
-        [{"id": ..., "type": "function", "function": {"name": ..., "arguments": "json串"}}]
-        剔除内部字段（action/tool/args 等），arguments 统一为字符串。
-        """
+        """把历史里的 tool_calls 重建成官方 OpenAI 格式，arguments 统一为字符串。"""
         pure = []
         for tc in (tool_calls or []):
             if not isinstance(tc, dict):
@@ -548,27 +450,19 @@ OpenAI 兼容格式引擎帮助信息
             pure.append({
                 "id": tc.get("id", f"call_{name}"),
                 "type": "function",
-                "function": {"name": name, "arguments": args_str}
+                "function": {"name": name, "arguments": args_str},
             })
         return pure
 
     def set_model(self, model_name):
-        """设置模型"""
+        """设置上游模型名（不是注册表条目名）"""
         self.model = model_name
         print(f"{Fore.GREEN}已切换模型为: {model_name}{Style.RESET_ALL}")
 
     def context_window(self):
-        """
-        返回当前模型的上下文窗口（token 数）。
-        优先级: config.system.context_window > 模型名查表 > 默认 128000。
-        注: OpenAI /chat/completions 协议本身不返回模型窗口，需本地维护。
-        """
-        cfg = get_system_config("context_window", None)
-        if cfg:
-            try:
-                return int(cfg)
-            except (TypeError, ValueError):
-                pass
+        """最大输入（token）—— 用户添加模型时必填；旧条目兜底查表/128000。"""
+        if self.max_input:
+            return self.max_input
         model = (self.model or "").lower()
         for key, win in MODEL_CONTEXT_WINDOWS.items():
             if key and key in model:
@@ -577,40 +471,33 @@ OpenAI 兼容格式引擎帮助信息
 
     @property
     def max_input_tokens(self):
-        """当前引擎支持的最大输入 token 数（统一 API，供上下文压缩使用）。"""
+        """统一 API，供上下文压缩使用"""
         return self.context_window()
 
     def list_models(self):
-        """列出可用模型（调用 API 的 /models 端点）"""
+        """列出上游服务可用模型（调用 /models 端点）"""
         if not self.base_url:
             return ["错误: base_url 未配置"]
 
         try:
-            models_url = self.base_url.rstrip('/')
-            if models_url.endswith('/chat/completions'):
-                models_url = models_url[:-len('/chat/completions')]
-            models_url = models_url.rstrip('/') + '/models'
+            models_url = self.base_url.rstrip("/")
+            if models_url.endswith("/chat/completions"):
+                models_url = models_url[:-len("/chat/completions")]
+            models_url = models_url.rstrip("/") + "/models"
 
-            response = requests.get(
-                url=models_url,
-                headers=self._get_headers(),
-                timeout=10
-            )
+            response = requests.get(url=models_url, headers=self._get_headers(), timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
                 if "data" in data:
-                    models = [m.get("id", "unknown") for m in data["data"]]
-                    return models
-                else:
-                    return ["API 返回格式不标准，无法解析模型列表"]
-            else:
-                return [f"获取模型列表失败: {response.status_code}"]
+                    return [m.get("id", "unknown") for m in data["data"]]
+                return ["API 返回格式不标准，无法解析模型列表"]
+            return [f"获取模型列表失败: {response.status_code}"]
         except Exception as e:
             return [f"获取模型列表失败: {str(e)}"]
 
     def handle_command(self, command):
-        """处理引擎特定命令"""
+        """处理连接特定命令（/engine.<名> ... 兼容口）"""
         if command == "models":
             models = self.list_models()
             print(f"{Fore.GREEN}可用模型列表:{Style.RESET_ALL}")
@@ -624,60 +511,21 @@ OpenAI 兼容格式引擎帮助信息
             if model_name:
                 self.set_model(model_name)
                 return True
-            else:
-                print(f"{Fore.RED}请提供模型名称. 用法: /engine.openai set <模型名>{Style.RESET_ALL}")
-                return False
+            print(f"{Fore.RED}请提供模型名称. 用法: /engine.{self.name} set <模型名>{Style.RESET_ALL}")
+            return False
 
         elif command == "info":
-            print(f"{Fore.GREEN}OpenAI 兼容引擎配置:{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}模型连接配置:{Style.RESET_ALL}")
+            print(f"  名称:     {self.name}")
             print(f"  base_url: {self.base_url}")
             print(f"  model:    {self.model}")
             print(f"  api_key:  {'已设置' if self.api_key else '未设置'}")
+            print(f"  限额:     输入 {self.context_window()} / 输出 {self.max_output or '默认'}")
+            caps = [n for n, on in (("图片", self.image_input), ("视频", self.video_input),
+                                    ("音频", self.audio_input)) if on]
+            print(f"  能力:     {'/'.join(caps) if caps else '纯文本'}")
             return True
 
         else:
             print(f"{Fore.RED}未知命令. 可用命令: models, set, info{Style.RESET_ALL}")
             return False
-
-
-# ══════════════════════════════════════════════════════════════════
-#  新式协议适配契约（模型配置系统 / OpenAI 兼容代理使用）
-#  自研调用格式照此实现：MODEL_FIELDS + chat_completions 即被系统识别
-# ══════════════════════════════════════════════════════════════════
-
-ENGINE_LABEL = "OpenAI 兼容（DeepSeek / Kimi / GPT / SiliconFlow / vLLM 等）"
-
-MODEL_FIELDS = [
-    {"key": "api_key", "label": "API 密钥", "secret": True, "required": True,
-     "hint": "DeepSeek / Kimi / OpenAI 等服务发的密钥（形如 sk-...）"},
-    {"key": "base_url", "label": "Base URL", "default": "https://api.deepseek.com/v1",
-     "hint": "API 地址，不带 /chat/completions"},
-    {"key": "model", "label": "模型名", "required": True,
-     "hint": "服务上的模型标识，如 deepseek-chat / kimi-k2 / gpt-4o"},
-]
-
-
-def chat_completions(fields, messages, tools=None, stream=False):
-    """OpenAI 兼容格式直通：messages 原样转发，流式原样透传 SSE 事件。"""
-    import requests
-    base = (fields.get("base_url") or "").rstrip("/")
-    if not base:
-        return {"error": "base_url 未配置"}
-    body = {"model": fields.get("model", ""), "messages": messages, "stream": bool(stream)}
-    if tools:
-        body["tools"] = tools
-        body["tool_choice"] = "auto"
-    headers = {"Content-Type": "application/json"}
-    if fields.get("api_key"):
-        headers["Authorization"] = f"Bearer {fields['api_key']}"
-    r = requests.post(base + "/chat/completions", json=body, headers=headers,
-                      stream=bool(stream), timeout=None)
-    if r.status_code != 200:
-        return {"error": f"HTTP {r.status_code}: {r.text[:200]}"}
-    if stream:
-        def events():
-            for line in r.iter_lines(decode_unicode=True):
-                if line and line.startswith("data:"):
-                    yield line
-        return events()
-    return r.json()

@@ -64,7 +64,7 @@ class BaseAICLI:
         # 注册默认的引擎命令
         self._register_engine_commands()
         # 动态加载AI引擎插件
-        self.load_ai_engines()
+        self.load_models()
         # 从配置文件获取默认引擎设置
         default_engine_name = self._get_default_engine_name()
         # 设置默认引擎，优先使用配置文件指定的引擎
@@ -76,7 +76,7 @@ class BaseAICLI:
             self.current_engine = self.engines[first_engine_name]
             vprint(f"{Fore.GREEN}使用默认AI引擎: {first_engine_name}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.RED}警告: 没有可用的AI引擎，请检查ai_engines目录{Style.RESET_ALL}")
+            print(f"{Fore.RED}警告: 没有已配置的模型，请用 /model add 添加（OpenAI 兼容格式）{Style.RESET_ALL}")
             self.current_engine = None
         if self.current_engine:
             self.current_engine.cli = self  # 设置引用以便访问插件
@@ -163,75 +163,47 @@ class BaseAICLI:
     # ── 引擎管理 ──
 
     def _get_default_engine_name(self):
-        """从配置文件获取默认引擎名称"""
+        """默认模型名：模型注册表的 current 指针"""
         try:
-            default_engine = get_system_config('default_engine')
-            if default_engine:
-                return default_engine
-            return 'ollama'
+            from xcli_core import model_registry
+            models, current = model_registry.list_models()
+            if current:
+                return current
+            return models[0]["name"] if models else "default"
         except Exception as e:
-            print(f"{Fore.YELLOW}读取引擎配置失败，使用默认引擎: {e}{Style.RESET_ALL}")
-            return 'ollama'
+            print(f"{Fore.YELLOW}读取模型注册表失败: {e}{Style.RESET_ALL}")
+            return "default"
 
-    def load_ai_engines(self):
-        """动态加载AI引擎插件"""
-        vprint(f"{Fore.GREEN}正在加载AI引擎插件...{Style.RESET_ALL}")
-        ai_engines_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_engines")
-        if os.path.exists(ai_engines_dir):
-            for filename in os.listdir(ai_engines_dir):
-                if filename.endswith('.py') and filename != '__init__.py':
-                    engine_path = os.path.join(ai_engines_dir, filename)
-                    engine_name = filename[:-3]
-                    try:
-                        spec = importlib.util.spec_from_file_location(engine_name, engine_path)
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                        class_name = self._find_engine_class(module, engine_name)
-                        if class_name and hasattr(module, class_name):
-                            engine_instance = getattr(module, class_name)()
-                            engine_instance.cli = self
-                            engine_key = getattr(engine_instance, 'name', engine_name)
-                            if engine_key not in self.engines:
-                                self.engines[engine_key] = engine_instance
-                                vprint(f"{Fore.GREEN}已加载AI引擎: {engine_key} ({class_name}){Style.RESET_ALL}")
-                            else:
-                                print(f"{Fore.YELLOW}AI引擎 {engine_key} 已存在，跳过加载{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.YELLOW}AI引擎插件 {filename} 中未找到合适的引擎类{Style.RESET_ALL}")
-                    except (ImportError, AttributeError, TypeError) as e:
-                        logger.error(f"加载AI引擎插件失败 {filename}: {e}")
-                        print(f"{Fore.RED}加载AI引擎插件失败 {filename}: {e}{Style.RESET_ALL}")
-                    except FileNotFoundError as e:
-                        logger.error(f"AI引擎liugin文件未找到 {filename}: {e}")
-                        print(f"{Fore.RED}AI引擎liugin文件未找到 {filename}: {e}{Style.RESET_ALL}")
-                    except Exception as e:
-                        logger.error(f"加载AI引擎插件时发生未知错误 {filename}: {e}")
-                        print(f"{Fore.RED}加载AI引擎插件失败 {filename}: {e}{Style.RESET_ALL}")
-            vprint(f"{Fore.GREEN}总共加载了 {len(self.engines)} 个AI引擎{Style.RESET_ALL}")
+    def load_models(self):
+        """从模型注册表装配模型连接。
 
-    def _find_engine_class(self, module, engine_name):
-        """查找AI引擎类，使用动态方式避免硬编码类名"""
-        possible_names = [
-            engine_name.capitalize() + "AI",
-            engine_name.replace('_', '').replace('-', '').capitalize() + "AI",
-            engine_name.replace('_', '').capitalize() + "AI",
-            engine_name.replace('_engine', '').capitalize() + "AI",
-            engine_name.replace('-', '').replace('_', '').capitalize() + "AI",
-            engine_name.replace('-', '').capitalize() + "AI",
-            ''.join(word.capitalize() for word in engine_name.replace('-', ' ').replace('_', ' ').split()) + "AI",
-            ''.join(word.capitalize() for word in engine_name.replace('_engine', '').replace('-', ' ').replace('_', ' ').split()) + "AI",
-        ]
-        for name in possible_names:
-            if hasattr(module, name):
-                return name
-        for attr_name in dir(module):
-            attr = getattr(module, attr_name)
-            if (hasattr(attr, '__class__') and
-                isinstance(attr, type) and
-                attr_name.endswith('AI') and
-                hasattr(attr, 'generate_response')):
-                return attr_name
-        return None
+        引擎架构已删除（多引擎加载/类名嗅探/MODEL_FIELDS 都没了）：
+        一切模型皆 OpenAI 格式，每个已配置模型 = 一条 ModelConnection。
+        """
+        vprint(f"{Fore.GREEN}正在加载已配置模型...{Style.RESET_ALL}")
+        self.engines = {}
+        try:
+            from xcli_core.model_conn import ModelConnection
+            from xcli_core import model_registry
+            models, _current = model_registry.list_models()
+        except Exception as e:
+            logger.error(f"加载模型注册表失败: {e}")
+            print(f"{Fore.RED}加载模型注册表失败: {e}{Style.RESET_ALL}")
+            return
+        for m in models:
+            try:
+                conn = ModelConnection(m.get("name", "default"), m)
+                conn.cli = self
+                if conn.name not in self.engines:
+                    self.engines[conn.name] = conn
+                    vprint(f"{Fore.GREEN}已加载模型: {conn.name} ({conn.model}){Style.RESET_ALL}")
+            except Exception as e:
+                logger.error(f"装配模型连接失败 {m.get('name')}: {e}")
+                print(f"{Fore.RED}装配模型连接失败 {m.get('name')}: {e}{Style.RESET_ALL}")
+        vprint(f"{Fore.GREEN}总共加载了 {len(self.engines)} 个模型{Style.RESET_ALL}")
+
+    # 兼容旧调用面（引擎架构已删，语义 = 按注册表装载模型）
+
 
     def load_liugins(self, liugins_dir=None, skills_dir=None):
         """加载liugin和技能"""
@@ -330,12 +302,10 @@ class BaseAICLI:
     # ── 模型管理（OpenAI 引擎多模型切换）──
 
     def handle_model_command(self, args):
-        """处理 /model 命令族。仅对 openai 引擎有效。"""
+        """处理 /model 命令族（模型注册表：增删改查/切换，全部 OpenAI 格式）。"""
         eng = self.current_engine
-        if getattr(eng, 'name', None) != 'openai':
-            cur = getattr(eng, 'name', '?')
-            print(f"{Fore.RED}模型管理仅适用于 openai 引擎（当前: {cur}）。"
-                  f"先 /engine switch openai{Style.RESET_ALL}")
+        if eng is None:
+            print(f"{Fore.RED}没有可用的模型连接{Style.RESET_ALL}")
             return
 
         if not args or args == 'list':
@@ -366,10 +336,13 @@ class BaseAICLI:
         if not models:
             print(f"{Fore.YELLOW}尚未配置任何模型，用 /model add 添加{Style.RESET_ALL}")
             return
-        print(f"{Fore.GREEN}已配置的 OpenAI 模型:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}已配置的模型（OpenAI 兼容格式）:{Style.RESET_ALL}")
         for m in models:
             mark = f"{Fore.CYAN} *{Style.RESET_ALL}" if m.get('name') == current else ""
-            print(f"  {m.get('name')}{mark}  ({m.get('model')} @ {m.get('base_url') or '无 base_url'})")
+            caps = "".join(c for c, on in (("图", m.get('image_input')), ("视", m.get('video_input')),
+                                           ("音", m.get('audio_input'))) if on) or "文本"
+            print(f"  {m.get('name')}{mark}  ({m.get('model')} @ {m.get('base_url') or '无 base_url'})"
+                  f"  [入{m.get('max_input')}/出{m.get('max_output')} {caps}]")
         print(f"{Fore.CYAN}当前: {current} ｜ /model <名称> 切换 ｜ /model add 新增 ｜ "
               f"/model rm <名称> 删除{Style.RESET_ALL}")
 
@@ -384,22 +357,37 @@ class BaseAICLI:
             print(f"{Fore.RED}未找到模型: {name}（/model 查看可用）{Style.RESET_ALL}")
 
     def _model_add_interactive(self, eng):
-        print(f"{Fore.CYAN}添加 OpenAI 模型（回车留空则用默认/为空）{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}添加模型（OpenAI 兼容格式；* 为必填）{Style.RESET_ALL}")
         try:
-            name = input(f"{Fore.CYAN}名称(用于切换, 如 gpt4o): {Style.RESET_ALL}").strip()
+            name = input(f"{Fore.CYAN}* 名称(用于切换, 如 gpt4o): {Style.RESET_ALL}").strip()
             if not name:
                 print(f"{Fore.RED}名称不能为空{Style.RESET_ALL}")
                 return
-            base_url = input(f"{Fore.CYAN}base_url(如 https://api.openai.com/v1): {Style.RESET_ALL}").strip()
-            api_key = input(f"{Fore.CYAN}api_key: {Style.RESET_ALL}").strip()
-            model = input(f"{Fore.CYAN}model(如 gpt-4o): {Style.RESET_ALL}").strip()
+            base_url = input(f"{Fore.CYAN}* base_url(如 https://api.openai.com/v1，"
+                             f"本地 Ollama 填 http://localhost:11434/v1): {Style.RESET_ALL}").strip()
+            api_key = input(f"{Fore.CYAN}  api_key(本地服务可留空): {Style.RESET_ALL}").strip()
+            model = input(f"{Fore.CYAN}* model(如 gpt-4o / deepseek-chat / gemma4:31b): {Style.RESET_ALL}").strip()
             if not model:
                 print(f"{Fore.RED}model 不能为空{Style.RESET_ALL}")
                 return
+            max_input = input(f"{Fore.CYAN}* 最大输入(token, 如 32768): {Style.RESET_ALL}").strip()
+            max_output = input(f"{Fore.CYAN}* 最大输出(token, 如 4096): {Style.RESET_ALL}").strip()
+            if not max_input.isdigit() or not max_output.isdigit():
+                print(f"{Fore.RED}最大输入/最大输出必须是整数{Style.RESET_ALL}")
+                return
+            def _yes(q):
+                return input(f"{Fore.CYAN}{q} (y/N): {Style.RESET_ALL}").strip().lower() in ('y', 'yes')
+            image_input = _yes("* 支持图片输入?")
+            video_input = _yes("* 支持视频输入?")
+            audio_input = _yes("* 支持音频输入?")
         except (EOFError, KeyboardInterrupt):
             print(f"{Fore.YELLOW}\n已取消添加{Style.RESET_ALL}")
             return
-        eng.add_model({"name": name, "base_url": base_url, "api_key": api_key, "model": model})
+        eng.add_model({
+            "name": name, "base_url": base_url, "api_key": api_key, "model": model,
+            "max_input": int(max_input), "max_output": int(max_output),
+            "image_input": image_input, "video_input": video_input, "audio_input": audio_input,
+        })
         eng.set_registry_model(name)
         self.current_model = name
         print(f"{Fore.GREEN}已添加并切换到模型: {name}{Style.RESET_ALL}")

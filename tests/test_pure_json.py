@@ -63,7 +63,7 @@ class TestParseRobustness:
 class TestEngineToolsNone:
     def test_openai_engine_no_tools_sent(self, monkeypatch):
         import types
-        import ai_engines.openai_engine as oe
+        import xcli_core.model_conn as oe
 
         calls = []
 
@@ -79,11 +79,13 @@ class TestEngineToolsNone:
         monkeypatch.setattr(oe, "requests",
                              types.SimpleNamespace(post=fake_post, exceptions=oe.requests.exceptions))
 
-        eng = oe.OpenaiAI.__new__(oe.OpenaiAI)
+        eng = oe.ModelConnection.__new__(oe.ModelConnection)
         eng.name = "openai"
         eng.api_key = "k"
         eng.base_url = "https://example.com/v1"
         eng.model = "gpt-4o"
+        eng.max_input = 0
+        eng.max_output = 0
         eng.max_history = 10
         eng.conversation_history = []
         eng.shared_conversation_history = None

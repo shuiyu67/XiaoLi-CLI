@@ -933,7 +933,7 @@ multi 操作支持一次修改多处：
         if self.tui_output_callback:
             system_prompt = self._build_system_prompt(liugin_prompts)
             if not self.current_engine:
-                return "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
+                return "错误: 当前没有可用的模型，请用 /model add 添加模型（OpenAI 兼容格式）"
             # 混合模式：下发 FC 工具定义，tool_choice=auto —— 模型可自行选择
             # 用 FC 结构化调用，或回退到纯 JSON action（两种都会被正确处理）。
             fc_tools = self._build_fc_tools(current_input)
@@ -995,7 +995,7 @@ multi 操作支持一次修改多处：
             try:
                 system_prompt = self._build_system_prompt(liugin_prompts)
                 if not self.current_engine:
-                    response_result[0] = "错误: 当前没有可用的AI引擎，请检查ai_engines目录中的引擎插件"
+                    response_result[0] = "错误: 当前没有可用的模型，请用 /model add 添加模型（OpenAI 兼容格式）"
                 else:
                     # 混合模式：下发 FC 工具（tool_choice=auto），模型自选 FC 或纯 JSON
                     fc_tools = self._build_fc_tools(current_input)
@@ -1333,20 +1333,10 @@ multi 操作支持一次修改多处：
                 self.handle_resume_command(sub if sub != 'new' else 'new')
             return True
 
-        # /manual 快捷命令 — 切换到 manual 引擎或执行 manual 子命令
+        # /manual 已随引擎架构删除（一切模型皆 OpenAI 格式），留提示桩引导
         if user_input == '/manual' or user_input.startswith('/manual '):
-            args = user_input[8:].strip() if user_input.startswith('/manual ') else ''
-            if 'manual' not in self.engines:
-                print(f"{Fore.RED}manual 引擎未加载{Style.RESET_ALL}")
-            elif not args:
-                # 无参数：切换到 manual 引擎
-                self.switch_engine('manual')
-                print(f"{Fore.GREEN}已切换到 manual 引擎{Style.RESET_ALL}")
-            else:
-                # 有参数：执行 manual 引擎命令（如 status, restart）
-                result = self.engines['manual'].handle_command(args)
-                if result:
-                    print(f"{Fore.GREEN}{result}{Style.RESET_ALL}")
+            emit(self, f"{Fore.YELLOW}/manual 已移除：引擎架构已删，一切模型皆 OpenAI 兼容格式。"
+                       f"用 /model add 添加模型、/model 切换{Style.RESET_ALL}")
             return True
 
         if user_input.startswith('/file.read '):

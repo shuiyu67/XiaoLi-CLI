@@ -19,7 +19,7 @@ import threading
 if __package__ in (None, ""):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from xcli_core.model_config import list_models, migrate_legacy_engines  # noqa: E402
+from xcli_core import model_registry  # noqa: E402
 from xcli_core.openai_proxy import serve as serve_proxy, PORT_DEFAULT  # noqa: E402
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,8 +43,9 @@ def write_crush_config(port):
     except Exception:
         cfg = {}
 
-    migrate_legacy_engines()
-    models = [{"id": name, "name": name} for name, _ in list_models()]
+    model_registry.migrate_legacy()
+    _entries, _cur = model_registry.list_models()
+    models = [{"id": m.get("name"), "name": m.get("name")} for m in _entries]
     cfg.setdefault("providers", {})["xiaoli"] = {
         "type": "openai-compat",
         "name": "小狸 xiaoli",

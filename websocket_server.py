@@ -26,7 +26,13 @@ from typing import Optional, Dict, List
 try:
     from xcli_core.tool_result import normalize_tool_text
 except Exception:
-    from engine_fallbacks import normalize_tool_text
+    def normalize_tool_text(result, default="无结果"):
+        """兜底归一化：ToolResult / dict / str 统一成字符串"""
+        if result is None:
+            return default
+        if isinstance(result, dict):
+            return str(result.get("result", default))
+        return str(result)
 
 # 全局变量
 websocket_server = None  # 当前活动的服务器实例（供外部访问）

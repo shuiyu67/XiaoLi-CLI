@@ -18,9 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 if __package__ in (None, ""):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from xcli_core.model_config import (  # noqa: E402
-    get_model, list_models, migrate_legacy_engines, _load_engine_module,
-)
+from xcli_core import model_registry  # noqa: E402
+from xcli_core.model_conn import ModelConnection  # noqa: E402
 
 PORT_DEFAULT = 8787
 
@@ -41,11 +40,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/").endswith("/v1/models") or self.path == "/models":
-            migrate_legacy_engines()
+            model_registry.migrate_legacy()
+            models, _cur = model_registry.list_models()
             data = [
-                {"id": name, "object": "model", "owned_by": f"xiaoli/{info.get('engine', '?')}",
+                {"id": m.get("name"), "object": "model", "owned_by": "xiaoli/openai",
                  "created": 0}
-                for name, info in list_models()
+                for m in models
             ]
             self._json(200, {"object": "list", "data": data})
             return
@@ -64,23 +64,19 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
 
         model_name = body.get("model", "")
-        info = get_model(model_name)
+        info = model_registry.get_model(model_name)
         if not info:
+            models, _cur = model_registry.list_models()
             self._json(404, {"error": f"模型 [{model_name}] 未配置。已配置: "
-                                      f"{[n for n, _ in list_models()]}"} )
+                                      f"{[m.get('name') for m in models]}"} )
             return
-        try:
-            mod = _load_engine_module(info["engine"])
-            chat = mod.chat_completions
-        except Exception as e:
-            self._json(500, {"error": f"引擎 [{info['engine']}] 加载失败: {e}"})
-            return
+        conn = ModelConnection(model_name, info)
 
         messages = body.get("messages", [])
         tools = body.get("tools")
         stream = bool(body.get("stream"))
         try:
-            result = chat(info.get("fields", {}), messages, tools=tools, stream=stream)
+            result = conn.chat_completions(messages, tools=tools, stream=stream)
         except Exception as e:
             self._json(500, {"error": f"上游调用失败: {e}"})
             return
@@ -115,10 +111,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
 
 def serve(port=PORT_DEFAULT):
-    migrate_legacy_engines()
+    model_registry.migrate_legacy()
+    models, _cur = model_registry.list_models()
     server = ThreadingHTTPServer(("127.0.0.1", port), ProxyHandler)
     print(f"[xiaoli-proxy] OpenAI 兼容代理: http://127.0.0.1:{port}/v1  "
-          f"(已配置模型: {[n for n, _ in list_models()] or '无'})", file=sys.stderr)
+          f"(已配置模型: {[m.get('name') for m in models] or '无'})", file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

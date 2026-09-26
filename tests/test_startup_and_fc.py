@@ -60,14 +60,16 @@ class FakeResp:
 
 def make_engine(model=MODEL):
     """不走 __init__（会读配置/连网），直接摆一个可用实例"""
-    import ai_engines.openai_engine as oe
+    import xcli_core.model_conn as oe
 
-    eng = oe.OpenaiAI.__new__(oe.OpenaiAI)
+    eng = oe.ModelConnection.__new__(oe.ModelConnection)
     eng.name = "openai"
     eng.cli = None
     eng.api_key = "k"
     eng.base_url = BASE_URL
     eng.model = model
+    eng.max_input = 0
+    eng.max_output = 0
     eng.max_history = 10
     eng.conversation_history = []
     eng.shared_conversation_history = None
@@ -80,7 +82,7 @@ def make_engine(model=MODEL):
 @pytest.fixture
 def http(monkeypatch):
     """替换 openai_engine 里的 requests，记录每次请求体"""
-    import ai_engines.openai_engine as oe
+    import xcli_core.model_conn as oe
 
     calls = []
 
@@ -263,7 +265,7 @@ class TestVerboseGate:
         base_src = _read("xcli_core", "cli_base.py")
         utm_src = _read("unified_tool_manager.py")
         assert 'vprint(f"{Fore.GREEN}已注册插件命令' in base_src
-        assert 'vprint(f"{Fore.GREEN}已加载AI引擎' in base_src
+        assert 'vprint(f"{Fore.GREEN}已加载模型' in base_src
         assert 'vprint(f"{Fore.GREEN}已加载 Skill' in utm_src
         assert "已加载 {len(self._tools)} 个工具" in utm_src, "工具加载应汇总成一行"
 

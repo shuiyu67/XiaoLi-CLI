@@ -1,7 +1,7 @@
 """
 Provider 抽象层（opencode 式原生多 Provider 路由）
 
-小狸核心引擎是 OpenAI 兼容的 OpenaiAI（已支持 base_url，讯飞/xunfei 即借此接入）。
+小狸核心是 OpenAI 兼容的统一连接器 ModelConnection（已支持 base_url，讯飞/xunfei 即借此接入）。
 本模块在此基础上提供：
   - PROVIDER_PRESETS：主流 Provider 的默认 base_url / 模型前缀 / 协议族
   - resolve_provider()：从 config["providers"] 解析出 {api_key, base_url, model, headers}
@@ -9,7 +9,7 @@ Provider 抽象层（opencode 式原生多 Provider 路由）
   - list_providers()：给 /providers 命令用的汇总
 
 设计原则：纯函数 + 配置驱动，不触网、不强求真实 key，不改动现有 engine 行为。
-真实调用仍由 OpenaiAI 在用户填入 base_url/api_key 后完成（OpenAI 兼容族直接可用；
+真实调用仍由 ModelConnection 在用户填入 base_url/api_key 后完成（OpenAI 兼容族直接可用；
 非兼容族可借助 convert_* 在 engine 层二次适配，本模块只负责「翻译」与「注册」）。
 """
 from __future__ import annotations

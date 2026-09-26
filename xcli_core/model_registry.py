@@ -18,6 +18,112 @@
 
 from xcli_core.config import load_config, save_config
 
+# ── 模型能力/限额字段（添加模型时必须由用户输入；旧条目自动补默认）──
+
+MODEL_EXTRA_DEFAULTS = {
+    "max_input": 32768,        # 最大输入（token）
+    "max_output": 4096,        # 最大输出（token）
+    "image_input": False,      # 支持图片输入
+    "video_input": False,      # 支持视频输入
+    "audio_input": False,      # 支持音频输入
+}
+
+
+def with_defaults(m):
+    """补齐新字段（不动已有值）"""
+    out = dict(m)
+    for k, v in MODEL_EXTRA_DEFAULTS.items():
+        out.setdefault(k, v)
+    return out
+
+
+def migrate_legacy():
+    """把旧『引擎架构』时代的配置迁移成扁平 OpenAI 格式模型条目（幂等）。
+
+    覆盖两种旧形：
+      1) cfg["models"] = {name: {engine, fields, default}}（已删的 model_config 形态）
+      2) api.engines.<engine> 扁平单槽（含 ollama 的旧地址/max_token_k）
+    ollama 条目统一改走 /v1 兼容口。迁移完成后旧数据移除。
+    """
+    cfg = _load()
+    changed = False
+
+    # ── 1) model_config 形态：cfg["models"] 是 dict ──
+    old_models = cfg.get("models")
+    if isinstance(old_models, dict) and old_models:
+        block = _openai_block(cfg)
+        items = block.get("models") or []
+        names = {m.get("name") for m in items}
+        for name, info in old_models.items():
+            if not isinstance(info, dict) or name in names:
+                continue
+            fields = dict(info.get("fields") or {})
+            engine = info.get("engine", "")
+            entry = {
+                "name": name,
+                "base_url": fields.get("base_url", ""),
+                "api_key": fields.get("api_key", ""),
+                "model": fields.get("model", ""),
+            }
+            if engine == "ollama":
+                base = (entry["base_url"] or "http://localhost:11434").rstrip("/")
+                if not base.endswith("/v1"):
+                    base += "/v1"
+                entry["base_url"] = base
+                try:
+                    entry["max_input"] = int(float(fields.get("max_token_k", 32)) * 1024)
+                except (TypeError, ValueError):
+                    pass
+            if entry["model"]:
+                items.append(with_defaults(entry))
+                names.add(name)
+                if info.get("default") and not block.get("current"):
+                    block["current"] = name
+                changed = True
+        block["models"] = items
+        if items and not block.get("current"):
+            block["current"] = items[0]["name"]
+        cfg.pop("models", None)
+        changed = True
+
+    # ── 2) api.engines.<engine> 扁平单槽（openai/ollama 之外的引擎不管）──
+    engines = ((cfg.get("api") or {}).get("engines") or {})
+    for eng_name in ("openai", "ollama"):
+        ecfg = engines.get(eng_name) or {}
+        if not isinstance(ecfg, dict) or not ecfg.get("model"):
+            continue
+        if ecfg.get("models"):
+            continue        # 已是注册表形态
+        block = _openai_block(cfg)
+        items = block.get("models") or []
+        if any(m.get("model") == ecfg.get("model") and m.get("base_url") for m in items):
+            continue
+        base = ecfg.get("base_url", "")
+        if eng_name == "ollama":
+            base = (base or "http://localhost:11434").rstrip("/")
+            if not base.endswith("/v1"):
+                base += "/v1"
+        entry = {
+            "name": f"{eng_name}-{ecfg.get('model')}".replace(":", "-"),
+            "base_url": base,
+            "api_key": ecfg.get("api_key", ""),
+            "model": ecfg.get("model", ""),
+        }
+        if eng_name == "ollama":
+            try:
+                entry["max_input"] = int(float(ecfg.get("max_token_k", 32)) * 1024)
+            except (TypeError, ValueError):
+                pass
+        items.append(with_defaults(entry))
+        block["models"] = items
+        if not block.get("current"):
+            block["current"] = entry["name"]
+        changed = True
+
+    if changed:
+        _persist(cfg)
+    return changed
+
 # 测试可临时覆盖配置路径
 _CONFIG_PATH = None
 
@@ -66,9 +172,9 @@ def list_models(cfg=None):
             "api_key": block.get("api_key", ""),
             "model": block.get("model", ""),
         }
-        return [implicit], (block.get("current") or m)
+        return [with_defaults(implicit)], (block.get("current") or m)
     current = block.get("current") or (models[0]["name"] if models else None)
-    return models, current
+    return [with_defaults(m) for m in models], current
 
 
 def get_model(name=None, cfg=None):
@@ -79,7 +185,7 @@ def get_model(name=None, cfg=None):
         return None
     for m in models:
         if m.get("name") == target:
-            return dict(m)
+            return with_defaults(m)
     return None
 
 

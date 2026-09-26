@@ -9,7 +9,7 @@ import tempfile
 import pytest
 
 from xcli_core import model_registry as mr
-import ai_engines.openai_engine as oe_mod
+import xcli_core.model_conn as oe_mod
 
 
 @pytest.fixture
@@ -27,14 +27,11 @@ def tmp_config():
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
     saved_path = mr._CONFIG_PATH
-    saved_proj = oe_mod.project_root
     mr._set_config_path(path)
-    oe_mod.project_root = d
     try:
         yield path
     finally:
         mr._set_config_path(saved_path)
-        oe_mod.project_root = saved_proj
 
 
 # ── 注册表单元 ──
@@ -101,14 +98,14 @@ def test_engine_init_applies_registry_current(tmp_config):
     mr.add_model({"name": "gpt4o", "base_url": "https://api.openai.com/v1",
                   "api_key": "sk", "model": "gpt-4o"})
     mr.set_current("gpt4o")
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     assert eng.model == "gpt-4o"
     assert "api.openai.com" in eng.base_url
     assert eng.current_model_name() == "gpt4o"
 
 
 def test_engine_set_registry_model(tmp_config):
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     eng.add_model({"name": "gpt4o", "base_url": "https://api.openai.com/v1",
                    "api_key": "sk", "model": "gpt-4o"})
     assert eng.set_registry_model("gpt4o") is True
@@ -118,7 +115,7 @@ def test_engine_set_registry_model(tmp_config):
 
 def test_engine_does_not_clobber_existing_set_model(tmp_config):
     """原有轻量 set_model（只改 model 名）必须仍然可用，不被注册表方法覆盖。"""
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     eng.set_model("gpt-4o-mini")  # 原有方法：只改 self.model
     assert eng.model == "gpt-4o-mini"
     # 注册表方法仍在
@@ -140,7 +137,7 @@ def _make_fake_cli(eng):
 
 
 def test_cli_model_list_and_switch(tmp_config, monkeypatch):
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     eng.add_model({"name": "gpt4o", "base_url": "u", "api_key": "k", "model": "gpt-4o"})
 
     cli = _make_fake_cli(eng)
@@ -160,7 +157,7 @@ def test_cli_model_list_and_switch(tmp_config, monkeypatch):
 
 
 def test_cli_model_switch_missing(tmp_config, monkeypatch):
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     cli = _make_fake_cli(eng)
     cli.current_engine = eng
     cli.current_model = None
@@ -172,11 +169,11 @@ def test_cli_model_switch_missing(tmp_config, monkeypatch):
 
 
 def test_cli_model_add_interactive(tmp_config, monkeypatch):
-    eng = oe_mod.OpenaiAI()
+    eng = oe_mod.ModelConnection()
     cli = _make_fake_cli(eng)
     cli.current_engine = eng
     cli.current_model = None
-    answers = iter(["mygpt", "https://x/v1", "sk-1", "gpt-x"])
+    answers = iter(["mygpt", "https://x/v1", "sk-1", "gpt-x", "32768", "4096", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers))
     captured = {}
     monkeypatch.setattr("builtins.print", lambda *a, **k: captured.setdefault("out", []).append(a))

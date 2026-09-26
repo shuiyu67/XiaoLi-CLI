@@ -125,7 +125,6 @@ class Launcher:
         self.embedded_exe   = self.embedded_dir / 'python.exe'
         self.embedded_pip   = self.embedded_dir / 'Scripts' / 'pip.exe'
         self.main_program   = self.project_dir / 'ai_cli.py'
-        self.engines_dir    = self.project_dir / 'ai_engines'
         self.plugins_dir    = self.project_dir / 'plugins'
         self.config_file    = self.project_dir / 'config.json'
 
@@ -417,39 +416,35 @@ class Launcher:
         return success == len(missing)
 
     # ══════════════════════════════════════════════════
-    #  引擎扫描与配置
+    #  模型扫描与配置（统一 OpenAI 兼容格式，引擎架构已删除）
     # ══════════════════════════════════════════════════
 
-    def scan_engines(self):
-        section('扫描 AI 引擎', '')
+    def _model_registry(self):
+        sys.path.insert(0, str(self.project_dir))
+        from xcli_core import model_registry
+        return model_registry
 
-        if not self.engines_dir.exists():
-            warn('ai_engines 目录不存在')
+    def scan_models(self):
+        section('扫描已配置模型', '')
+        try:
+            mr = self._model_registry()
+            models, current = mr.list_models()
+        except Exception:
+            models, current = [], None
+        if not models:
+            warn('尚未配置模型（稍后可添加，全部 OpenAI 兼容格式）')
             return {}
+        out = {}
+        for m in models:
+            name = m.get('name', '?')
+            out[name] = bool(m.get('api_key'))
+            label = '云端' if out[name] else '本地'
+            print(f"  {c(name, S.CYAN)} ({label})  {m.get('model', '')}")
+        ok(f'共 {len(out)} 个已配置模型' + (f'，当前: {current}' if current else ''))
+        return out
 
-        engines = {}
-        for f in self.engines_dir.glob('*_engine.py'):
-            name = f.stem.replace('_engine', '')
-            needs_key = True
-            try:
-                content = f.read_text('utf-8')
-                if 'requires_api_key = False' in content:
-                    needs_key = False
-            except Exception:
-                pass
-            engines[name] = needs_key
-            label = '本地' if not needs_key else '云端'
-            print(f"  {c(name, S.CYAN)} ({label})")
-
-        if not engines:
-            warn('未发现引擎文件')
-        else:
-            ok(f'共发现 {len(engines)} 个引擎')
-
-        return engines
-
-    def ensure_config(self, engines):
-        """确保 config.json 包含所有引擎的配置（新手化：全有默认值）"""
+    def ensure_config(self, models=None):
+        """确保 config.json 基础结构就绪 + 旧引擎配置迁移为模型条目（新手化：全默认）"""
         config = {}
         if self.config_file.exists():
             try:
@@ -457,76 +452,53 @@ class Launcher:
             except Exception:
                 pass
 
-        config.setdefault('api', {}).setdefault('engines', {})
+        config.setdefault('api', {})
         config.setdefault('system', {})
-        config['system'].setdefault('default_engine', 'ollama')
         config['system'].setdefault('max_history', 50)
 
-        for name, needs_key in engines.items():
-            if name not in config['api']['engines']:
-                entry = {'api_key': '', 'base_url': '', 'model': ''}
-                if name == 'ollama':
-                    entry['base_url'] = 'http://localhost:11434'
-                    entry['model'] = 'gemma4:31b'
-                elif name == 'openai':
-                    entry['base_url'] = 'https://api.deepseek.com/v1'
-                    entry['model'] = 'deepseek-chat'
-                config['api']['engines'][name] = entry
-            if name == 'ollama':
-                # 模型最大 token（K）；给默认值 32（新手化：不再启动后追问；
-                # 旧 config 里 <input:...> 残留一并升级掉）
-                entry = config['api']['engines'][name]
-                cur = entry.get('max_token_k')
-                if cur is None or (isinstance(cur, str) and '<input' in cur):
-                    entry['max_token_k'] = 32
-
         self.config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), 'utf-8')
+        try:
+            self._model_registry().migrate_legacy()
+        except Exception:
+            pass
         return config
 
-    def configure_engines(self, engines):
-        """交互式配置引擎（文本向导/TUI 均可走；全默认可跳过）"""
-        section('配置 API（全部可跳过，回车=保持默认）', '')
-
-        config = {}
-        if self.config_file.exists():
-            try:
-                config = json.loads(self.config_file.read_text('utf-8'))
-            except Exception:
-                pass
-
-        for name, needs_key in engines.items():
-            cfg = config.get('api', {}).get('engines', {}).get(name, {})
-            print()
-            print(f"  {c('───', S.DIM)} {c(name, S.BOLD)} {c('───', S.DIM)}")
-
-            if needs_key:
-                current_key = cfg.get('api_key', '')
-                if current_key:
-                    masked = '*' * max(0, len(current_key) - 4) + current_key[-4:]
-                    info(f'当前密钥: {masked}')
-                info(f'（{name} 是云端引擎，需要 API 密钥才能用；用本地 Ollama 可跳过）')
-                if prompt_yn(f'配置 {name} 的 API 密钥?', 'n'):
-                    key = self.secret_input(f'{name} API 密钥')
-                    cfg['api_key'] = resolve_input_value(key, field_name='API 密钥')
-
-            current_url = cfg.get('base_url', '')
-            if current_url:
-                info(f'当前 URL: {current_url}')
-            if prompt_yn(f'配置 {name} 的 Base URL?', 'n'):
-                url = prompt('Base URL', current_url)
-                cfg['base_url'] = resolve_input_value(url, field_name='Base URL')
-
-            current_model = cfg.get('model', '')
-            if current_model:
-                info(f'当前模型: {current_model}')
-            if prompt_yn(f'配置 {name} 的模型?', 'n'):
-                model = prompt('模型名称', current_model)
-                cfg['model'] = resolve_input_value(model, field_name='模型')
-
-            config.setdefault('api', {}).setdefault('engines', {})[name] = cfg
-
-        self.config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), 'utf-8')
-        ok('配置已保存')
+    def configure_models(self, models=None):
+        """交互式添加模型（5+3 必填；全默认可跳过，之后 /model add 随时加）"""
+        section('添加模型（OpenAI 兼容格式；可跳过）', '')
+        if not prompt_yn('现在添加一个模型?', 'n'):
+            return
+        try:
+            name = prompt('名称(用于切换, 如 gpt4o)', '').strip()
+            if not name:
+                print('  已跳过（名称为空）')
+                return
+            base_url = prompt('Base URL(如 https://api.deepseek.com/v1)', '').strip()
+            api_key = self.secret_input('API 密钥（本地服务可留空）')
+            model = prompt('模型名(如 deepseek-chat / gemma4:31b)', '').strip()
+            if not model:
+                print('  已跳过（模型名为空）')
+                return
+            max_in = prompt('最大输入 token', '32768').strip() or '32768'
+            max_out = prompt('最大输出 token', '4096').strip() or '4096'
+            image_input = prompt_yn('支持图片输入?', 'n')
+            video_input = prompt_yn('支持视频输入?', 'n')
+            audio_input = prompt_yn('支持音频输入?', 'n')
+        except (EOFError, KeyboardInterrupt):
+            print('  已取消')
+            return
+        try:
+            mr = self._model_registry()
+            mr.add_model({
+                'name': name, 'base_url': base_url, 'api_key': api_key, 'model': model,
+                'max_input': int(max_in), 'max_output': int(max_out),
+                'image_input': image_input, 'video_input': video_input,
+                'audio_input': audio_input,
+            })
+            mr.set_current(name)
+            ok(f'已添加模型: {name}')
+        except Exception as e:
+            error(f'保存失败: {e}')
 
     # ══════════════════════════════════════════════════
     #  插件管理（新手化：默认全启用，不打扰）
@@ -679,16 +651,15 @@ class Launcher:
             self._show_report(False)
             return
 
-        engines = self.scan_engines()
-        self.ensure_config(engines)
+        models = self.scan_models()
+        self.ensure_config(models)
 
         packages = self.scan_imports()
         deps_ok = self.install_deps(packages)
 
         self.enabled_plugins = self.ensure_plugins_config()
 
-        if engines and prompt_yn('现在配置 API / 引擎?（不懂就跳过）', 'n'):
-            self.configure_engines(engines)
+        self.configure_models(models)
 
         self._show_report(deps_ok)
 
@@ -782,9 +753,10 @@ def run_wizard_app(launcher):
             super().__init__()
             self.launcher = launcher
             self.stage = "progress"   # progress -> config -> done
-            self.engines = {}
+            self.models = {}
             self.deps_ok = False
             self._fields = {}
+            self._caps = {}
 
         def compose(self) -> ComposeResult:
             with Vertical():
@@ -831,11 +803,11 @@ def run_wizard_app(launcher):
             else:
                 self._log("  ! 未检测到 Python —— 请先安装 Python 3.10+ 再重新打开", "ln-err")
 
-            self.engines = await loop.run_in_executor(None, L.scan_engines_silent)
-            names = ", ".join(self.engines.keys()) or "无"
-            self._log(f"  ✓ AI 引擎: {names}", "ln-ok")
+            self.models = await loop.run_in_executor(None, L.scan_models_silent)
+            names = ", ".join(self.models.keys()) or "无（按 s 添加）"
+            self._log(f"  ✓ 已配置模型: {names}", "ln-ok")
 
-            await loop.run_in_executor(None, L.ensure_config, self.engines)
+            await loop.run_in_executor(None, L.ensure_config, self.models)
             self._log("  ✓ 配置文件就绪（全默认，可跳过配置）", "ln-ok")
 
             pkgs = await loop.run_in_executor(None, L.scan_imports_silent)
@@ -855,7 +827,7 @@ def run_wizard_app(launcher):
             self._log(f"  ✓ 插件: {len(plugins)} 个默认启用", "ln-ok")
 
             self._log("", "ln-dim")
-            self._log("  准备就绪！回车直接开始用；按 s 可配置云端 API 密钥。", "ln-info")
+            self._log("  准备就绪！回车直接开始用；按 s 添加模型（OpenAI 兼容格式）。", "ln-info")
             self.stage = "done"
 
         def action_primary(self):
@@ -888,63 +860,72 @@ def run_wizard_app(launcher):
             log = self.query_one("#log")
             log.remove_children()
             self._fields = {}
-            log.mount(Static("  配置云端引擎（用本地 Ollama 可全部跳过；密钥输入隐藏显示）",
+            self._caps = {}
+            log.mount(Static("  添加模型（OpenAI 兼容格式；本地 Ollama 填 http://localhost:11434/v1，密钥可留空）",
                              classes="ln-info", markup=False))
-            for name, needs_key in self.engines.items():
-                cfg = {}
-                try:
-                    cfg = json.loads(self.launcher.config_file.read_text('utf-8')) \
-                        .get('api', {}).get('engines', {}).get(name, {})
-                except Exception:
-                    pass
-                log.mount(Static(f"  ── {name} {'（云端，需要密钥）' if needs_key else '（本地，无需密钥）'}",
-                                 classes="field-label", markup=False))
-                key = Input(placeholder=f"{name} API 密钥（没有就回车跳过）",
-                            password=True, id=f"f-{name}-key")
-                key.value = cfg.get('api_key', '') or ''
-                url = Input(placeholder="Base URL（回车用默认）", id=f"f-{name}-url")
-                url.value = cfg.get('base_url', '') or ''
-                model = Input(placeholder="模型名（回车用默认）", id=f"f-{name}-model")
-                model.value = cfg.get('model', '') or ''
-                log.mount(key)
-                log.mount(url)
-                log.mount(model)
-                self._fields[name] = (key, url, model)
+            specs = [
+                ("name", "名称（用于切换，如 gpt4o）", False),
+                ("base_url", "Base URL（如 https://api.deepseek.com/v1）", False),
+                ("api_key", "API 密钥（本地服务可留空）", True),
+                ("model", "模型名（如 deepseek-chat / gemma4:31b）", False),
+                ("max_input", "最大输入 token（如 32768）", False),
+                ("max_output", "最大输出 token（如 4096）", False),
+            ]
+            for key, ph, secret in specs:
+                log.mount(Static(f"  {ph}", classes="field-label", markup=False))
+                inp = Input(placeholder=ph, password=secret, id=f"f-{key}")
+                log.mount(inp)
+                self._fields[key] = inp
+            log.mount(Static("  多模态能力（输入 y=支持，回车=不支持）",
+                             classes="field-label", markup=False))
+            for key, ph in (("image_input", "支持图片输入? (y/N)"),
+                            ("video_input", "支持视频输入? (y/N)"),
+                            ("audio_input", "支持音频输入? (y/N)")):
+                inp = Input(placeholder=ph, id=f"f-{key}")
+                log.mount(inp)
+                self._caps[key] = inp
 
         def _save_config(self):
             try:
-                config = json.loads(self.launcher.config_file.read_text('utf-8'))
-            except Exception:
-                config = {}
-            config.setdefault('api', {}).setdefault('engines', {})
-            for name, (key, url, model) in self._fields.items():
-                config['api']['engines'][name] = {
-                    'api_key': key.value.strip(),
-                    'base_url': url.value.strip(),
-                    'model': model.value.strip(),
+                name = self._fields["name"].value.strip()
+                model = self._fields["model"].value.strip()
+                if not name or not model:
+                    self._log("  ! 名称和模型名不能为空", "ln-err")
+                    return
+                def _yes(w):
+                    return w.value.strip().lower() in ("y", "yes")
+                entry = {
+                    "name": name,
+                    "base_url": self._fields["base_url"].value.strip(),
+                    "api_key": self._fields["api_key"].value.strip(),
+                    "model": model,
+                    "max_input": int(self._fields["max_input"].value.strip() or 0),
+                    "max_output": int(self._fields["max_output"].value.strip() or 0),
+                    "image_input": _yes(self._caps["image_input"]),
+                    "video_input": _yes(self._caps["video_input"]),
+                    "audio_input": _yes(self._caps["audio_input"]),
                 }
-            self.launcher.config_file.write_text(
-                json.dumps(config, ensure_ascii=False, indent=2), 'utf-8')
+                mr = self.launcher._model_registry()
+                mr.add_model(entry)
+                mr.set_current(name)
+                self.models[name] = bool(entry["api_key"])
+                self._log(f"  ✓ 已保存模型: {name}", "ln-ok")
+            except Exception as e:
+                self._log(f"  ! 保存失败: {e}", "ln-err")
 
     WizardApp(launcher).run()
 
 
 # ── Launcher 的静默辅助（TUI 向导用；不打印，结果走 UI 日志）──
 
-def _scan_engines_silent(self):
-    engines = {}
-    if not self.engines_dir.exists():
-        return engines
-    for f in self.engines_dir.glob('*_engine.py'):
-        name = f.stem.replace('_engine', '')
-        needs_key = True
-        try:
-            if 'requires_api_key = False' in f.read_text('utf-8'):
-                needs_key = False
-        except Exception:
-            pass
-        engines[name] = needs_key
-    return engines
+def _scan_models_silent(self):
+    """已配置模型清单（静默版，TUI 向导用）"""
+    try:
+        mr = self._model_registry()
+        models, _ = mr.list_models()
+        return {m.get('name', '?'): bool(m.get('api_key')) for m in models}
+    except Exception:
+        return {}
 
 def _scan_imports_silent(self):
     exclude = {'__pycache__', '.git', 'venv', '.venv', 'env', '.env', 'build', 'dist'}
@@ -983,7 +964,7 @@ def _install_one(self, pkg):
             pass
     return False
 
-Launcher.scan_engines_silent = _scan_engines_silent
+Launcher.scan_models_silent = _scan_models_silent
 Launcher.scan_imports_silent = _scan_imports_silent
 Launcher._pkg_installed = _pkg_installed
 Launcher._install_one = _install_one

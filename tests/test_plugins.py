@@ -585,45 +585,29 @@ class TestSubAgent:
 
 
 # ══════════════════════════════════════
-#  引擎加载测试
+#  模型连接器测试（引擎架构已删除，统一 OpenAI 格式）
 # ══════════════════════════════════════
 
-class TestEngines:
-    """AI 引擎加载测试"""
+class TestModelConnection:
+    """统一模型连接器（xcli_core/model_conn）冒烟"""
 
-    def test_engines_dir_exists(self):
-        assert os.path.isdir(ENGINES_DIR), "ai_engines 目录不存在"
-
-    def test_ollama_engine_loads(self):
-        path = os.path.join(ENGINES_DIR, "ollama_engine.py")
-        if not os.path.exists(path):
-            pytest.skip("ollama_engine.py 不存在")
-        mod = load_module("ollama_engine", path)
-        cls = getattr(mod, "OllamaAI", None)
-        assert cls is not None, "缺少 OllamaAI 类"
+    def test_model_conn_loads(self):
+        import xcli_core.model_conn as mc
+        cls = getattr(mc, "ModelConnection", None)
+        assert cls is not None, "缺少 ModelConnection 类"
         inst = cls()
-        assert inst.name == "ollama"
+        assert hasattr(inst, "generate_response")
+        assert hasattr(inst, "set_registry_model")
 
-    def test_openai_engine_loads(self):
-        path = os.path.join(ENGINES_DIR, "openai_engine.py")
-        if not os.path.exists(path):
-            pytest.skip("openai_engine.py 不存在")
-        mod = load_module("openai_engine", path)
-        cls = getattr(mod, "OpenaiAI", None)
-        assert cls is not None, "缺少 OpenaiAI 类"
-        inst = cls()
-        assert inst.name == "openai"
+    def test_registry_api_present(self):
+        import xcli_core.model_registry as mr
+        for fn in ("list_models", "get_model", "add_model",
+                   "set_current", "remove_model"):
+            assert callable(getattr(mr, fn, None)), f"注册表缺少 {fn}"
 
-    def test_no_old_engines(self):
-        """确认旧引擎文件已被移除"""
-        old_engines = [
-            "mimo_engine.py", "GLM_http_engine.py", "qwq_engine.py",
-            "xfyun_spark_engine.py", "iflow_api_engine.py",
-            "maas_http_engine.py", "SDK_openAI.py",
-        ]
-        for name in old_engines:
-            path = os.path.join(ENGINES_DIR, name)
-            assert not os.path.exists(path), f"旧引擎未删除: {name}"
+    def test_no_engine_arch_left(self):
+        """确认引擎架构目录已移除（模型=OpenAI 格式直配）"""
+        assert not os.path.exists(ENGINES_DIR), "ai_engines 目录应已删除"
 
 
 # ══════════════════════════════════════

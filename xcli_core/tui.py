@@ -1301,8 +1301,13 @@ if TEXTUAL_AVAILABLE:
                 return
             engine = self.bridge.current_engine()
             eobj = getattr(self.cli, 'current_engine', None)
-            model = getattr(eobj, 'model', '') if eobj else ''
-            provider = "本地" if engine in ("ollama", "manual") else "云端"
+            # 显示已配置模型的注册名；来源按 base_url 判断（本地服务=本地）
+            try:
+                model = eobj.current_model_name() if eobj else engine
+            except Exception:
+                model = getattr(eobj, 'model', '') if eobj else engine
+            base = (getattr(eobj, 'base_url', '') or '') if eobj else ''
+            provider = "本地" if ("localhost" in base or "127.0.0.1" in base) else "云端"
             st.update(
                 f"  [{_Theme.ACCENT} bold]Build[/{_Theme.ACCENT} bold]  "
                 f"[{_Theme.TEXT} bold]{model or engine}[/{_Theme.TEXT} bold]  "
@@ -1539,11 +1544,14 @@ if TEXTUAL_AVAILABLE:
                 return
             engine = self.bridge.current_engine()
             eobj = getattr(self.cli, 'current_engine', None)
-            model = (getattr(eobj, 'model', '') if eobj else '') or engine
+            try:
+                model = (eobj.current_model_name() if eobj else '') or engine
+            except Exception:
+                model = (getattr(eobj, 'model', '') if eobj else '') or engine
             left = getattr(self, "_footer_left", "就绪") or "就绪"
             plan_tag = f"[{_Theme.WARNING}]PLAN[/{_Theme.WARNING}] │ " if self.plan_mode else ""
-            model_part = (f"[bold]{model}[/bold]" if model == engine
-                          else f"[bold]{model}[/bold] [dim]{engine}[/dim]")
+            # 只显示已配置模型的注册名（引擎架构已删，不再拼引擎名）
+            model_part = f"[bold]{model}[/bold]"
             bar.update(
                 f" {left} │ {plan_tag}{model_part}"
                 f"{' ' * 3}[bold]ctrl+x[/bold][dim]前缀[/dim]   "
@@ -1826,7 +1834,7 @@ if TEXTUAL_AVAILABLE:
             'cli': '切到命令行模式', 'clear': '清屏', 'cls': '清屏',
             'model': '切换 AI 引擎', 'engine': '切换 AI 引擎', 'about': '关于',
             'status': '系统状态', 'tools': '列出工具', 'engines': '列出引擎',
-            'tui': '已在 TUI', 'manual': 'manual 引擎', 'plan': 'PLAN 规划模式',
+            'tui': '已在 TUI', 'manual': '已移除(用 /model)', 'plan': 'PLAN 规划模式',
             'build': '批准 PLAN 执行', 'sessions': '历史会话', 'session': '会话操作',
             'resume': '恢复会话', 'snapshot': '导出截图', 'screenshot': '导出截图',
             'vim': 'Vim 键位开关', 'sound': '提示音开关', 'palette': '打开命令面板',
@@ -2006,20 +2014,8 @@ if TEXTUAL_AVAILABLE:
             self._system(help_text)
 
         def _handle_manual(self, args):
-            """处理 /manual 命令"""
-            if 'manual' not in self.cli.engines:
-                self._error("manual 引擎未加载")
-                return
-            if not args:
-                if self.bridge.switch_engine('manual'):
-                    self._system("已切换到 manual 引擎")
-                    self._update_sidebar()
-                else:
-                    self._error("切换失败")
-            else:
-                result = self.cli.engines['manual'].handle_command(args)
-                if result:
-                    self._system(result)
+            """/manual 已随引擎架构删除（一切模型皆 OpenAI 格式）"""
+            self._system("/manual 已移除：用 /model add 添加模型、/model 切换")
 
         def _switch_cli(self):
             self._system("切换到命令行模式...")
