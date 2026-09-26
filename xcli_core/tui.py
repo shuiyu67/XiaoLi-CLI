@@ -171,6 +171,8 @@ if TEXTUAL_AVAILABLE:
     /* ── 命令面板（同屏覆盖层）── */
     #pal-overlay {{
         display: none;
+        dock: top;
+        layer: 1;
         width: 100%;
         height: 100%;
         align: center middle;
@@ -428,6 +430,12 @@ if TEXTUAL_AVAILABLE:
         background: {_Theme.BLACK};
         padding: 2 4;
         align: center middle;
+    }}
+    /* Home 态：composer 居中收窄。
+       实测 textual 怪癖：align-horizontal 对流式窄子项不居中、margin 不收百分比 ——
+       水平居中只能在 Python 端算 margin（见 _center_composer）。 */
+    #main.home-center #input-area {{
+        width: 72%;
     }}
     .logo-line {{
         color: #6e6e6e;
@@ -701,6 +709,19 @@ if TEXTUAL_AVAILABLE:
 
         # ── 开关 ──
 
+        def _set_base_visible(self, visible: bool):
+            """面板是全遮不透明浮层——打开时连底层 UI 一起隐藏，关闭还原。
+
+            根因（实测）：compositor 组合时按所有可见 widget 的 x 边缘切条带，
+            wide 字符（CJK）若骑在切点上会被切成空白。底层 sidebar-content 右缘
+            x=29 正好切在标题"命令面板"的"令"(28-30)中间 → 显示成"命  面板"。
+            隐藏底层 = 消除全部多余切点，浮层自身边缘（22/24/96/98）不与 CJK 相交。"""
+            for wid in ("#tui-header", "#app-container", "#status-bar"):
+                try:
+                    self.app.query_one(wid).display = visible
+                except Exception:
+                    pass
+
         def open(self, items, on_pick):
             self._items = items
             self._filtered = list(items)
@@ -709,6 +730,7 @@ if TEXTUAL_AVAILABLE:
             self._on_pick = on_pick
             self._open = True
             self.display = True
+            self._set_base_visible(False)
             self._render_list()
             try:
                 inp = self.query_one("#pal-input")
@@ -722,6 +744,7 @@ if TEXTUAL_AVAILABLE:
                 return
             self._open = False
             self.display = False
+            self._set_base_visible(True)
             cb = self._on_pick
             self._on_pick = None
             try:
@@ -1203,30 +1226,69 @@ if TEXTUAL_AVAILABLE:
             chat.display = False
             sidebar.display = False
             home.display = True
+            self.query_one("#main").add_class("home-center")
             from rich.text import Text
-            t = Text()
+            from rich.align import Align
+            from rich.console import Group
+            # Text(justify="center") 在 textual 管线不生效；整块 Align 只能块居中。
+            # 逐行 Align.center(Group) 才是逐行居中（opencode 启动屏构图）。
+            lines = []
             for line, color in self._logo_rows():
-                t.append(line + "\n", style=color)
-            t.append("小狸 Pro-CLI v8.0.4 · AI 智能编程助手\n", style=_Theme.TEXT_DIM)
-            t.append("  ")
-            t.append("ctrl+t", style=f"bold {_Theme.TEXT}")
-            t.append(" 模型变体   ")
-            t.append("tab", style=f"bold {_Theme.TEXT}")
-            t.append(" agents   ")
-            t.append("ctrl+p", style=f"bold {_Theme.TEXT}")
-            t.append(" 命令面板\n")
-            t.append("● Tip", style=f"bold {_Theme.ORANGE}")
-            t.append("  用 [@文件路径] 引用文件给 AI · !命令 直接跑 shell · /help 看全部命令",
-                     style=_Theme.TEXT_DIM)
-            self._fill(home, t)
+                lines.append(Align.center(Text(line, style=color)))
+            lines.append(Align.center(Text("小狸 Pro-CLI v8.0.4 · AI 智能编程助手",
+                                           style=_Theme.TEXT_DIM)))
+            hint = Text()
+            hint.append("ctrl+t", style=f"bold {_Theme.TEXT}")
+            hint.append(" 模型变体   ")
+            hint.append("tab", style=f"bold {_Theme.TEXT}")
+            hint.append(" agents   ")
+            hint.append("ctrl+p", style=f"bold {_Theme.TEXT}")
+            hint.append(" 命令面板")
+            lines.append(Align.center(hint))
+            tip = Text()
+            tip.append("● Tip", style=f"bold {_Theme.ORANGE}")
+            tip.append("  用 [@文件路径] 引用文件给 AI · !命令 直接跑 shell · /help 看全部命令",
+                       style=_Theme.TEXT_DIM)
+            lines.append(Align.center(tip))
+            self._fill(home, Group(*lines))
+            self.call_after_refresh(self._center_composer)
             self._update_composer_status()
+
+        def _center_composer(self):
+            """Home 态把 composer 盒水平居中（textual align 对流式窄子项不生效，margin 只收格数——
+            宽度随终端变，只能 Python 端算）。退出 Home 时复位。"""
+            try:
+                main = self.query_one("#main")
+                ia = self.query_one("#input-area")
+            except Exception:
+                return
+            try:
+                if not getattr(self, "_home_active", False):
+                    ia.styles.margin = (0, 0, 0, 0)
+                    return
+                mw = main.region.width
+                iw = ia.region.width
+                if not mw or not iw:
+                    return
+                ia.styles.margin = (0, 0, 0, max(0, (mw - iw) // 2))
+            except Exception:
+                pass
+
+        def on_resize(self, event):
+            if getattr(self, "_home_active", False):
+                self.call_after_refresh(self._center_composer)
 
         def _exit_home(self):
             """首条消息后切入会话屏"""
             if not getattr(self, "_home_active", False):
                 return
             self._home_active = False
+            self.query_one("#main").remove_class("home-center")
             self.query_one("#home-scroll").display = False
+            try:
+                self.query_one("#input-area").styles.margin = (0, 0, 0, 0)
+            except Exception:
+                pass
             self.query_one("#chat-scroll").display = True
             self.query_one("#sidebar").display = True
             self._update_sidebar()
@@ -1373,10 +1435,10 @@ if TEXTUAL_AVAILABLE:
             t = Text()
             t.append("  文件 \n", style=f"bold {_Theme.TEXT_MUTED}")
             root = self.bridge.cwd()
-            t.append(f"  📂 {os.path.basename(root)}\n", style=f"bold {_Theme.ACCENT}")
+            t.append(f"  {os.path.basename(root)}\n", style=f"bold {_Theme.ACCENT}")
             for name, is_dir in self._build_file_tree(root):
-                icon = "📁" if is_dir else "📄"
-                t.append(f"  {icon} {name}\n", style=_Theme.TEXT_MUTED)
+                label = f"{name}/" if is_dir else name
+                t.append(f"  {label}\n", style=_Theme.TEXT_MUTED)
             self._fill(self.query_one("#panel-files"), t)
 
         # ── 会话列表 ──
@@ -1480,12 +1542,14 @@ if TEXTUAL_AVAILABLE:
             model = (getattr(eobj, 'model', '') if eobj else '') or engine
             left = getattr(self, "_footer_left", "就绪") or "就绪"
             plan_tag = f"[{_Theme.WARNING}]PLAN[/{_Theme.WARNING}] │ " if self.plan_mode else ""
+            model_part = (f"[bold]{model}[/bold]" if model == engine
+                          else f"[bold]{model}[/bold] [dim]{engine}[/dim]")
             bar.update(
-                f" {left} │ {plan_tag}[bold]{model}[/bold] [dim]{engine}[/dim]"
+                f" {left} │ {plan_tag}{model_part}"
                 f"{' ' * 3}[bold]ctrl+x[/bold][dim]前缀[/dim]   "
                 f"[bold]ctrl+p[/bold][dim]命令[/dim]   "
                 f"[bold]ctrl+o[/bold][dim]PLAN[/dim]   "
-                f"[dim]Ctrl+C 退出[/dim]"
+                f"[dim]ctrl+c 退出[/dim]"
             )
             self._update_composer_status()
 
@@ -1536,12 +1600,24 @@ if TEXTUAL_AVAILABLE:
             self._append(Static(stamp, classes="msg-user-meta", markup=False))
 
         def _ai_msg(self, text):
-            """opencode 式 AI 回复：markdown 渲染（标题/列表/代码块高亮）"""
+            """opencode 式 AI 回复：markdown 渲染 + 代码块带框/语言标签（renderable 直传保高亮）"""
             try:
                 from rich.markdown import Markdown
-                from rich.text import Text
-                md = Markdown(str(text), code_theme="monokai", hyperlinks=False)
-                self._append(MessageBubble(md, classes="md-body"))
+                parts = re.split(r'```(\w*)\n(.*?)```', str(text), flags=re.DOTALL)
+                for i, part in enumerate(parts):
+                    if not part.strip():
+                        continue
+                    if i % 3 == 0:
+                        md = Markdown(part, code_theme="monokai", hyperlinks=False)
+                        self._append(MessageBubble(md, classes="md-body"))
+                    elif i % 3 == 2:
+                        lang = parts[i - 1] if i > 1 else ""
+                        syntax = Syntax(part, lang or "text", theme="monokai",
+                                        line_numbers=True, word_wrap=True)
+                        panel = Panel(syntax, title=lang or "code",
+                                      border_style=f"dim {_Theme.BORDER}",
+                                      box=ROUNDED, padding=(0, 1))
+                        self._append(MessageBubble(panel, classes="code-block"))
             except Exception:
                 self._add(f"● {str(text)}", "msg-ai")
 
@@ -1559,9 +1635,10 @@ if TEXTUAL_AVAILABLE:
                     try:
                         syntax = Syntax(code, lang or "python", theme="monokai",
                                         line_numbers=True, word_wrap=True)
-                        panel = Panel(syntax, border_style=f"dim {_Theme.BORDER}",
-                                     box=ROUNDED, padding=(0, 1))
-                        widget = MessageBubble(str(panel), classes="code-block")
+                        panel = Panel(syntax, title=lang or "code",
+                                      border_style=f"dim {_Theme.BORDER}",
+                                      box=ROUNDED, padding=(0, 1))
+                        widget = MessageBubble(panel, classes="code-block")
                         self._append(widget)
                     except Exception:
                         for line in code.split('\n'):
@@ -2017,7 +2094,7 @@ if TEXTUAL_AVAILABLE:
             if not self.bridge.plan_mode() and not self.bridge.current_plan().strip():
                 self._system("当前不在 PLAN 模式，且无已生成的计划")
                 return
-            self._system("✅ 已批准 PLAN，开始执行…")
+            self._system("✓ 已批准 PLAN，开始执行…")
             try:
                 from .notify_sound import play
                 play("special")   # 特殊节点：开工
