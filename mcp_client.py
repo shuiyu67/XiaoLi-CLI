@@ -1,10 +1,10 @@
 """
-小狸 MCP 客户端
+Lix MCP 客户端
 ===============
-连接外部 MCP (Model Context Protocol) server，将其工具桥接进小狸的统一工具体系。
+连接外部 MCP (Model Context Protocol) server，将其工具桥接进Lix的统一工具体系。
 
 - transport = stdio（subprocess + 逐行 JSON-RPC 2.0），与项目根 mcp_server.py（暴露侧）对称。
-- 同步 + 线程安全：契合小狸「同步主循环 + ThreadPoolExecutor」模型，不引入官方 mcp SDK
+- 同步 + 线程安全：契合Lix「同步主循环 + ThreadPoolExecutor」模型，不引入官方 mcp SDK
   （其 asyncio 风格与现有同步调用链不搭）。
 - 单个 server 失败不阻断其他 server，也不阻断主程序启动。
 
@@ -152,7 +152,7 @@ class McpClient:
         result = self._send("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.4"},
+            "clientInfo": {"name": "lix-cli", "version": "8.1.0"},
         })
         # 通知 server 初始化完成（无响应，无需等待）
         self._send("notifications/initialized", {}, is_notification=True)

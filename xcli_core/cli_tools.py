@@ -18,7 +18,7 @@ class ToolMixin:
         tool_calls = []
 
         if isinstance(json_data, dict):
-            # 格式1: 小狸自有格式
+            # 格式1: Lix自有格式
             if json_data.get('action') == 'use_tool':
                 tool_calls.append(json_data)
             # 格式2: 简化格式

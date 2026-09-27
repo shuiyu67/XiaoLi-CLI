@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-小狸 MCP Stdio Server
+Lix MCP Stdio Server
 =====================
 标准 MCP (Model Context Protocol) stdio 传输层入口。
 通过 stdin/stdout 以 JSON-RPC 2.0 格式通信，
@@ -41,7 +41,7 @@ logger = logging.getLogger("xiaoli-mcp")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="小狸 MCP Stdio Server")
+    parser = argparse.ArgumentParser(description="Lix MCP Stdio Server")
     parser.add_argument("--plugins-dir", default="plugins", help="插件目录 (默认: plugins)")
     parser.add_argument("--skills-dir", default="skills", help="技能目录 (默认: skills)")
     args = parser.parse_args()

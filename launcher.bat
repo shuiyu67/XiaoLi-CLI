@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul 2>&1
-title 小狸 Pro-CLI v5.4.0
+title Lix CLI v8.1.0
 
 echo.
 echo   ╔══════════════════════════════════════╗
-echo   ║   小狸 Pro-CLI 启动器 v5.4.0       ║
+echo   ║   Lix CLI 启动器 v8.1.0       ║
 echo   ║   正在检测环境...                   ║
 echo   ╚══════════════════════════════════════╝
 echo.
@@ -23,7 +23,7 @@ for /f "tokens=2 delims= " %%i in ('python --version 2^>^&1') do set PYVER=%%i
 echo [OK] Python %PYVER%
 
 :: 检测依赖并启动
-echo [启动] 正在启动小狸 Pro-CLI...
+echo [启动] 正在启动Lix CLI...
 echo.
 python "%~dp0launcher.py" %*
 

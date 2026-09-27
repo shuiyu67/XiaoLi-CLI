@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-小狸 Pro-CLI 启动器（TUI 向导版 · 新手化）
+Lix CLI 启动器（TUI 向导版 · 新手化）
 ──────────────────────────────────────────
 快路径：环境齐备 → 零打扰直接进主程序（TUI）
 首次/加 --setup：进入 TUI 向导（textual），可视进度 + 卡片配置 + 密钥掩码输入；
@@ -106,7 +106,7 @@ STDLIB_SKIP = {'tkinter', 'msvcrt', 'winsound', 'ctypes', 'readline', 'getpass',
 # ══════════════════════════════════════════════════════════════════
 
 class Launcher:
-    """小狸 Pro-CLI 智能启动器"""
+    """Lix CLI 智能启动器"""
 
     DOWNLOAD_SOURCES = {
         '1': ('Python 官方源',   'https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip'),
@@ -520,7 +520,7 @@ class Launcher:
             self.enabled_plugins = plugins
             return plugins
 
-        lines = ['# 小狸插件配置 - 由启动器自动生成（默认全启用）\n']
+        lines = ['# Lix插件配置 - 由启动器自动生成（默认全启用）\n']
         for p in plugins:
             lines.append(f'ENABLE_{p.upper()} = True\n')
         cfg_path.write_text(''.join(lines), 'utf-8')
@@ -561,7 +561,7 @@ class Launcher:
             info('不启用任何插件')
 
         cfg_path = self.project_dir / 'plugins_config.py'
-        lines = ['# 小狸插件配置 - 由启动器自动生成\n']
+        lines = ['# Lix插件配置 - 由启动器自动生成\n']
         for p in selected:
             lines.append(f'ENABLE_{p.upper()} = True\n')
         cfg_path.write_text(''.join(lines), 'utf-8')
@@ -726,7 +726,7 @@ def run_wizard_app(launcher):
         return rows
 
     class WizardApp(App):
-        TITLE = " 小狸 Pro-CLI 安装向导"
+        TITLE = " Lix CLI 安装向导"
         CSS = f"""
         Screen {{ background: {BG}; }}
         #box {{ border: tall {BORDER}; background: {PANEL}; padding: 1 2; margin: 1 3; height: auto; max-height: 28; }}
@@ -762,7 +762,7 @@ def run_wizard_app(launcher):
             with Vertical():
                 for text, col in logo_rows():
                     yield Static(text, classes="logo", markup=False, styles={"color": col})
-                yield Static("小狸 Pro-CLI · 首次启动向导（一路回车即可）", classes="tag")
+                yield Static("Lix CLI · 首次启动向导（一路回车即可）", classes="tag")
                 with Vertical(id="box"):
                     yield VerticalScroll(id="log")
                 yield Static(
@@ -838,7 +838,7 @@ def run_wizard_app(launcher):
                 self.stage = "done"
                 self.query_one("#log").remove_children()
                 self._log("  ✓ 配置已保存", "ln-ok")
-                self._log("  回车开始使用小狸", "ln-info")
+                self._log("  回车开始使用Lix", "ln-info")
                 return
             # done → 启动主程序
             self.exit()

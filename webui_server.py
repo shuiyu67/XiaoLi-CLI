@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-小狸 Pro-CLI Web UI 后端
+Lix CLI Web UI 后端
 WebSocket 服务器 + 静态文件服务
 
 启动:
@@ -37,14 +37,14 @@ except ImportError:
 # ═══════════════════════════════════════════
 
 class AIEngineBridge:
-    """桥接到小狸的 AI 引擎和插件系统"""
+    """桥接到Lix的 AI 引擎和插件系统"""
 
     def __init__(self):
         self.cli = None
         self._initialized = False
 
     def initialize(self):
-        """延迟初始化小狸核心"""
+        """延迟初始化Lix核心"""
         if self._initialized:
             return True
         try:
@@ -53,7 +53,7 @@ class AIEngineBridge:
             self._initialized = True
             return True
         except Exception as e:
-            print(f"⚠️  小狸核心初始化失败: {e}")
+            print(f"⚠️  Lix核心初始化失败: {e}")
             return False
 
     def get_status(self):
@@ -95,7 +95,7 @@ class AIEngineBridge:
     def chat(self, message: str, callback=None):
         """发送消息到 AI 并获取回复（支持工具调用循环）"""
         if not self.cli:
-            return {"type": "error", "message": "小狸核心未初始化，请检查配置"}
+            return {"type": "error", "message": "Lix核心未初始化，请检查配置"}
 
         results = []  # 收集所有事件
 
@@ -194,7 +194,7 @@ class AIEngineBridge:
     def execute_tool(self, tool_name: str, tool_args: str):
         """直接执行工具"""
         if not self.cli:
-            return "❌ 小狸核心未初始化"
+            return "❌ Lix核心未初始化"
 
         try:
             result = self.cli._execute_tool_by_name(tool_name, tool_args)
@@ -402,7 +402,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 # ═══════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description="小狸 Pro-CLI Web UI 服务器")
+    parser = argparse.ArgumentParser(description="Lix CLI Web UI 服务器")
     parser.add_argument("--host", default="0.0.0.0", help="绑定地址")
     parser.add_argument("--port", type=int, default=8080, help="HTTP 端口")
     parser.add_argument("--ws-port", type=int, default=8079, help="WebSocket 端口")
@@ -411,13 +411,13 @@ def main():
 
     print()
     print("╔══════════════════════════════════════════╗")
-    print("║       小狸 Pro-CLI · Web UI 服务器       ║")
+    print("║       Lix CLI · Web UI 服务器       ║")
     print("╚══════════════════════════════════════════╝")
     print()
 
     # 初始化 AI 引擎
     if not args.no_ai:
-        print("⏳ 正在初始化小狸核心...")
+        print("⏳ 正在初始化Lix核心...")
         if bridge.initialize():
             status = bridge.get_status()
             print(f"✅ AI 引擎: {status['engine']}")

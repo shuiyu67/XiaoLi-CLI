@@ -503,7 +503,7 @@ class DisplayMixin:
     def _show_basic_help(self):
         """显示基本帮助信息"""
         help_text = """
-小狸 Pro-CLI 帮助信息
+Lix CLI 帮助信息
 ==================
 基本命令:
   /help              - 显示此帮助信息

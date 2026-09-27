@@ -1,4 +1,4 @@
-# 小狸 Pro-CLI 依赖（人工维护清单；launcher 只读不覆写）
+# Lix CLI 依赖（人工维护清单；launcher 只读不覆写）
 # 包名 = pip 安装名（import 名不同的已在括号标注）
 
 colorama

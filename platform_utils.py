@@ -111,15 +111,29 @@ def get_desktop_directory():
             return os.path.expanduser("~")
 
 def get_config_directory():
-    """获取应用配置目录（跨平台）"""
+    """获取应用配置目录（跨平台）。
+
+    产品改名 Lix CLI 后目录名同步更新；旧目录（Xiaoli Pro-CLI 3 / xiaoli-pro-cli-3）
+    若存在则自动迁移（改名），避免老用户配置失联。
+    """
     platform = get_platform()
-    
+
     if platform == 'windows':
-        return os.path.join(os.path.getenv('APPDATA', ''), 'Xiaoli Pro-CLI 3')
+        new = os.path.join(os.path.getenv('APPDATA', ''), 'Lix CLI')
+        old = os.path.join(os.path.getenv('APPDATA', ''), 'Xiaoli Pro-CLI 3')
     elif platform == 'macos':
-        return os.path.join(os.path.expanduser("~"), 'Library', 'Application Support', 'Xiaoli Pro-CLI 3')
+        new = os.path.join(os.path.expanduser("~"), 'Library', 'Application Support', 'Lix CLI')
+        old = os.path.join(os.path.expanduser("~"), 'Library', 'Application Support', 'Xiaoli Pro-CLI 3')
     else:  # Linux
-        return os.path.join(os.path.expanduser('~'), '.config', 'xiaoli-pro-cli-3')
+        new = os.path.join(os.path.expanduser('~'), '.config', 'lix-cli')
+        old = os.path.join(os.path.expanduser('~'), '.config', 'xiaoli-pro-cli-3')
+
+    try:
+        if not os.path.exists(new) and os.path.exists(old):
+            os.rename(old, new)   # 一次性迁移：旧配置整目录改名
+    except OSError:
+        pass                     # 迁移失败不致命，后续写入会落到新目录
+    return new
 
 def is_process_running(pid):
     """检查指定 PID 的进程是否在运行"""

@@ -1,4 +1,4 @@
-# 小狸插件配置 - 由启动器自动生成
+# Lix插件配置 - 由启动器自动生成
 ENABLE_AI_SEARCH = True
 ENABLE_AUTO_ENGINEER = True
 ENABLE_BOOKMARK_MANAGER = True

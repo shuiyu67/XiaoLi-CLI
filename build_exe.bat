@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul 2>&1
-title 小狸 Pro-CLI - 构建 EXE
+title Lix CLI - 构建 EXE
 
 echo.
 echo   ╔══════════════════════════════════════╗
-echo   ║   小狸 Pro-CLI EXE 构建脚本         ║
+echo   ║   Lix CLI EXE 构建脚本         ║
 echo   ╚══════════════════════════════════════╝
 echo.
 

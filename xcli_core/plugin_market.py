@@ -122,7 +122,7 @@ class PluginMarketMixin:
 
         if not os.path.exists(config_path):
             with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(f"# 小狸插件配置\n\n{enable_key} = True\n")
+                f.write(f"# Lix插件配置\n\n{enable_key} = True\n")
             return True
 
         with open(config_path, 'r', encoding='utf-8') as f:

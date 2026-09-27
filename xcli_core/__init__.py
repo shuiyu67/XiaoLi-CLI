@@ -1,5 +1,5 @@
 """
-xcli_core - 小狸 Pro-CLI 核心模块
+xcli_core - Lix CLI 核心模块
 
 从 ai_cli.py 拆分优化的模块化架构。
 """

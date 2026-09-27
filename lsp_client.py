@@ -1,12 +1,12 @@
 """
-小狸 LSP 客户端
+Lix LSP 客户端
 ==============
 连接外部语言服务器（Language Server Protocol），把真实的诊断 / 悬停 /
 定义跳转 / 引用 / 补全喂给模型——这是对标 opencode 的 P2 收尾能力。
 
 - transport = stdio，使用 LSP 标准的 **Content-Length 分帧** JSON-RPC
   （与 MCP 的逐行 JSON 不同！LSP 消息头是 `Content-Length: N\\r\\n\\r\\n` + N 字节 JSON）。
-- 同步 + 线程安全：与 mcp_client.py 一致，契合小狸「同步主循环 + ThreadPoolExecutor」。
+- 同步 + 线程安全：与 mcp_client.py 一致，契合Lix「同步主循环 + ThreadPoolExecutor」。
 - 按文件扩展名路由到对应的语言服务器（python→pylsp、rust→rust-analyzer …），
   配置驱动，不绑定具体 server；未安装/启动失败不影响主程序与其他 LSP。
 - 单个 server 失败不阻断其他，也不阻断主程序启动。
@@ -268,7 +268,7 @@ class LspClient:
                 "workspace": {"workspaceFolders": True,
                                "configuration": True},
             },
-            "clientInfo": {"name": "xiaoli-cli", "version": "8.0.4"},
+            "clientInfo": {"name": "lix-cli", "version": "8.1.0"},
         })
         if isinstance(result, dict):
             self.capabilities = result.get("capabilities", {}) or {}

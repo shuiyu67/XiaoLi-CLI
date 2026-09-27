@@ -101,7 +101,7 @@ def main():
     print("[Home 屏]")
     fails += not check("像素 logo 双色调(█ 块，#6e6e6e 上段 + #f0f0f0 下段)",
                        fg_h.get("#6e6e6e", 0) > 30 and fg_h.get("#f0f0f0", 0) > 30 and any("█" in r for r in rows_h))
-    fails += not check("品牌/版本 tagline", "小狸" in t_h and "v8.0.4" in t_h)
+    fails += not check("品牌/版本 tagline", "Lix" in t_h and "v8.1.0" in t_h)
     fails += not check("键帽提示行(键亮/标签暗: ctrl+t/tab/ctrl+p)",
                        "ctrl+t" in t_h and "tab" in t_h and "ctrl+p" in t_h and fg_h.get("#d4d4d4", 0) > 0)
     fails += not check("橙色 ● Tip 行", "Tip" in t_h and fg_h.get("#d98d5f", 0) > 3)

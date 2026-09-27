@@ -48,7 +48,7 @@ def write_crush_config(port):
     models = [{"id": m.get("name"), "name": m.get("name")} for m in _entries]
     cfg.setdefault("providers", {})["xiaoli"] = {
         "type": "openai-compat",
-        "name": "小狸 xiaoli",
+        "name": "Lix xiaoli",
         "base_url": f"http://127.0.0.1:{port}/v1",
         "api_key": "xiaoli-local",
         "models": models,

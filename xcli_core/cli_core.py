@@ -89,7 +89,7 @@ class AICLI(BaseAICLI, ClawliMixin, ToolMixin, CodeExecMixin, DisplayMixin, Hist
 
     def _build_system_prompt(self, liugin_prompts=None):
         """构建系统提示词 - 增强版，支持编程任务"""
-        base_prompt = """你叫小狸，是一个强大的智能编程助手。你具备以下核心能力：
+        base_prompt = """你叫Lix，是一个强大的智能编程助手。你具备以下核心能力：
 
 1. **精准代码编辑** - 使用 code_editor 工具进行搜索替换、多文件批量编辑（修改后自动检查语法）
 2. **代码搜索与理解** - 使用 code_search 工具跨文件搜索、提取符号、分析依赖
@@ -1180,7 +1180,7 @@ multi 操作支持一次修改多处：
         model_name = getattr(self.current_engine, 'model', '') if self.current_engine else ''
         engine_desc = f"{current_engine_name} ({model_name})" if model_name else current_engine_name
 
-        print(f"{Fore.GREEN}小狸 Pro-CLI v{VERSION} 已启动!{Style.RESET_ALL} "
+        print(f"{Fore.GREEN}Lix CLI v{VERSION} 已启动!{Style.RESET_ALL} "
               f"{Fore.WHITE}引擎: {engine_desc}{Style.RESET_ALL}")
 
         # 一行速览，完整命令清单收进 /help
@@ -1682,7 +1682,7 @@ def main():
             _safe_print(line)
             time.sleep(0.05)
     else:
-        _safe_print(f"\n{Fore.CYAN}  ▄▀▄  小狸 Pro-CLI v{VERSION}{Style.RESET_ALL}")
+        _safe_print(f"\n{Fore.CYAN}  ▄▀▄  Lix CLI v{VERSION}{Style.RESET_ALL}")
         _safe_print(f"{Fore.CYAN}  ▀▄▀  {Style.RESET_ALL}"
                     f"{Fore.WHITE}AI 智能编程助手{Style.RESET_ALL}"
                     f"  {Fore.BLACK}{Style.BRIGHT}(--logo 看完整开机动画){Style.RESET_ALL}")

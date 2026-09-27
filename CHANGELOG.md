@@ -4,6 +4,38 @@
 
 ---
 
+## v8.1.0 (2026-09-27) — 产品改名 Lix CLI & 架构精简
+
+### 改名
+- **产品改名：小狸 Pro-CLI → Lix CLI**（品牌显示层全量替换，昵称"小狸"退役；仓库名 `xiaoli-cli` 与模块名 `xcli_core` 不变）
+- 配置目录改名 `Lix CLI` / `lix-cli`（旧目录 `Xiaoli Pro-CLI 3` 自动迁移）
+- LSP/MCP `clientInfo.name` → `lix-cli`，工具服务名 → `lix-tool-server`
+
+### 架构
+- **删除引擎架构，统一 OpenAI 格式模型直配**：`ai_engines/`（openai/ollama/manual）、
+  MODEL_FIELDS、引擎发现全删；唯一调用路径 `xcli_core/model_conn.ModelConnection`
+- 添加模型 = 一步 5+3 必填（api_key / base_url / model / 最大输入 / 最大输出 + 图/视/音开关）；
+  旧 `api.engines` 配置自动迁移为模型条目；ollama 走自带 `/v1` 兼容口
+- 模型注册表（`model_registry`）多模型在线切换；界面只显示已配置模型
+
+### TUI（全面对标 opencode）
+- 两屏视觉重做：Home 屏（像素 logo / 键帽提示 / 橙 Tip）+ 会话屏（用户竖条盒 / markdown 渲染 /
+  工具折叠行 / 分节盒侧栏 / 纯黑 footer），中性灰配色按官方截图逐像素解剖落地
+- 命令面板（Ctrl+P 模糊搜索）、leader `ctrl+x` chord、Tab 补全、历史翻找（F3/↑↓）、
+  F2 换模型、F4 工具折叠、Esc 真取消、Vim 模态
+- P0 修复：命令真路由（不再喂给 AI）、线程安全输出桥、`/build` 真执行、
+  面板 CJK 丢字根治（组合层切片）、"按一次就废"消息泵堵死根治
+- 全按钮审计工具 `tools/tui_audit.py` + 快照/视觉审查工具入库
+
+### 启动与配套
+- 启动链路优化：IMPORT 1324ms → 483ms（特性探测改 `find_spec`），配置询问挪后零阻塞
+- launcher TUI 化 + 新手化（一路回车可跑、`--setup` 重进向导、argv 透传、
+  requirements.txt 只读不覆写 + import→pip 包名映射）
+- 任务提示音体系（done / notify / special 三音色，`/sound` 开关）
+- Clawli 手机文件上传落盘 `clawli_files/`（文本进 AI、文件只到电脑，防路径穿越）
+
+---
+
 ## v8.0.4 (2026-08-08) — 稳定性 & 存储升级
 
 ### 🚀 重大改进

@@ -2,11 +2,11 @@
 
 布局对齐 opencode：
   ┌──────────────────────────────────────────────────────┐
-  │ ◆ 小狸 Pro-CLI   <workspace>          <model> [PLAN] │ 顶栏
+  │ ◆ Lix CLI   <workspace>          <model> [PLAN] │ 顶栏
   ├────────────┬─────────────────────────────────────────┤
   │ SESSIONS   │  ❯ user                                 │
   │  ▸ s1      │    问题…                                 │
-  │    s2      │  ● 小狸                                  │
+  │    s2      │  ● Lix                                  │
   │ FILES      │    回答…                                 │
   │  📂 src    │  ⚙ code_editor edit foo.py          ✓  │
   │            ├─────────────────────────────────────────┤
@@ -1049,9 +1049,9 @@ if TEXTUAL_AVAILABLE:
     # ═══════════════════════════════════════════════════
 
     class XiaoliTUI(App):
-        """小狸 TUI（opencode 高仿版）：左 session 侧栏 + role 标记消息流 + 底部 composer"""
+        """Lix TUI（opencode 高仿版）：左 session 侧栏 + role 标记消息流 + 底部 composer"""
         CSS = _TUI_CSS
-        TITLE = " 小狸 Pro-CLI"
+        TITLE = " Lix CLI"
         SUB_TITLE = "智能编程助手"
 
         BINDINGS = [
@@ -1235,7 +1235,7 @@ if TEXTUAL_AVAILABLE:
             lines = []
             for line, color in self._logo_rows():
                 lines.append(Align.center(Text(line, style=color)))
-            lines.append(Align.center(Text("小狸 Pro-CLI v8.0.4 · AI 智能编程助手",
+            lines.append(Align.center(Text("Lix CLI v8.1.0 · AI 智能编程助手",
                                            style=_Theme.TEXT_DIM)))
             hint = Text()
             hint.append("ctrl+t", style=f"bold {_Theme.TEXT}")
@@ -1322,7 +1322,7 @@ if TEXTUAL_AVAILABLE:
                 "",
                 "  ╔══════════════════════════════════════════════╗",
                 "  ║                                              ║",
-                "  ║    小狸 Pro-CLI v8.0.4                        ║",
+                "  ║    Lix CLI v8.1.0                        ║",
                 "  ║    智能编程助手 · opencode 风格               ║",
                 "  ║                                              ║",
                 "  ╚══════════════════════════════════════════════╝",
@@ -1337,7 +1337,7 @@ if TEXTUAL_AVAILABLE:
             for i, line in enumerate(welcome_lines):
                 if "╔" in line or "║" in line or "╚" in line:
                     cls = "msg-welcome-line"
-                elif line.strip().startswith("小狸"):
+                elif line.strip().startswith("Lix"):
                     cls = "msg-welcome-line"
                 elif line.strip().startswith("智能"):
                     cls = "msg-welcome-line"
@@ -1361,7 +1361,7 @@ if TEXTUAL_AVAILABLE:
             scroll = self.query_one("#chat-scroll")
             lines = [
                 ("", "msg-dim"),
-                ("  ◆ 小狸 Pro-CLI v8.0.4", "msg-welcome"),
+                ("  ◆ Lix CLI v8.1.0", "msg-welcome"),
                 ("", "msg-dim"),
                 ("   代码编辑 · 代码搜索 · Git 集成 · 多引擎", "msg-system"),
                 ("   输入 /help 查看命令 | /model 切换引擎", "msg-system"),
@@ -1529,7 +1529,7 @@ if TEXTUAL_AVAILABLE:
             plan_tag = " [PLAN]" if self.bridge.plan_mode() else ""
             workspace = os.path.basename(self.bridge.cwd())
             hdr.update(
-                f" ◆ 小狸 v8.0 │ {workspace} │ {engine}{plan_tag}"
+                f" ◆ Lix CLI v8.1.0 │ {workspace} │ {engine}{plan_tag}"
             )
 
         def _update_status(self, text: str):
@@ -1582,7 +1582,7 @@ if TEXTUAL_AVAILABLE:
                 return f" | {used} tok"
             return ""
 
-        # ── 消息追加（opencode 式 role 标记：❯ 用户 / ● 小狸 / ⚙ 工具）──
+        # ── 消息追加（opencode 式 role 标记：❯ 用户 / ● Lix / ⚙ 工具）──
 
         def _append(self, widget):
             scroll = self.query_one("#chat-scroll")
@@ -1945,7 +1945,7 @@ if TEXTUAL_AVAILABLE:
                 'cls': lambda a="": self.action_clear(),
                 'model': lambda a="": self._switch_model(a),
                 'engine': lambda a="": self._switch_model(a),
-                'about': lambda a="": self._system(f" 小狸 Pro-CLI v{VERSION} - 智能编程助手"),
+                'about': lambda a="": self._system(f" Lix CLI v{VERSION} - 智能编程助手"),
                 'status': lambda a="": self._show_status(),
                 'tools': lambda a="": self._show_tools(),
                 'engines': lambda a="": self._show_engines(),

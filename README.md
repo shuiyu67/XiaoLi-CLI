@@ -1,7 +1,7 @@
-# 小狸 Pro-CLI
+# Lix CLI
 
 <p align="center">
-  <img src="logo.png" width="120" alt="xiaoli-cli logo">
+  <img src="logo.png" width="120" alt="Lix CLI logo">
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-8.0.4-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-8.1.0-blue" alt="version">
   <img src="https://img.shields.io/badge/python-3.10+-green" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="license">
   <img src="https://img.shields.io/badge/tests-150+%20passed-brightgreen" alt="tests">
@@ -20,7 +20,7 @@
 
 ## 简介
 
-小狸 Pro-CLI 是一款基于 Python 的智能编程助手，集成了代码编辑、版本控制、浏览器自动化、图像生成、记忆系统等功能，支持多种 AI 引擎，帮助开发者提升工作效率。
+Lix CLI 是一款基于 Python 的智能编程助手，集成了代码编辑、版本控制、浏览器自动化、图像生成、记忆系统等功能，支持多种 AI 引擎，帮助开发者提升工作效率。
 
 ## v8.0 新特性
 
@@ -311,7 +311,7 @@ python -c "import py_compile; py_compile.compile('ai_cli.py', doraise=True)"
 
 ## 插件开发
 
-小狸支持 `Liugin`（自研协议）和 `Plugin`（通用协议）两种类名，均可被插件管理器自动识别：
+Lix支持 `Liugin`（自研协议）和 `Plugin`（通用协议）两种类名，均可被插件管理器自动识别：
 
 ```python
 class Plugin:

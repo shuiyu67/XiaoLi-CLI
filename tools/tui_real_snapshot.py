@@ -131,7 +131,7 @@ async def run():
         # 3) 渲染结果断言（DOM 含全部气泡，不受滚动视口影响）
         rendered = "\n".join(_txt(w) for w in chat.children)
         checks = {
-            "欢迎框 v8.0": "v8.0" in rendered or "8.0" in rendered,
+            "欢迎框 v8.1": "v8.1" in rendered or "8.1" in rendered,
             "用户消息": "core/app.py" in rendered,
             "工具成功": "OK 工具" in rendered,
             "工具失败": "X 工具" in rendered or "错误" in rendered,
@@ -145,7 +145,7 @@ async def run():
         # 3.5) 顶栏 (opencode 风格)
         hdr = app.query_one("#tui-header")
         hdr_txt = _txt(hdr)
-        checks["顶栏渲染"] = "小狸" in hdr_txt and len(hdr_txt) > 5
+        checks["顶栏渲染"] = "Lix" in hdr_txt and len(hdr_txt) > 5
         print(f"[{'PASS' if checks['顶栏渲染'] else 'FAIL'}] 顶栏: {hdr_txt!r}")
 
         # 3.6) 侧栏标签页

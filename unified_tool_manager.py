@@ -30,7 +30,7 @@ class UnifiedToolManager:
     统一工具管理器
 
     协调三种协议:
-    1. Liugin 协议 (plugins/) - 小狸自有协议
+    1. Liugin 协议 (plugins/) - Lix自有协议
     2. Skill 协议 (skills/) - Agent Skills 开源协议
     3. MCP 协议 - Model Context Protocol (Anthropic/OpenAI 标准)
 
@@ -874,7 +874,7 @@ class UnifiedToolManager:
     def get_mcp_server_info(self) -> Dict[str, Any]:
         """获取 MCP Server 信息"""
         return {
-            "name": "xiaoli-tool-server",
+            "name": "lix-tool-server",
             "version": "1.0.0",
             "protocolVersion": "2024-11-05",
             "capabilities": {"tools": {"listChanged": True}}

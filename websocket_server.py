@@ -71,13 +71,13 @@ def _make_tool_call(name, args):
 
 
 def extract_tool_calls(json_data):
-    """从多种 JSON 格式（小狸/MCP/Plugin/OpenAI/Anthropic）提取工具调用列表。
+    """从多种 JSON 格式（Lix/MCP/Plugin/OpenAI/Anthropic）提取工具调用列表。
 
     返回 list[dict] 或 None（无工具调用）。行为与历史内联实现逐行等价。
     """
     tool_calls = None
     if isinstance(json_data, dict):
-        # 小狸自有格式
+        # Lix自有格式
         if json_data.get('action') == 'use_tool':
             tool_calls = [json_data]
         elif 'tool' in json_data and 'args' in json_data:

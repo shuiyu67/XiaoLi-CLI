@@ -28,7 +28,7 @@ class RichTUI:
         self.cli = cli
         # record=True 是关键：渲染过程被记录，可随时导出文本/SVG/HTML 自验
         self.console = Console(record=True, width=100)
-        self.version = "8.0.4"
+        self.version = "8.1.0"
         self.engine = ""
         self.model = ""
         self.mode = "普通"
@@ -55,7 +55,7 @@ class RichTUI:
 
     def banner(self):
         self.console.print(Panel(
-            Text.from_markup(f"[bold cyan]小狸 Pro-CLI[/]  [yellow]v{self.version}[/]  ·  Rich TUI"),
+            Text.from_markup(f"[bold cyan]Lix CLI[/]  [yellow]v{self.version}[/]  ·  Rich TUI"),
             subtitle="[dim]自然语言对话 · /exit 返回 CLI · /snapshot 导出快照[/]",
             box=ROUNDED, border_style="cyan"))
         self.console.print()
@@ -92,10 +92,10 @@ class RichTUI:
     def snapshot_text(self):
         return self.console.export_text(clear=False)
 
-    def snapshot_svg(self, title="小狸 Pro-CLI v8.0 Rich TUI"):
+    def snapshot_svg(self, title="Lix CLI v8.0 Rich TUI"):
         return self.console.export_svg(title=title, clear=False)
 
-    def snapshot_html(self, title="小狸 Pro-CLI v8.0 Rich TUI"):
+    def snapshot_html(self, title="Lix CLI v8.0 Rich TUI"):
         # rich 新版 export_html 不接受 title 参数，标题作为注释写入
         html = self.console.export_html(clear=False)
         return f"<!-- {title} -->\n{html}"

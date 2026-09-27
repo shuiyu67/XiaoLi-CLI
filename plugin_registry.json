@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "小狸 CLI 插件码注册表 - 通过 /plugin install <插件码> 安装",
+  "description": "Lix CLI 插件码注册表 - 通过 /plugin install <插件码> 安装",
   "plugins": {
     "dglab": {
       "name": "DG-Lab 郊狼 WebSocket 控制",

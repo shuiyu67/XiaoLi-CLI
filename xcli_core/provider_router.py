@@ -1,7 +1,7 @@
 """
 Provider 抽象层（opencode 式原生多 Provider 路由）
 
-小狸核心是 OpenAI 兼容的统一连接器 ModelConnection（已支持 base_url，讯飞/xunfei 即借此接入）。
+Lix核心是 OpenAI 兼容的统一连接器 ModelConnection（已支持 base_url，讯飞/xunfei 即借此接入）。
 本模块在此基础上提供：
   - PROVIDER_PRESETS：主流 Provider 的默认 base_url / 模型前缀 / 协议族
   - resolve_provider()：从 config["providers"] 解析出 {api_key, base_url, model, headers}
@@ -138,7 +138,7 @@ def _wire_format(protocol: str) -> str:
 
 # ───────────────────────── 消息格式互转 ─────────────────────────
 def convert_messages(target: str, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """把小狸内部 OpenAI 风格 messages 转换为 target provider 的线缆格式。
+    """把Lix内部 OpenAI 风格 messages 转换为 target provider 的线缆格式。
 
     target ∈ {"openai", "anthropic", "google"}
     内部统一表示：[{"role": "system"|"user"|"assistant"|"tool", "content": ..., "tool_calls"?, "name"?}]

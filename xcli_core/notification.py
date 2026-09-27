@@ -69,7 +69,7 @@ class NotificationManager:
 
     def notify_task_complete(self, task_summary: str = ""):
         """通知任务完成的快捷方法"""
-        title = "小狸 Pro-CLI"
+        title = "Lix CLI"
         if task_summary:
             # 截断过长的摘要
             if len(task_summary) > 80:
@@ -82,7 +82,7 @@ class NotificationManager:
 
     def notify_tool_complete(self, tool_name: str, result_summary: str = ""):
         """通知工具执行完成"""
-        title = "小狸 Pro-CLI"
+        title = "Lix CLI"
         if result_summary:
             if len(result_summary) > 60:
                 result_summary = result_summary[:57] + "..."
